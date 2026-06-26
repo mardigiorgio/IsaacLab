@@ -45,6 +45,31 @@ with contextlib.suppress(ImportError):
     import isaaclab_tasks_experimental  # noqa: F401
 
 
+# Map the --solver CLI choice onto the Newton solver-cfg latches read by
+# NewtonMJWarpManager._build_solver (backend / adaptive / sap_adaptive).
+_SOLVER_CHOICES = {
+    "mujoco":          {"backend": "mujoco", "adaptive": False, "sap_adaptive": False},
+    "mujoco-adaptive": {"backend": "mujoco", "adaptive": True,  "sap_adaptive": False},
+    "sap":             {"backend": "sap",    "adaptive": False, "sap_adaptive": False},
+    "sap-adaptive":    {"backend": "sap",    "adaptive": False, "sap_adaptive": True},
+}
+
+
+def _apply_solver_choice(env_cfg, choice: str) -> None:
+    """Apply --solver onto the *resolved* Newton solver cfg."""
+    physics = getattr(getattr(env_cfg, "sim", None), "physics", None)
+    solver_cfg = getattr(physics, "solver_cfg", None)
+    if solver_cfg is None or not hasattr(solver_cfg, "backend"):
+        raise ValueError(
+            f"--solver={choice} requires the Newton MuJoCo-Warp backend, but the resolved physics "
+            f"cfg ({type(physics).__name__}) has no MJWarpSolverCfg. "
+            "Add 'physics=newton_mjwarp' to the command line."
+        )
+    for field, value in _SOLVER_CHOICES[choice].items():
+        setattr(solver_cfg, field, value)
+    print(f"[INFO] --solver={choice} -> {_SOLVER_CHOICES[choice]}")
+
+
 def _check_rsl_rl_version() -> str:
     """Check that the installed RSL-RL version is supported."""
     installed_version = metadata.version("rsl-rl-lib")
@@ -78,6 +103,12 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         "--external_callback",
         default=None,
         help="Fully qualified path to an externally defined callback.",
+    )
+    parser.add_argument(
+        "--solver",
+        default=None,
+        choices=sorted(_SOLVER_CHOICES),
+        help="Newton solver variant (requires physics=newton_mjwarp).",
     )
     CLI_ARGS.add_rsl_rl_args(parser)
     add_isaaclab_launcher_args(parser)
@@ -119,6 +150,8 @@ def run(argv: list[str]) -> None:
     with launch_simulation(env_cfg, args_cli):
         agent_cfg = CLI_ARGS.update_rsl_rl_cfg(agent_cfg, args_cli)
         apply_env_overrides(args_cli, env_cfg)
+        if args_cli.solver is not None:
+            _apply_solver_choice(env_cfg, args_cli.solver)
         agent_cfg.max_iterations = (
             args_cli.max_iterations if args_cli.max_iterations is not None else agent_cfg.max_iterations
         )
