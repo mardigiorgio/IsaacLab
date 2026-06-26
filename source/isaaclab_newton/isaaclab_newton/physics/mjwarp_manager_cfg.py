@@ -120,6 +120,70 @@ class MJWarpSolverCfg(NewtonSolverCfg):
     Newton default is ``1e-6``.
     """
 
+    adaptive: bool = False
+    """Use the error-controlled adaptive solver :class:`~newton.solvers.SolverMuJoCoAdaptive` (step-doubling)
+    instead of the fixed-step :class:`~newton.solvers.SolverMuJoCo`.
+
+    When ``True``, the manager drives the solver via ``step_dt`` once per substep (the solver owns its inner
+    dt loop and its own contact pipeline) and CUDA-graph capture is disabled (the per-frame substep count is
+    data-dependent). The remaining MuJoCo-Warp fields above are forwarded to the underlying solver.
+    """
+
+    adaptive_tol: float = 1e-3
+    """Adaptive only: inf-norm ``joint_q`` error tolerance per world [m or rad]."""
+
+    adaptive_dt_mode: str = "per_world"
+    """Adaptive only: ``"per_world"`` (each env adapts its own dt) or ``"global"`` (shared worst-case dt)."""
+
+    adaptive_dt_init: float = 0.01
+    """Adaptive only: initial inner timestep [s]. Set below ``sim.dt`` to give the controller room to subdivide."""
+
+    adaptive_dt_min: float = 1e-6
+    """Adaptive only: minimum inner timestep [s] (must be < ``adaptive_dt_init``)."""
+
+    adaptive_tiling: str = "ragged"
+    """Adaptive only: ``"ragged"`` (legacy adaptive dt with a clamped remainder landing) or
+    ``"even"`` (Fix 4: choose substep count N from the carried ideal_dt, then tile each control
+    interval with a uniform inner dt = dt_outer/N -- removes the within-interval raggedness while
+    keeping adaptivity across control steps). Default ``"ragged"`` for backward-compat."""
+
+    adaptive_max_substeps: int = 256
+    """Adaptive ``"even"`` tiling only: hard upper bound on the substep count N per control interval.
+    Bounds worst-case work when a world's ideal_dt collapses to ``adaptive_dt_min`` (uncapped N would
+    be ~dt_outer/dt_min ~ 1e4 and effectively hang the per-world fixed loop). Default 256 only bounds
+    runaway; normal motion needs N ~ 1-60."""
+
+    backend: str = "mujoco"
+    """Inner physics backend: ``"mujoco"`` (MuJoCo-Warp, default) or ``"sap"`` (the vendored convex SAP
+    contact solver :class:`~newton.solvers.SolverSAP`). Overridable at runtime via ``NEWTON_SOLVER`` or
+    ``NEWTON_SAP=1``. With ``"sap"`` the MuJoCo-Warp fields above are ignored; use the ``sap_*`` fields."""
+
+    sap_adaptive: bool = False
+    """SAP only: drive the error-controlled step-doubling controller over SAP
+    (:class:`~newton.solvers.SolverSAPAdaptive`, even+global tiling) instead of fixed-step
+    :class:`~newton.solvers.SolverSAP`. Overridable via ``NEWTON_SAP_ADAPTIVE=1``. Fixed-step SAP is the
+    RL-ideal (stable+consistent+fast); the adaptive layer adds error control for accuracy/dataset-gen."""
+
+    sap_max_rigid_contact: int = 128
+    """SAP only: per-world rigid-contact capacity (contact storage = this * num_envs)."""
+
+    sap_solver_iterations: int = 30
+    """SAP only: max SAP contact-solve iterations. Must be high enough to converge at the chosen dt
+    (adaptive asserts convergence for a consistent step-doubling error estimate)."""
+
+    sap_contact_preset: str = "approx32"
+    """SAP only: contact/Jacobian precision preset (``"approx32"`` | ``"approx64"`` | ``"drake"``).
+
+    Default ``"approx32"`` (f32 Jacobians + f32 contact linear solve): ~1.5x faster than ``"drake"``
+    (f64) on contact scenes with no measurable loss of step-doubling stability. Set ``"drake"`` for
+    full-f64 reference accuracy."""
+
+    sap_line_search: str = "armijo_decay"
+    """SAP only: line-search variant (``"monotone_decay"`` | ``"armijo_decay"`` | ``"exact_root"``)."""
+
+    sap_contact_tau_d: float = 0.01
+    """SAP only: fallback dissipation time scale [s]."""
+
     def __post_init__(self):
         if self.ls_parallel:
             warnings.warn(

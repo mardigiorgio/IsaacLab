@@ -1,0 +1,19 @@
+[package]
+
+# Note: Semantic Versioning is used: https://semver.org/
+version = "1.0.0"
+
+# Description
+title = "Newton Adaptive Integrator Toggle"
+description = "Auto-loading GUI checkbox that switches the Newton solver to adaptive (step-doubling) timestepping via the /isaaclab/newton/adaptive carb setting read by NewtonMJWarpManager._build_solver."
+category = "robotics"
+keywords = ["robotics", "simulation", "newton", "adaptive", "ui"]
+
+[dependencies]
+"omni.ui" = {}
+
+[core]
+reloadable = true
+
+[[python.module]]
+name = "newton_adaptive_ui"

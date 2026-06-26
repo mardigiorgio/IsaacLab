@@ -664,6 +664,11 @@ class NewtonManager(PhysicsManager):
         if cls._needs_collision_pipeline or cls._needs_fk_before_step:
             eval_fk(cls._model, cls._state_0.joint_q, cls._state_0.joint_qd, cls._state_0, cls._fk_reset_mask)
 
+        # Restore per-world solver controller state for env-reset worlds before
+        # the mask is cleared (no-op unless the solver keeps persistent per-world
+        # state across resets, e.g. the adaptive step-doubling controller).
+        cls._reset_solver_state(NewtonManager._world_reset_mask)
+
         # Zero both masks after consumption
         NewtonManager._world_reset_mask.zero_()
         NewtonManager._fk_reset_mask.zero_()
@@ -1083,6 +1088,15 @@ class NewtonManager(PhysicsManager):
             # Fallback: no topology info — mark everything dirty
             NewtonManager._world_reset_mask.fill_(True)
             NewtonManager._fk_reset_mask.fill_(True)
+
+    @classmethod
+    def _reset_solver_state(cls, world_mask: wp.array) -> None:
+        """Hook: restore solver-internal per-world state for worlds flagged in
+        ``world_mask`` (a ``(world_count,)`` wp.bool array). No-op by default;
+        overridden by solvers that keep persistent per-world state across env
+        resets (e.g. the adaptive MuJoCo controller). Note Kamino does not use
+        this hook — it overrides :meth:`step` with its own reset path."""
+        pass
 
     @classmethod
     def start_simulation(cls) -> None:
