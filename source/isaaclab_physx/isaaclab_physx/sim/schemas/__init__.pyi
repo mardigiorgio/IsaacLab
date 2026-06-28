@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 __all__ = [
+    "apply_physx_joint",
     "apply_fixed_tendon",
     "apply_spatial_tendon",
     "define_deformable_body_properties",
@@ -28,6 +29,7 @@ __all__ = [
     "PhysxDeformableCollisionPropertiesCfg",
     "PhysxFixedTendonCfg",
     "PhysxFixedTendonPropertiesCfg",
+    "PhysxJointCfg",
     "PhysxJointDrivePropertiesCfg",
     "PhysxRigidBodyCfg",
     "PhysxRigidBodyPropertiesCfg",
@@ -47,6 +49,7 @@ __all__ = [
 ]
 
 from .schemas import (
+    apply_physx_joint,
     apply_fixed_tendon,
     apply_spatial_tendon,
     define_deformable_body_properties,
@@ -73,6 +76,7 @@ from .schemas_cfg import (
     PhysxDeformableCollisionPropertiesCfg,
     PhysxFixedTendonCfg,
     PhysxFixedTendonPropertiesCfg,
+    PhysxJointCfg,
     PhysxJointDrivePropertiesCfg,
     PhysxRigidBodyCfg,
     PhysxRigidBodyPropertiesCfg,
