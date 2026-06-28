@@ -180,7 +180,10 @@ class NewtonMJWarpManager(NewtonManager):
         if getattr(cls, "_sap", False):
             if cls._adaptive:
                 # SAP-adaptive owns its inner even+global loop + its own contacts; updates state_0.
-                cls._solver.step_dt(substep_dt, state_0, state_1, control)
+                # step() is the boundary call (Newton signature: state_in, state_out, control,
+                # contacts, dt); the whole step-doubling + N-substep sequence is ONE single-level
+                # CUDA-graph capture owned INSIDE the solver, so the manager must NOT also wrap it.
+                cls._solver.step(state_0, state_1, control, contacts, substep_dt)
                 cls._solver.reset(state_0, world_mask=cls._solver.diverged, flags=0)
             else:
                 from newton.solvers import (
@@ -204,7 +207,9 @@ class NewtonMJWarpManager(NewtonManager):
                 cls._solver.step(s0, s0, c, sc, substep_dt)
             return
         if cls._adaptive:
-            cls._solver.step_dt(substep_dt, state_0, state_1, control)
+            # MuJoCo-adaptive: step() is the boundary call (state_in, state_out, control,
+            # contacts, dt); it owns its inner step-doubling loop + its own contacts.
+            cls._solver.step(state_0, state_1, control, contacts, substep_dt)
             cls._solver.reset(state_0, world_mask=cls._solver.diverged, flags=0)
         else:
             cls._solver.step(state_0, state_1, control, contacts, substep_dt)
@@ -226,10 +231,12 @@ class NewtonMJWarpManager(NewtonManager):
 
     @classmethod
     def _supports_cuda_graph_capture(cls) -> bool:
-        # The adaptive solver's per-frame substep count is data-dependent (host-synced boundary check),
-        # so a statically captured CUDA graph cannot represent it. Both SAP paths also host-sync
-        # (fixed-step SAP reads solve_result.converged each step; SAP-adaptive reads the shared N),
-        # so capture is disabled for any SAP backend too.
+        # MANAGER-level capture stays OFF for adaptive/SAP. The adaptive solvers OWN their CUDA-graph
+        # capture INTERNALLY: step() builds a single-level per-N ScopedCapture of the whole
+        # step-doubling + N-substep sequence (n_max is host-read once per boundary, OUTSIDE the
+        # captured region, so the manager cannot know N and must not double-wrap). Returning True
+        # here would re-nest the solver's own capture inside the manager's -- the exact nested
+        # capture this refactor removed. So: solver self-captures; manager does not.
         return not (cls._adaptive or cls._sap)
 
     @classmethod
