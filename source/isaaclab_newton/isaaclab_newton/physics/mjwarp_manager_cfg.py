@@ -111,13 +111,12 @@ class MJWarpSolverCfg(NewtonSolverCfg):
         :class:`ValueError` because the two collision modes are mutually exclusive.
     """
 
-    tolerance: float = 1e-6
+    tolerance: float = 1e-8
     """Solver convergence tolerance for the constraint residual.
 
     The solver iterates until the residual drops below this threshold or
     ``iterations`` is reached.  Lower values give more precise constraint
     satisfaction at the cost of more iterations.  MuJoCo default is ``1e-8``;
-    Newton default is ``1e-6``.
     """
 
     adaptive: bool = False

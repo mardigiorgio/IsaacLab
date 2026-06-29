@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import random
 from typing import TYPE_CHECKING
 
@@ -26,6 +27,7 @@ def add_rsl_rl_args(parser: argparse.ArgumentParser):
         "--experiment_name", type=str, default=None, help="Name of the experiment folder where logs will be stored."
     )
     arg_group.add_argument("--run_name", type=str, default=None, help="Run name suffix to the log directory.")
+    arg_group.add_argument("--run_group", type=str, default=None, help="W&B run group; groups related runs in the UI.")
     # -- load arguments
     arg_group.add_argument("--resume", action="store_true", default=False, help="Whether to resume from a checkpoint.")
     arg_group.add_argument("--load_run", type=str, default=None, help="Name of the run folder to resume from.")
@@ -83,6 +85,10 @@ def update_rsl_rl_cfg(agent_cfg: RslRlBaseRunnerCfg, args_cli: argparse.Namespac
         agent_cfg.experiment_name = args_cli.experiment_name
     if args_cli.run_name is not None:
         agent_cfg.run_name = args_cli.run_name
+    if args_cli.run_group is not None:
+        # rsl_rl's WandbSummaryWriter does not pass group= to wandb.init(); wandb reads it from
+        # WANDB_RUN_GROUP. Set it here so --run_group works as a first-class flag.
+        os.environ["WANDB_RUN_GROUP"] = args_cli.run_group
     if args_cli.logger is not None:
         agent_cfg.logger = args_cli.logger
     # set the project name for wandb and neptune
