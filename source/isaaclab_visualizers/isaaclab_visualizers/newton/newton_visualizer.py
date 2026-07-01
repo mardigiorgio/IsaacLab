@@ -33,7 +33,7 @@ from isaaclab.envs.utils.camera_view import (
 from isaaclab.visualizers.base_visualizer import BaseVisualizer
 
 from isaaclab_visualizers.newton.newton_visualization_markers import render_newton_visualization_markers
-from isaaclab_visualizers.newton_adapter import apply_viewer_visible_worlds, resolve_visible_env_indices
+from isaaclab_visualizers.newton_adapter import resolve_visible_env_indices
 
 from .newton_visualizer_cfg import NewtonVisualizerCfg
 
@@ -478,6 +478,7 @@ class NewtonVisualizer(BaseVisualizer):
         num_envs = scene_data_provider.num_envs
         metadata = {"num_envs": num_envs}
         self._env_ids = self._compute_visualized_env_ids()
+        self._resolved_visible_env_ids = resolve_visible_env_indices(self._env_ids, self.cfg.max_visible_envs, num_envs)
         self._model = NewtonManager.get_model()
         self._state = NewtonManager.get_state(self._scene_data_provider)
 
@@ -503,13 +504,8 @@ class NewtonVisualizer(BaseVisualizer):
 
         if self._viewer is not None:
             self._viewer.set_model(self._model)
-            apply_viewer_visible_worlds(
-                self._viewer,
-                env_ids=self._env_ids,
-                max_visible_envs=self.cfg.max_visible_envs,
-                num_envs=num_envs,
-            )
-            self._viewer.set_world_offsets((0.0, 0.0, 0.0))
+            self._viewer.set_visible_worlds(self._resolved_visible_env_ids)
+            self._viewer.set_world_offsets(self.cfg.world_spacing)
             self._apply_camera_focal_length()
             initial_pose = self._resolve_initial_camera_pose()
             self._apply_camera_pose(initial_pose)
@@ -536,7 +532,6 @@ class NewtonVisualizer(BaseVisualizer):
             self._viewer.renderer.sky_lower = self._viewer._coerce_color3(self.cfg.sky_lower_color)
             self._viewer.renderer._light_color = self._viewer._coerce_color3(self.cfg.light_color)
 
-        self._resolved_visible_env_ids = resolve_visible_env_indices(self._env_ids, self.cfg.max_visible_envs, num_envs)
         self._setup_camera_sensor_view(num_envs)
         num_visualized_envs = (
             len(self._resolved_visible_env_ids) if self._resolved_visible_env_ids is not None else num_envs

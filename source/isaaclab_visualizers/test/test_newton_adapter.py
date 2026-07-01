@@ -71,6 +71,10 @@ def test_resolve_visible_env_indices_truncates_explicit_list():
     assert resolve_visible_env_indices([1, 3], 1, 10) == [1]
 
 
+def test_resolve_visible_env_indices_deduplicates_before_truncating():
+    assert resolve_visible_env_indices([1, 1, 3, 5], 2, 10) == [1, 3]
+
+
 def test_resolve_visible_env_indices_explicit_full_list_when_no_cap():
     assert resolve_visible_env_indices([1, 3], None, 10) == [1, 3]
 
@@ -110,6 +114,12 @@ def test_newton_visualizer_cfg_exposes_particle_options():
 
     assert cfg.show_particles is True
     assert cfg.particle_color == (0.1, 0.2, 0.3)
+
+
+def test_newton_visualizer_cfg_exposes_world_spacing():
+    cfg = NewtonVisualizerCfg(world_spacing=(2.0, 2.0, 0.0))
+
+    assert cfg.world_spacing == (2.0, 2.0, 0.0)
 
 
 def test_newton_visualizer_set_camera_view_updates_cfg_without_viewer():
