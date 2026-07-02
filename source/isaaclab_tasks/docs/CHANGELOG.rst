@@ -1,6 +1,33 @@
 Changelog
 ---------
 
+8.1.2 (2026-07-01)
+~~~~~~~~~~~~~~~~~~
+
+Changed
+^^^^^^^
+
+* Changed the Cartpole task lighting from :class:`~isaaclab.sim.DomeLightCfg` to
+  :class:`~isaaclab.sim.DistantLightCfg` with unified light
+  intensity (``CARTPOLE_DISTANT_LIGHT_INTENSITY = 2000.0``), color
+  (``CARTPOLE_DISTANT_LIGHT_COLOR = (1.0, 1.0, 1.0)``), and orientation
+  (``CARTPOLE_DISTANT_LIGHT_ORIENTATION``, -45° pitch and -45° yaw) across the direct, camera,
+  and manager-based variants via shared constants in ``constants.py``. Updated lighting-dependent
+  test golden images accordingly.
+
+
+8.1.1 (2026-06-28)
+~~~~~~~~~~~~~~~~~~
+
+Fixed
+^^^^^
+
+* Changed :class:`~isaaclab_tasks.core.dexsuite.dexsuite_env_cfg.DexsuiteReorientEnvCfg` to derive
+  from :class:`~isaaclab.envs.ManagerBasedRLEnvCfg` instead of
+  :class:`~isaaclab.envs.ManagerBasedEnvCfg`, so the RL-specific configuration fields are inherited
+  rather than set ad hoc in ``__post_init__``.
+
+
 8.1.0 (2026-06-27)
 ~~~~~~~~~~~~~~~~~~
 

@@ -1,6 +1,63 @@
 Changelog
 ---------
 
+2.6.1 (2026-07-01)
+~~~~~~~~~~~~~~~~~~
+
+Changed
+^^^^^^^
+
+* Changed the ``newton[sim]`` dependency pin to Newton commit
+  ``2064e3b79807dcc1679d1eb86ef7efd9ef0f28ee``. Projects that install Newton
+  separately should use this commit with ``warp-lang==1.15.0.dev20260626``.
+
+Fixed
+^^^^^
+
+* Fixed :class:`~isaaclab_physx.assets.RigidObject` center-of-mass writes for
+  compatibility with Warp 1.15.
+
+
+2.6.0 (2026-06-30)
+~~~~~~~~~~~~~~~~~~
+
+Added
+^^^^^
+
+* Added :class:`~isaaclab_physx.renderers.IsaacRtxRendererGlobalSettingsCfg`
+  to configure process-global Isaac RTX quality settings from
+  :class:`~isaaclab_physx.renderers.IsaacRtxRendererCfg`.
+
+Fixed
+^^^^^
+
+* Fixed a crash in :class:`~isaaclab_physx.physics.PhysxManager` when ``omni.physx`` is reloaded during a session.
+
+
+2.5.0 (2026-06-28)
+~~~~~~~~~~~~~~~~~~
+
+Added
+^^^^^
+
+* Added the PhysX mesh-collision cooking fragments:
+  :class:`~isaaclab_physx.sim.schemas.PhysxConvexHullCfg`,
+  :class:`~isaaclab_physx.sim.schemas.PhysxConvexDecompositionCfg`,
+  :class:`~isaaclab_physx.sim.schemas.PhysxTriangleMeshCfg`,
+  :class:`~isaaclab_physx.sim.schemas.PhysxTriangleMeshSimplificationCfg`, and
+  :class:`~isaaclab_physx.sim.schemas.PhysxSDFMeshCfg`. Each is a single-namespace
+  :class:`~isaaclab.sim.schemas.MeshCollisionFragment` owning one ``physx*Collision:*`` namespace and
+  applied schema, dispatched via :func:`~isaaclab.sim.schemas.apply_mesh_collision_properties`.
+* Added the :class:`~isaaclab_physx.sim.schemas.PhysxJointCfg` joint-drive fragment
+  (``physxJoint:*`` / ``PhysxJointAPI``), carrying ``max_joint_velocity`` (with the legacy
+  ``max_velocity`` deprecation alias). Applied alongside
+  :class:`~isaaclab.sim.schemas.UsdPhysicsDriveCfg` via
+  :func:`~isaaclab.sim.schemas.apply_joint_drive_properties`.
+* Added :func:`~isaaclab_physx.sim.schemas.apply_physx_joint`, the dedicated applier for
+  :class:`~isaaclab_physx.sim.schemas.PhysxJointCfg` that converts ``max_joint_velocity`` from
+  rad/s to deg/s for angular (revolute) joints, matching the legacy joint-drive unit convention.
+
+
 2.4.0 (2026-06-27)
 ~~~~~~~~~~~~~~~~~~
 
