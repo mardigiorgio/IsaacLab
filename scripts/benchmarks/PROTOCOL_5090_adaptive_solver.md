@@ -1,3 +1,10 @@
+> **VALIDATED 2026-07-02 (puget, 8192 envs).** R1 baseline 998.3 ms/env-step; R5
+> (shared forward prefix) 845.1 ms (-15.3%, iteration parity, err << tol); R6
+> (+ conditional) 852.3 ms -- the conditional tier adds ~0 at this scale.
+> **The shared forward prefix is now the DEFAULT** (`NEWTON_MJ_ADAPTIVE_SHARED_FWD=0`
+> opts out), so a plain run now measures the old R5 configuration; use `=0` to
+> reproduce the old R1 baseline. The conditional flag remains available but off.
+
 # 5090 validation protocol — conditional-graph boundary loop (option 2)
 
 Goal: validate and measure the eager-kill stack on the production box (RTX 5090,
