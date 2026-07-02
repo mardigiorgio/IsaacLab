@@ -6,6 +6,7 @@
 import math
 
 from isaaclab_newton.physics import KaminoSolverCfg, MJWarpSolverCfg, NewtonCfg
+from isaaclab_ovphysx.physics import OvPhysxCfg
 from isaaclab_physx.physics import PhysxCfg
 
 import isaaclab.sim as sim_utils
@@ -75,6 +76,7 @@ class CartpolePhysicsCfg(PresetCfg):
         debug_mode=False,
         use_cuda_graph=True,
     )
+    ovphysx: OvPhysxCfg = OvPhysxCfg()
 
 
 ##
