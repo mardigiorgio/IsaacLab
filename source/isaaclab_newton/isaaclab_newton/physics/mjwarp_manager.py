@@ -77,7 +77,9 @@ class NewtonMJWarpManager(NewtonManager):
                     tol=float(_env("NEWTON_ADAPTIVE_TOL", getattr(solver_cfg, "adaptive_tol", 1e-3))),
                     dt_inner_init=float(_env("NEWTON_ADAPTIVE_DT_INIT", getattr(solver_cfg, "adaptive_dt_init", 0.01))),
                     dt_inner_min=float(_env("NEWTON_ADAPTIVE_DT_MIN", getattr(solver_cfg, "adaptive_dt_min", 1e-6))),
-                    max_substeps=int(_env("NEWTON_ADAPTIVE_MAX_SUBSTEPS", getattr(solver_cfg, "adaptive_max_substeps", 256))),
+                    max_substeps=int(
+                        _env("NEWTON_ADAPTIVE_MAX_SUBSTEPS", getattr(solver_cfg, "adaptive_max_substeps", 256))
+                    ),
                     max_rigid_contact=int(solver_cfg.sap_max_rigid_contact),
                     max_iterations=int(solver_cfg.sap_solver_iterations),
                     contact_preset_variant=str(_env("NEWTON_SAP_PRESET", solver_cfg.sap_contact_preset)),
@@ -124,9 +126,16 @@ class NewtonMJWarpManager(NewtonManager):
             except Exception:
                 pass
         ignored = {
-            "class_type", "solver_type", "ls_parallel",
-            "adaptive", "adaptive_tol", "adaptive_dt_mode", "adaptive_dt_init", "adaptive_dt_min",
-            "adaptive_tiling", "adaptive_max_substeps",
+            "class_type",
+            "solver_type",
+            "ls_parallel",
+            "adaptive",
+            "adaptive_tol",
+            "adaptive_dt_mode",
+            "adaptive_dt_init",
+            "adaptive_dt_min",
+            "adaptive_tiling",
+            "adaptive_max_substeps",
         }
         if adaptive:
             # SolverMuJoCoAdaptive forces use_mujoco_contacts/use_mujoco_cpu/separate_worlds itself
@@ -143,12 +152,17 @@ class NewtonMJWarpManager(NewtonManager):
                 dt_inner_init=float(_env("NEWTON_ADAPTIVE_DT_INIT", getattr(solver_cfg, "adaptive_dt_init", 0.01))),
                 dt_inner_min=float(_env("NEWTON_ADAPTIVE_DT_MIN", getattr(solver_cfg, "adaptive_dt_min", 1e-6))),
                 tiling=str(_env("NEWTON_ADAPTIVE_TILING", getattr(solver_cfg, "adaptive_tiling", "ragged"))),
-                max_substeps=int(_env("NEWTON_ADAPTIVE_MAX_SUBSTEPS", getattr(solver_cfg, "adaptive_max_substeps", 256))),
+                max_substeps=int(
+                    _env("NEWTON_ADAPTIVE_MAX_SUBSTEPS", getattr(solver_cfg, "adaptive_max_substeps", 256))
+                ),
                 **kwargs,
             )
             cls._adaptive = True
             cls._adaptive_frame = 0
-            logger.info("NewtonMJWarpManager: SolverMuJoCoAdaptive (adaptive step-doubling; CUDA graph disabled)")
+            logger.info(
+                "NewtonMJWarpManager: SolverMuJoCoAdaptive (adaptive step-doubling; solver-internal "
+                "per-iteration CUDA-graph replay, set NEWTON_MJ_ADAPTIVE_GRAPH=0 to disable)"
+            )
         else:
             valid = set(inspect.signature(SolverMuJoCo.__init__).parameters) - {"self", "model"} - ignored
             kwargs = {k: v for k, v in solver_cfg.to_dict().items() if k in valid}
@@ -170,12 +184,9 @@ class NewtonMJWarpManager(NewtonManager):
     def _step_solver(cls, state_0, state_1, control, contacts, substep_dt) -> None:
         """Run one solver substep.
 
-        Adaptive: drive :class:`SolverMuJoCoAdaptive` via ``step_dt`` (owns its inner
-        error-controlled dt loop + its own contacts, updates ``state_0`` in place), then
-        consume Fix A's divergence latch — a world that hit the dt_min floor non-finite
-        held its last-good state; reset its controller buffers (flags=0 keeps its joint
-        state) so the latched floor dt / diverged flag don't persist. Otherwise the stock
-        single ``solver.step`` (5-positional).
+        Adaptive: drive :class:`SolverMuJoCoAdaptive` via ``step`` (owns its inner
+        error-controlled dt loop + its own contacts, updates ``state_0`` in place).
+        Otherwise the stock single ``solver.step`` (5-positional).
         """
         if getattr(cls, "_sap", False):
             if cls._adaptive:
@@ -209,10 +220,28 @@ class NewtonMJWarpManager(NewtonManager):
         if cls._adaptive:
             # MuJoCo-adaptive: step() is the boundary call (state_in, state_out, control,
             # contacts, dt); it owns its inner step-doubling loop + its own contacts.
+            # No per-substep divergence reset: the solver's floor latch was removed
+            # (`diverged` stays all-False), so that reset call was a dead kernel launch.
             cls._solver.step(state_0, state_1, control, contacts, substep_dt)
-            cls._solver.reset(state_0, world_mask=cls._solver.diverged, flags=0)
         else:
             cls._solver.step(state_0, state_1, control, contacts, substep_dt)
+
+    @classmethod
+    def _run_solver_substeps(cls, contacts) -> None:
+        """MuJoCo-adaptive: march the WHOLE control period in one boundary call.
+
+        The adaptive solver is itself the substepper (error-controlled inner dt), so
+        driving it once per manager substep would only add forced boundary landings,
+        duplicate control application, and duplicate Newton<->MuJoCo conversion + FK
+        round-trips -- control is constant across the decimation tick (actuators run
+        once per tick, before this call). SAP and fixed-step paths keep the stock
+        per-substep loop.
+        """
+        if cls._adaptive and not cls._sap:
+            cls._step_solver(cls._state_0, cls._state_0, cls._control, contacts, cls._solver_dt * cls._num_substeps)
+            cls._state_0.clear_forces()
+            return
+        super()._run_solver_substeps(contacts)
 
     @classmethod
     def _reset_solver_state(cls, world_mask) -> None:
@@ -231,13 +260,19 @@ class NewtonMJWarpManager(NewtonManager):
 
     @classmethod
     def _supports_cuda_graph_capture(cls) -> bool:
-        # MANAGER-level capture stays OFF for adaptive/SAP. The adaptive solvers OWN their CUDA-graph
-        # capture INTERNALLY: step() builds a single-level per-N ScopedCapture of the whole
-        # step-doubling + N-substep sequence (n_max is host-read once per boundary, OUTSIDE the
-        # captured region, so the manager cannot know N and must not double-wrap). Returning True
-        # here would re-nest the solver's own capture inside the manager's -- the exact nested
-        # capture this refactor removed. So: solver self-captures; manager does not.
-        return not (cls._adaptive or cls._sap)
+        # MANAGER-level capture stays OFF for SAP (owns its capture internally). For the
+        # MuJoCo adaptive solver it is opt-in via NEWTON_MJ_ADAPTIVE_CONDITIONAL=1: in
+        # that mode the solver's data-dependent boundary loop records as a CUDA
+        # conditional while-node (wp.capture_while), with mujoco_warp's per-step scratch
+        # allocations hidden behind the MjwStepAllocCache shim (CUDA forbids allocation
+        # nodes inside conditional bodies). By default the adaptive solver instead owns
+        # its capture internally (one regular graph per iteration body, replayed with a
+        # 4-byte boundary-flag poll), which the manager must not wrap.
+        if cls._sap:
+            return False
+        if cls._adaptive:
+            return os.environ.get("NEWTON_MJ_ADAPTIVE_CONDITIONAL", "0") == "1"
+        return True
 
     @classmethod
     def _log_adaptive_telemetry(cls) -> None:

@@ -1490,8 +1490,24 @@ class NewtonManager(PhysicsManager):
             with Timer(name="newton_cuda_graph", msg="CUDA graph took:"):
                 if cls._usdrt_stage is None:
                     simulate = cls._simulate_full if cls._is_all_graphable() else cls._simulate_physics_only
-                    with wp.ScopedCapture() as capture:
-                        simulate()
+                    # Adaptive (conditional-march mode): warm one step eagerly so kernel
+                    # modules, mujoco_warp lazy init, and the alloc cache are all
+                    # populated OUTSIDE the capture -- a conditional body graph may not
+                    # record allocations. Mirrors _capture_relaxed_graph's warmup.
+                    if getattr(cls, "_adaptive", False):
+                        with wp.ScopedDevice(device):
+                            simulate()
+                        wp.synchronize_device(device)
+                    try:
+                        with wp.ScopedCapture() as capture:
+                            simulate()
+                    except Exception as exc:
+                        # e.g. conditional-graph nodes unsupported by the driver, or a
+                        # solver op that cannot record. Fall back to eager execution
+                        # instead of failing simulation startup.
+                        NewtonManager._graph = None
+                        logger.warning("Newton CUDA graph capture failed (%s); using eager execution.", exc)
+                        return
                     NewtonManager._graph = capture.graph
                     logger.info("Newton CUDA graph captured (standard Warp mode)")
 

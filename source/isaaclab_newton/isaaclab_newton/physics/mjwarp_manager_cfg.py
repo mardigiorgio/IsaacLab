@@ -123,9 +123,11 @@ class MJWarpSolverCfg(NewtonSolverCfg):
     """Use the error-controlled adaptive solver :class:`~newton.solvers.SolverMuJoCoAdaptive` (step-doubling)
     instead of the fixed-step :class:`~newton.solvers.SolverMuJoCo`.
 
-    When ``True``, the manager drives the solver via ``step_dt`` once per substep (the solver owns its inner
-    dt loop and its own contact pipeline) and CUDA-graph capture is disabled (the per-frame substep count is
-    data-dependent). The remaining MuJoCo-Warp fields above are forwarded to the underlying solver.
+    When ``True``, the manager drives the solver via ``step`` once per substep (the solver owns its inner
+    dt loop and its own contact pipeline) and manager-level CUDA-graph capture is disabled (the
+    data-dependent loop cannot be a conditional graph node because mujoco_warp allocates per step; the
+    solver instead replays its own per-iteration graph, ``NEWTON_MJ_ADAPTIVE_GRAPH=0`` disables that).
+    The remaining MuJoCo-Warp fields above are forwarded to the underlying solver.
     """
 
     adaptive_tol: float = 1e-3
