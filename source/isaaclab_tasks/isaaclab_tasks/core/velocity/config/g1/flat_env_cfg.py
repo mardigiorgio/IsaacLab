@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-from isaaclab_newton.physics import MJWarpSolverCfg, NewtonCfg
+from isaaclab_newton.physics import MJWarpSolverCfg, NewtonCfg, NewtonShapeCfg
 from isaaclab_physx.physics import PhysxCfg
 
 from isaaclab.managers import SceneEntityCfg
@@ -27,6 +27,13 @@ class PhysicsCfg(PresetCfg):
             integrator="implicitfast",
         ),
         num_substeps=1,
+        # Stiff foot-ground contact: solref (1 ms, 1.0) instead of the 20 ms default
+        # compliance that lets feet sink ~1-2 cm at footfall. The physics step here
+        # is 5 ms (sim.dt 0.005, num_substeps 1): at this stiffness that is in the
+        # penetration-tail regime for the fixed-step solver (measured on the
+        # single-impact probe: p90 5 mm tail at dt=5 ms, clean at <=2 ms); the
+        # adaptive solver removes the tail at any tolerance.
+        default_shape_cfg=NewtonShapeCfg(ke=1.0e6, kd=2000.0),
         debug_mode=False,
     )
 

@@ -75,6 +75,23 @@ class NewtonShapeCfg:
     gap: float = 0.01
     """Default per-shape contact gap [m]. Newton's upstream default is ``None``."""
 
+    ke: float = 2.5e3
+    """Default contact elastic stiffness [N/m]. Newton's upstream default is ``2.5e3``.
+
+    On the MuJoCo-Warp backend, (:attr:`ke`, :attr:`kd`) convert to contact ``solref``
+    as timeconst = 2/kd, dampratio = (kd/2)*sqrt(1/ke) — BOTH must be > 0 or the
+    contact silently falls back to MuJoCo's default compliance (solref 0.02/1). The
+    upstream defaults reproduce exactly that default (20 ms timeconst), which lets
+    feet/graspers transiently sink ~v*timeconst at impact (~1-2 cm at 1 m/s).
+    Stiff example: ``ke=1e6, kd=2000`` -> solref (0.001, 1.0), sub-mm sink.
+    """
+
+    kd: float = 100.0
+    """Default contact damping [N·s/m]. Newton's upstream default is ``100.0``.
+
+    See :attr:`ke` for the solref conversion and the both-positive requirement.
+    """
+
 
 @configclass
 class NewtonCfg(PhysicsCfg):
