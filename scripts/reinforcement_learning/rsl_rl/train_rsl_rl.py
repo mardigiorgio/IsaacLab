@@ -36,6 +36,7 @@ from common import (
 from packaging import version
 
 import isaaclab_tasks  # noqa: F401
+from isaaclab_tasks.utils.physics_presets import PHYSICS_SOLVER_CHOICES as _SOLVER_CHOICES
 
 logger = logging.getLogger(__name__)
 
@@ -46,16 +47,6 @@ CLI_ARGS = import_local_module("isaaclab_rsl_rl_cli_args", RL_ROOT / "rsl_rl" / 
 # PLACEHOLDER: Extension template (do not remove this comment)
 with contextlib.suppress(ImportError):
     import isaaclab_tasks_experimental  # noqa: F401
-
-
-# Map the --solver CLI choice onto the Newton solver-cfg latches read by
-# NewtonMJWarpManager._build_solver (backend / adaptive / sap_adaptive).
-_SOLVER_CHOICES = {
-    "mujoco":          {"backend": "mujoco", "adaptive": False, "sap_adaptive": False},
-    "mujoco-adaptive": {"backend": "mujoco", "adaptive": True,  "sap_adaptive": False},
-    "sap":             {"backend": "sap",    "adaptive": False, "sap_adaptive": False},
-    "sap-adaptive":    {"backend": "sap",    "adaptive": False, "sap_adaptive": True},
-}
 
 
 def _apply_solver_choice(env_cfg, choice: str) -> None:

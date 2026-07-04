@@ -14,9 +14,13 @@ __all__ = [
     "hydra_task_config",
     "resolve_presets",
     "setup_preset_cli",
+    "PHYSICS_SOLVER_CHOICES",
+    "apply_physics_preset",
+    "apply_solver_choice",
 ]
 
 from .hydra import PresetCfg, preset, hydra_task_config, resolve_task_config, resolve_presets
 from .importer import import_packages
 from .parse_cfg import get_checkpoint_path, load_cfg_from_registry, parse_env_cfg
+from .physics_presets import PHYSICS_SOLVER_CHOICES, apply_physics_preset, apply_solver_choice
 from .preset_cli import setup_preset_cli
