@@ -267,3 +267,30 @@ def test_rigid_object_only_write_flags_world_mask():
 
         mask = NewtonManager._world_reset_mask.numpy()
         assert bool(mask[2]), "rigid-object-only write did not flag its world"
+
+
+def test_sap_fixed_partial_reset_does_not_destabilize_other_envs():
+    """Fixed-SAP's global warm-start clear on a single-env reset must not visibly
+    perturb the other envs' dynamics (warm-start refills within iterations)."""
+    with build_simulation_context(sim_cfg=_make_sim_cfg(SOLVER_MODES[2].values[0]()), auto_add_lighting=False) as sim:
+        scene = InteractiveScene(SeamSceneCfg(num_envs=NUM_ENVS, env_spacing=3.0))
+        sim.reset()
+        scene.reset()
+        _step(sim, scene, 30)  # settle into persistent ground contact
+        captured = scene.get_state(is_relative=True)
+        _step(sim, scene, 10)
+
+        cube = scene["cube"]
+        pos_before = cube.data.root_pos_w.torch.clone()
+
+        env_ids = torch.tensor([1], dtype=torch.int32, device=sim.device)
+        scene.reset_to(_select_env_state(captured, env_ids), env_ids=env_ids, is_relative=True)
+        _step(sim, scene, 5)
+
+        pos_after = cube.data.root_pos_w.torch
+        # untouched envs: settled cubes must not jump when env 1's reset
+        # clears the global SAP warm-start (allow small solver noise)
+        for w in (0, 2, 3):
+            drift = torch.linalg.vector_norm(pos_after[w] - pos_before[w]).item()
+            assert drift < 5e-3, f"env {w} cube drifted {drift:.2e} m after env 1's reset (warm-start clear)"
+        assert torch.isfinite(pos_after).all()

@@ -163,7 +163,13 @@ class MJWarpSolverCfg(NewtonSolverCfg):
     """SAP only: drive the error-controlled step-doubling controller over SAP
     (:class:`~newton.solvers.SolverSAPAdaptive`, even+global tiling) instead of fixed-step
     :class:`~newton.solvers.SolverSAP`. Overridable via ``NEWTON_SAP_ADAPTIVE=1``. Fixed-step SAP is the
-    RL-ideal (stable+consistent+fast); the adaptive layer adds error control for accuracy/dataset-gen."""
+    RL-ideal (stable+consistent+fast); the adaptive layer adds error control for accuracy/dataset-gen.
+
+    Note: on any env reset the fixed-step SAP path clears its contact
+    warm-start globally (``reset_runtime_state()`` has no per-world mask);
+    with staggered per-env resets (e.g. mimic datagen) untouched envs pay a
+    small re-convergence cost, measured to be dynamically negligible
+    (see ``test_mimic_state_seam.py``)."""
 
     sap_max_rigid_contact: int = 128
     """SAP only: per-world rigid-contact capacity (contact storage = this * num_envs)."""
