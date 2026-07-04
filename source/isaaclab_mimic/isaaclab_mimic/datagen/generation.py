@@ -157,6 +157,8 @@ def setup_env_config(
     generation_num_trials: int | None = None,
     recorder_cfg: RecorderManagerBaseCfg | None = None,
     dataset_compression: bool = True,
+    physics_preset: str | None = None,
+    solver: str | None = None,
 ) -> tuple[Any, Any]:
     """Configure the environment for data generation.
 
@@ -181,6 +183,15 @@ def setup_env_config(
     from isaaclab_tasks.utils.parse_cfg import parse_env_cfg
 
     env_cfg = parse_env_cfg(env_name, device=device, num_envs=num_envs)
+
+    if physics_preset is not None:
+        from isaaclab_tasks.utils.physics_presets import apply_physics_preset
+
+        env_cfg = apply_physics_preset(env_cfg, env_name, physics_preset)
+    if solver is not None:
+        from isaaclab_tasks.utils.physics_presets import apply_solver_choice
+
+        apply_solver_choice(env_cfg, solver)
 
     if generation_num_trials is not None:
         env_cfg.datagen_config.generation_num_trials = generation_num_trials

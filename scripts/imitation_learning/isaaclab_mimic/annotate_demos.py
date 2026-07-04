@@ -20,6 +20,19 @@ from isaaclab.utils.string import list_intersection, string_to_callable
 parser = argparse.ArgumentParser(description="Annotate demonstrations for Isaac Lab environments.")
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
 parser.add_argument(
+    "--physics_preset",
+    type=str,
+    default=None,
+    help="Named physics preset to apply to the env config (e.g. 'newton_mjwarp'). Default keeps the task default.",
+)
+parser.add_argument(
+    "--solver",
+    type=str,
+    default=None,
+    choices=["mujoco", "mujoco-adaptive", "sap", "sap-adaptive"],
+    help="Newton mjwarp solver variant. Requires a Newton physics preset (see --physics_preset).",
+)
+parser.add_argument(
     "--input_file", type=str, default="./datasets/dataset.hdf5", help="File name of the dataset to be annotated."
 )
 parser.add_argument(
@@ -196,6 +209,15 @@ def main():
         raise ValueError("Task/env name was not specified nor found in the dataset.")
 
     env_cfg = parse_env_cfg(env_name, device=args_cli.device, num_envs=1)
+
+    if args_cli.physics_preset is not None:
+        from isaaclab_tasks.utils.physics_presets import apply_physics_preset
+
+        env_cfg = apply_physics_preset(env_cfg, env_name, args_cli.physics_preset)
+    if args_cli.solver is not None:
+        from isaaclab_tasks.utils.physics_presets import apply_solver_choice
+
+        apply_solver_choice(env_cfg, args_cli.solver)
 
     env_cfg.env_name = env_name
 

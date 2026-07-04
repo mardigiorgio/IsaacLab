@@ -43,6 +43,19 @@ from isaaclab.utils.string import list_intersection, string_to_callable
 parser = argparse.ArgumentParser(description="Record demonstrations for Isaac Lab environments.")
 parser.add_argument("--task", type=str, required=True, help="Name of the task.")
 parser.add_argument(
+    "--physics_preset",
+    type=str,
+    default=None,
+    help="Named physics preset to apply to the env config (e.g. 'newton_mjwarp'). Default keeps the task default.",
+)
+parser.add_argument(
+    "--solver",
+    type=str,
+    default=None,
+    choices=["mujoco", "mujoco-adaptive", "sap", "sap-adaptive"],
+    help="Newton mjwarp solver variant. Requires a Newton physics preset (see --physics_preset).",
+)
+parser.add_argument(
     "--teleop_device",
     type=str,
     default=None,
@@ -257,6 +270,15 @@ def create_environment_config(
     except Exception as e:
         logger.error(f"Failed to parse environment configuration: {e}")
         exit(1)
+
+    if args_cli.physics_preset is not None:
+        from isaaclab_tasks.utils.physics_presets import apply_physics_preset
+
+        env_cfg = apply_physics_preset(env_cfg, args_cli.task, args_cli.physics_preset)
+    if args_cli.solver is not None:
+        from isaaclab_tasks.utils.physics_presets import apply_solver_choice
+
+        apply_solver_choice(env_cfg, args_cli.solver)
 
     # When --teleop_device is explicitly provided, use the legacy teleop_devices path
     # even if isaac_teleop is configured. Otherwise prefer isaac_teleop when available.

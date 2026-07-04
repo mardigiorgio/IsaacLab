@@ -17,6 +17,19 @@ from isaaclab.utils.string import list_intersection, string_to_callable
 # add argparse arguments
 parser = argparse.ArgumentParser(description="Generate demonstrations for Isaac Lab environments.")
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
+parser.add_argument(
+    "--physics_preset",
+    type=str,
+    default=None,
+    help="Named physics preset to apply to the env config (e.g. 'newton_mjwarp'). Default keeps the task default.",
+)
+parser.add_argument(
+    "--solver",
+    type=str,
+    default=None,
+    choices=["mujoco", "mujoco-adaptive", "sap", "sap-adaptive"],
+    help="Newton mjwarp solver variant. Requires a Newton physics preset (see --physics_preset).",
+)
 parser.add_argument("--generation_num_trials", type=int, help="Number of demos to be generated.", default=None)
 parser.add_argument(
     "--num_envs", type=int, default=1, help="Number of environments to instantiate for generating datasets."
@@ -113,6 +126,8 @@ def main():
         device=args_cli.device,
         generation_num_trials=args_cli.generation_num_trials,
         dataset_compression=not args_cli.disable_dataset_compression,
+        physics_preset=args_cli.physics_preset,
+        solver=args_cli.solver,
     )
 
     # Create environment
