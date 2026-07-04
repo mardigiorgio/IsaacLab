@@ -171,6 +171,10 @@ def setup_env_config(
         generation_num_trials: Optional override for number of trials
         recorder_cfg: Recorder manager configuration
         dataset_compression: Whether to enable dataset compression
+        physics_preset: Named physics preset to apply to the resolved config (e.g. ``"newton_mjwarp"``).
+            Defaults to None, which keeps the task's default physics backend.
+        solver: Newton MJWarp solver variant to latch onto the physics config. Requires a Newton
+            physics preset. Defaults to None.
 
     Returns:
         tuple containing:

@@ -266,7 +266,6 @@ def create_environment_config(
     # parse configuration
     try:
         env_cfg = parse_env_cfg(args_cli.task, device=args_cli.device, num_envs=1)
-        env_cfg.env_name = args_cli.task.split(":")[-1]
     except Exception as e:
         logger.error(f"Failed to parse environment configuration: {e}")
         exit(1)
@@ -279,6 +278,8 @@ def create_environment_config(
         from isaaclab_tasks.utils.physics_presets import apply_solver_choice
 
         apply_solver_choice(env_cfg, args_cli.solver)
+
+    env_cfg.env_name = args_cli.task.split(":")[-1]
 
     # When --teleop_device is explicitly provided, use the legacy teleop_devices path
     # even if isaac_teleop is configured. Otherwise prefer isaac_teleop when available.
