@@ -47,3 +47,14 @@ def test_ep_meta_handles_physx_without_solver_cfg():
     pa = ep_meta["physics_args"]
     assert pa["physics_cfg"] == "SimpleNamespace"
     assert "backend" not in pa
+
+
+def test_ep_meta_custom_cfg_physics_args_wins():
+    """A cfg-provided get_ep_meta with its own physics_args must not be overwritten."""
+    physics = SimpleNamespace(solver_cfg=SimpleNamespace(solver_type="mujoco_warp"))
+    manager = _manager_with_cfg(physics)
+    custom_meta = {"physics_args": {"backend": "custom"}, "other": 1}
+    manager._env.cfg.get_ep_meta = lambda: dict(custom_meta)
+    ep_meta = manager.get_ep_meta()
+    assert ep_meta["physics_args"] == {"backend": "custom"}
+    assert ep_meta["other"] == 1
