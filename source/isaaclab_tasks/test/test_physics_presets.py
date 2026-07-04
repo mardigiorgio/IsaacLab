@@ -10,7 +10,6 @@ from isaaclab.app import AppLauncher
 simulation_app = AppLauncher(headless=True).app
 
 import pytest
-
 from isaaclab_newton.physics import NewtonCfg
 
 import isaaclab_tasks  # noqa: F401  # registers tasks
@@ -49,3 +48,9 @@ def test_apply_solver_choice_requires_newton_physics():
     env_cfg = parse_env_cfg(TASK, device="cuda:0", num_envs=1)  # default = PhysX
     with pytest.raises(ValueError, match="solver_cfg"):
         apply_solver_choice(env_cfg, "mujoco-adaptive")
+
+
+def test_apply_physics_preset_rejects_unknown_preset():
+    env_cfg = parse_env_cfg(TASK, device="cuda:0", num_envs=1)
+    with pytest.raises(ValueError, match="nonexistent_preset"):
+        apply_physics_preset(env_cfg, TASK, "nonexistent_preset")

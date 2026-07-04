@@ -30,6 +30,10 @@ PHYSICS_SOLVER_CHOICES: dict[str, dict] = {
 def apply_physics_preset(env_cfg, task_name: str, preset_name: str):
     """Apply a named physics preset to an already-resolved env config.
 
+    **Contract:** Call this immediately after :func:`parse_env_cfg`, before any
+    other config mutations. Other mutations (e.g., manual field updates) are
+    discarded and must be applied after this function returns.
+
     Args:
         env_cfg: Env config returned by :func:`parse_env_cfg` (presets already
             collapsed to defaults).
@@ -37,11 +41,17 @@ def apply_physics_preset(env_cfg, task_name: str, preset_name: str):
         preset_name: Preset field name to select (e.g. ``"newton_mjwarp"``).
 
     Returns:
-        The env config with the preset applied. ``scene.num_envs`` and
-        ``sim.device`` are preserved from the input config.
+        The env config with the preset applied. ``scene.num_envs``,
+        ``sim.device``, and ``sim.use_fabric`` are preserved from the input
+        config.
+
+    Raises:
+        ValueError: If ``preset_name`` does not match any available preset
+            alternative.
     """
     num_envs = env_cfg.scene.num_envs
     device = env_cfg.sim.device
+    use_fabric = env_cfg.sim.use_fabric
     # parse_env_cfg already resolved every PresetCfg wrapper to its "default"
     # alternative, so re-running apply_overrides on that same object is a
     # no-op: the PresetCfg node it needs to walk no longer exists in the tree.
@@ -50,10 +60,18 @@ def apply_physics_preset(env_cfg, task_name: str, preset_name: str):
     # would have produced had the preset been chosen from the start.
     raw_cfg = load_cfg_from_registry(task_name, "env_cfg_entry_point")
     presets = {"env": collect_presets(raw_cfg), "agent": {}}
+    # Validate that preset_name matches at least one preset alternative.
+    available_names = set()
+    for path_dict in presets["env"].values():
+        available_names.update(path_dict.keys())
+    available_names.discard("default")
+    if preset_name not in available_names:
+        raise ValueError(f"Unknown preset '{preset_name}'. Available presets: {sorted(available_names)}")
     hydra_cfg = {"env": {}, "agent": None}
     env_cfg, _ = apply_overrides(raw_cfg, None, hydra_cfg, [preset_name], [], [], presets)
     env_cfg.scene.num_envs = num_envs
     env_cfg.sim.device = device
+    env_cfg.sim.use_fabric = use_fabric
     return env_cfg
 
 
