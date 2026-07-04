@@ -452,10 +452,27 @@ class RecorderManager(ManagerBase):
                 "render_interval": self._env.cfg.sim.render_interval,
                 "num_envs": self._env.cfg.scene.num_envs,
             }
-            return ep_meta
+        else:
+            # Add custom episode metadata if available
+            ep_meta = self._env.cfg.get_ep_meta()
 
-        # Add custom episode metadata if available
-        ep_meta = self._env.cfg.get_ep_meta()
+        # Stamp the physics backend + solver variant so datasets generated
+        # under different solvers remain distinguishable after the fact.
+        physics = getattr(self._env.cfg.sim, "physics", None)
+        physics_args: dict = {"physics_cfg": type(physics).__name__}
+        solver_cfg = getattr(physics, "solver_cfg", None)
+        if solver_cfg is not None:
+            physics_args.update(
+                {
+                    "solver_type": getattr(solver_cfg, "solver_type", None),
+                    "backend": getattr(solver_cfg, "backend", None),
+                    "adaptive": getattr(solver_cfg, "adaptive", None),
+                    "sap_adaptive": getattr(solver_cfg, "sap_adaptive", None),
+                    "adaptive_tol": getattr(solver_cfg, "adaptive_tol", None),
+                    "sim_dt": self._env.cfg.sim.dt,
+                }
+            )
+        ep_meta.setdefault("physics_args", physics_args)
         return ep_meta
 
     def export_episodes(self, env_ids: Sequence[int] | None = None, demo_ids: Sequence[int] | None = None) -> None:
