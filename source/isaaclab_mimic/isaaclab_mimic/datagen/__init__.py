@@ -9,6 +9,7 @@ from .data_generator import *
 from .datagen_info import *
 from .datagen_info_pool import *
 from .generation import *
+from .mimic_recorders import *
 from .selection_strategy import *
 from .utils import *
 from .waypoint import *

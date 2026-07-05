@@ -83,14 +83,13 @@ import torch
 
 from isaaclab.devices import Se3Keyboard, Se3KeyboardCfg, Se3SpaceMouse, Se3SpaceMouseCfg
 from isaaclab.envs import ManagerBasedRLMimicEnv
-from isaaclab.envs.mdp.recorders.recorders_cfg import ActionStateRecorderManagerCfg
-from isaaclab.managers import DatasetExportMode, RecorderTerm, RecorderTermCfg
-from isaaclab.utils.configclass import configclass
+from isaaclab.managers import DatasetExportMode
 from isaaclab.utils.datasets import HDF5DatasetFileHandler
 
 import isaaclab_mimic.envs  # noqa: F401
 from isaaclab_mimic.datagen.data_generator import DataGenerator
 from isaaclab_mimic.datagen.datagen_info_pool import DataGenInfoPool
+from isaaclab_mimic.datagen.mimic_recorders import MimicRecorderManagerCfg
 
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.utils.parse_cfg import parse_env_cfg
@@ -100,51 +99,6 @@ num_recorded = 0
 num_success = 0
 num_failures = 0
 num_attempts = 0
-
-
-class PreStepDatagenInfoRecorder(RecorderTerm):
-    """Recorder term that records the datagen info data in each step."""
-
-    def record_pre_step(self):
-        eef_pose_dict = {}
-        for eef_name in self._env.cfg.subtask_configs.keys():
-            eef_pose_dict[eef_name] = self._env.get_robot_eef_pose(eef_name)
-
-        datagen_info = {
-            "object_pose": self._env.get_object_poses(),
-            "eef_pose": eef_pose_dict,
-            "target_eef_pose": self._env.action_to_target_eef_pose(self._env.action_manager.action),
-        }
-        return "obs/datagen_info", datagen_info
-
-
-@configclass
-class PreStepDatagenInfoRecorderCfg(RecorderTermCfg):
-    """Configuration for the datagen info recorder term."""
-
-    class_type: type[RecorderTerm] = PreStepDatagenInfoRecorder
-
-
-class PreStepSubtaskTermsObservationsRecorder(RecorderTerm):
-    """Recorder term that records the subtask completion observations in each step."""
-
-    def record_pre_step(self):
-        return "obs/datagen_info/subtask_term_signals", self._env.get_subtask_term_signals()
-
-
-@configclass
-class PreStepSubtaskTermsObservationsRecorderCfg(RecorderTermCfg):
-    """Configuration for the step subtask terms observation recorder term."""
-
-    class_type: type[RecorderTerm] = PreStepSubtaskTermsObservationsRecorder
-
-
-@configclass
-class MimicRecorderManagerCfg(ActionStateRecorderManagerCfg):
-    """Mimic specific recorder terms."""
-
-    record_pre_step_datagen_info = PreStepDatagenInfoRecorderCfg()
-    record_pre_step_subtask_term_signals = PreStepSubtaskTermsObservationsRecorderCfg()
 
 
 class RateLimiter:
@@ -388,6 +342,9 @@ def main():
     env_cfg.observations.policy.concatenate_terms = False
 
     env_cfg.recorders = MimicRecorderManagerCfg()
+    # This script does not support subtask start-signal annotation; disable the recorder term
+    # (only used by the annotation tool) inherited from the shared MimicRecorderManagerCfg.
+    env_cfg.recorders.record_pre_step_subtask_start_signals = None
 
     env_cfg.recorders.dataset_export_mode = DatasetExportMode.EXPORT_NONE
     if args_cli.generated_output_file:
