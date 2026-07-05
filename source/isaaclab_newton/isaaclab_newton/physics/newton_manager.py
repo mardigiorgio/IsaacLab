@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import ctypes
+import gc
 import logging
 import re
 from abc import abstractmethod
@@ -369,12 +370,10 @@ class NewtonManager(PhysicsManager):
             # arrays or are referenced by the new graph. That manifests as
             # ``cudaErrorIllegalAddress`` on the first step after a repeated
             # ``sim.reset()`` (e.g. the mimic annotate replay loop). Dropping the
-            # references, forcing a collection, and synchronizing here guarantees
-            # every stale device buffer is returned to the pool before any new
+            # references, forcing a collection, and synchronizing here releases the
+            # manager-owned allocation set back to the pool before any new
             # allocation or capture occurs.
             if NewtonManager._graph is not None or NewtonManager._model is not None:
-                import gc
-
                 NewtonManager._graph = None
                 NewtonManager._graph_capture_pending = False
                 NewtonManager._solver = None
@@ -383,6 +382,8 @@ class NewtonManager(PhysicsManager):
                 NewtonManager._control = None
                 NewtonManager._contacts = None
                 NewtonManager._collision_pipeline = None
+                NewtonManager._adapter = None
+                NewtonManager._sap_model = None
                 NewtonManager._model = None
                 gc.collect()
                 device = PhysicsManager._device

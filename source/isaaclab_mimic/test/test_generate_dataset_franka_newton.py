@@ -82,10 +82,12 @@ def test_annotate_and_generate_on_newton(source_dataset, solver):
         f"stdout tail: {result.stdout[-3000:]}\nstderr tail: {result.stderr[-3000:]}"
     )
     yield_line = next(line for line in result.stdout.splitlines() if line.startswith("Annotation yield:"))
-    exported = int(yield_line.split(":")[1].strip().split("/")[0])
+    exported_str, total_str = yield_line.split(":")[1].strip().split("/")
+    exported = int(exported_str)
+    total = int(total_str.split()[0])
     if exported == 0:
         pytest.xfail(
-            f"cross-backend replay yielded 0/{yield_line.split('/')[1]} annotated episodes under"
+            f"cross-backend replay yielded {exported}/{total} annotated episodes under"
             f" --solver {solver} even with 5 retries — a real finding for the fidelity report, not"
             " a harness bug. Record it and move on."
         )

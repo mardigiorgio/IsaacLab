@@ -277,13 +277,18 @@ def main():
                                 env, episode, success_term
                             )
                         except RuntimeError as replay_error:
-                            # A hard physics-solver failure (e.g. the adaptive step-doubling
-                            # controller failing to converge within its iteration budget on a
-                            # difficult contact configuration) aborts the in-flight replay before
-                            # it can return a bool. Treat it like any other failed attempt:
-                            # replay_episode() calls env.sim.reset() at the top, which fully
-                            # reinitializes the solver, so the next retry recovers cleanly instead
-                            # of crashing the whole annotation run.
+                            # Only a SolverSAPAdaptive convergence failure (the adaptive
+                            # step-doubling controller failing to converge within its
+                            # iteration budget on a difficult contact configuration) is
+                            # treated as a failed attempt: replay_episode() calls
+                            # env.sim.reset() at the top, which fully reinitializes the
+                            # solver, so the next retry recovers cleanly instead of
+                            # crashing the whole annotation run. Anything else (CUDA
+                            # illegal memory access, CUDA OOM, etc.) is a real failure
+                            # that a retry cannot recover from -- letting it propagate
+                            # avoids masking it as a mundane "task not completed" attempt.
+                            if "failed to converge" not in str(replay_error):
+                                raise
                             print(
                                 f"\tReplay attempt {attempts_used} raised {type(replay_error).__name__}: {replay_error}"
                             )
