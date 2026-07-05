@@ -310,6 +310,10 @@ class PhysicsCfg(PresetCfg):
             ls_parallel=False,
             use_mujoco_contacts=False,
             ccd_iterations=35,
+            # Franka gripper + 3 stacked cubes + table produce enough simultaneous contacts that the
+            # SAP paths' default iteration budget (30) occasionally fails to converge (observed as
+            # SolverSAPAdaptive raising a hard RuntimeError mid-replay); double it for headroom.
+            sap_solver_iterations=64,
         ),
         collision_cfg=NewtonCollisionPipelineCfg(),
         default_shape_cfg=NewtonShapeCfg(),

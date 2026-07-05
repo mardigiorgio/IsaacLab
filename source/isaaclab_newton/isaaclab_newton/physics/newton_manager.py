@@ -360,6 +360,34 @@ class NewtonManager(PhysicsManager):
             soft: If True, skip full reinitialization.
         """
         if not soft:
+            # Quiesce the previous physics allocation set *before* rebuilding the
+            # model. The old CUDA graph exec and the old model/state/solver objects
+            # own memory-pool allocations; the objects sit in reference cycles, so
+            # without an explicit collect they are freed by the cyclic GC at an
+            # arbitrary later point — potentially *after* the new CUDA graph has been
+            # captured, releasing pool blocks that by then back the new model's
+            # arrays or are referenced by the new graph. That manifests as
+            # ``cudaErrorIllegalAddress`` on the first step after a repeated
+            # ``sim.reset()`` (e.g. the mimic annotate replay loop). Dropping the
+            # references, forcing a collection, and synchronizing here guarantees
+            # every stale device buffer is returned to the pool before any new
+            # allocation or capture occurs.
+            if NewtonManager._graph is not None or NewtonManager._model is not None:
+                import gc
+
+                NewtonManager._graph = None
+                NewtonManager._graph_capture_pending = False
+                NewtonManager._solver = None
+                NewtonManager._state_0 = None
+                NewtonManager._state_1 = None
+                NewtonManager._control = None
+                NewtonManager._contacts = None
+                NewtonManager._collision_pipeline = None
+                NewtonManager._model = None
+                gc.collect()
+                device = PhysicsManager._device
+                if device is not None and "cuda" in device:
+                    wp.synchronize_device(device)
             cls.start_simulation()
             cls.initialize_solver()
 

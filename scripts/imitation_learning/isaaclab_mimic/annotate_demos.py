@@ -272,7 +272,22 @@ def main():
                     # reductions): each attempt is an independent draw.
                     for attempt in range(1 + max(0, args_cli.retries)):
                         attempts_used = attempt + 1
-                        is_episode_annotated_successfully = annotate_episode_in_auto_mode(env, episode, success_term)
+                        try:
+                            is_episode_annotated_successfully = annotate_episode_in_auto_mode(
+                                env, episode, success_term
+                            )
+                        except RuntimeError as replay_error:
+                            # A hard physics-solver failure (e.g. the adaptive step-doubling
+                            # controller failing to converge within its iteration budget on a
+                            # difficult contact configuration) aborts the in-flight replay before
+                            # it can return a bool. Treat it like any other failed attempt:
+                            # replay_episode() calls env.sim.reset() at the top, which fully
+                            # reinitializes the solver, so the next retry recovers cleanly instead
+                            # of crashing the whole annotation run.
+                            print(
+                                f"\tReplay attempt {attempts_used} raised {type(replay_error).__name__}: {replay_error}"
+                            )
+                            is_episode_annotated_successfully = False
                         if is_episode_annotated_successfully or skip_episode:
                             break
                         if attempt < args_cli.retries:
