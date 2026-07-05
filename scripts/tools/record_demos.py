@@ -79,6 +79,15 @@ parser.add_argument(
     help="Number of continuous steps with task success for concluding a demo as successful. Default is 10.",
 )
 parser.add_argument(
+    "--record_subtask_signals",
+    action="store_true",
+    default=False,
+    help=(
+        "Record mimic datagen info and subtask term signals at record time (requires a Mimic env"
+        " implementing get_subtask_term_signals). The output dataset then needs no replay-based annotation."
+    ),
+)
+parser.add_argument(
     "--cloudxr_env",
     type=str,
     default="cloudxrjs",
@@ -154,12 +163,13 @@ import omni.ui as ui
 from isaaclab.devices import Se3Keyboard, Se3KeyboardCfg, Se3SpaceMouse, Se3SpaceMouseCfg
 from isaaclab.devices.openxr import remove_camera_configs
 from isaaclab.devices.teleop_device_factory import create_teleop_device
-from isaaclab.envs import DirectRLEnvCfg, ManagerBasedRLEnvCfg
+from isaaclab.envs import DirectRLEnvCfg, ManagerBasedRLEnvCfg, ManagerBasedRLMimicEnv
 from isaaclab.envs.mdp.recorders.recorders_cfg import ActionStateRecorderManagerCfg
 from isaaclab.envs.ui import EmptyWindow
 from isaaclab.managers import DatasetExportMode
 
 import isaaclab_mimic.envs  # noqa: F401
+from isaaclab_mimic.datagen.mimic_recorders import MimicRecorderManagerCfg
 from isaaclab_mimic.ui.instruction_display import InstructionDisplay, show_subtask_instructions
 
 import isaaclab_tasks  # noqa: F401
@@ -312,7 +322,13 @@ def create_environment_config(
     env_cfg.terminations.time_out = None
     env_cfg.observations.policy.concatenate_terms = False
 
-    env_cfg.recorders: ActionStateRecorderManagerCfg = ActionStateRecorderManagerCfg()
+    if args_cli.record_subtask_signals:
+        env_cfg.recorders = MimicRecorderManagerCfg()
+        # start signals are optional -- only record them if the env implements them (env support is
+        # validated after env creation; disable here since not every Mimic env implements them).
+        env_cfg.recorders.record_pre_step_subtask_start_signals = None
+    else:
+        env_cfg.recorders = ActionStateRecorderManagerCfg()
     env_cfg.recorders.dataset_export_dir_path = output_dir
     env_cfg.recorders.dataset_filename = output_file_name
     env_cfg.recorders.dataset_export_mode = DatasetExportMode.EXPORT_SUCCEEDED_ONLY
@@ -705,6 +721,15 @@ def main() -> None:
 
     # Create environment
     env = create_environment(env_cfg)
+
+    if args_cli.record_subtask_signals:
+        mimic_env = env.unwrapped
+        if not isinstance(mimic_env, ManagerBasedRLMimicEnv):
+            raise ValueError("--record_subtask_signals requires a Mimic environment (ManagerBasedRLMimicEnv).")
+        if mimic_env.get_subtask_term_signals.__func__ is ManagerBasedRLMimicEnv.get_subtask_term_signals:
+            raise NotImplementedError(
+                "--record_subtask_signals requires the environment to implement get_subtask_term_signals."
+            )
 
     # Run simulation loop
     current_recorded_demo_count = run_simulation_loop(env, None, success_term, rate_limiter, use_isaac_teleop)
