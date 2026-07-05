@@ -48,6 +48,15 @@ parser.add_argument(
     default=False,
     help="Enable annotating start points of subtasks.",
 )
+parser.add_argument(
+    "--retries",
+    type=int,
+    default=0,
+    help=(
+        "Number of extra replay attempts per episode when auto-annotation fails. Replays are"
+        " nondeterministic on the Newton backend, so a failed replay can succeed on retry."
+    ),
+)
 
 parser.add_argument("--external_callback", default=None, help="Fully qualified path to an externally defined callback.")
 # append AppLauncher cli args
@@ -247,6 +256,7 @@ def main():
     exported_episode_count = 0
     processed_episode_count = 0
     successful_task_count = 0  # Counter for successful task completions
+    attempts_histogram: dict[int, int] = {}
     with contextlib.suppress(KeyboardInterrupt) and torch.inference_mode():
         while simulation_app.is_running() and not simulation_app.is_exiting():
             # Iterate over the episodes in the loaded dataset file
@@ -256,12 +266,23 @@ def main():
                 episode = dataset_file_handler.load_episode(episode_name, env.device)
 
                 is_episode_annotated_successfully = False
+                attempts_used = 0
                 if args_cli.auto:
-                    is_episode_annotated_successfully = annotate_episode_in_auto_mode(env, episode, success_term)
+                    # replay is nondeterministic (adaptive dt, contact-pipeline
+                    # reductions): each attempt is an independent draw.
+                    for attempt in range(1 + max(0, args_cli.retries)):
+                        attempts_used = attempt + 1
+                        is_episode_annotated_successfully = annotate_episode_in_auto_mode(env, episode, success_term)
+                        if is_episode_annotated_successfully or skip_episode:
+                            break
+                        if attempt < args_cli.retries:
+                            print(f"\tReplay attempt {attempts_used} failed; retrying...")
                 else:
+                    attempts_used = 1
                     is_episode_annotated_successfully = annotate_episode_in_manual_mode(
                         env, episode, success_term, subtask_term_signal_names, subtask_start_signal_names
                     )
+                attempts_histogram[attempts_used] = attempts_histogram.get(attempts_used, 0) + 1
 
                 if is_episode_annotated_successfully and not skip_episode:
                     # set success to the recorded episode data and export to file
@@ -283,6 +304,10 @@ def main():
     print(
         f"Successful task completions: {successful_task_count}"
     )  # This line is used by the dataset generation test case to check if the expected number of demos were annotated
+    print(f"Annotation yield: {exported_episode_count}/{processed_episode_count} episodes")
+    if attempts_histogram:
+        histo = ", ".join(f"{n} attempt(s): {c} episode(s)" for n, c in sorted(attempts_histogram.items()))
+        print(f"Replay attempts histogram: {histo}")
     print("Exiting the app.")
 
     # Close environment after annotation is complete
