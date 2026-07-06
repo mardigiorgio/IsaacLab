@@ -269,11 +269,28 @@ class Articulation(BaseArticulation):
         # Reset the velocity-limit clamp's "previous commanded target" memory (see
         # write_data_to_sim) back to the default pose for the resetting envs, so a
         # stale pre-reset target cannot rate-limit the first post-reset command. This
-        # is an approximation -- the actual post-reset pose may be randomized around
-        # the default -- but avoids depending on reset-ordering relative to the joint
-        # state write.
+        # is a fallback for envs that are reset without a subsequent joint-position write --
+        # write_joint_position_to_sim_index/_mask re-seed this same buffer to the actually
+        # written pose whenever one occurs (e.g. reset-mode randomization or
+        # InteractiveScene.reset_to's state injection), which takes priority in wall-clock
+        # terms since it runs after this reset(). ``env_mask`` takes precedence over
+        # ``env_ids``, matching the wrench composers reset above.
         if getattr(self, "_velocity_limit_clamp_active", False):
-            if env_ids == slice(None):
+            if env_mask is not None:
+                wp.launch(
+                    shared_kernels.write_2d_data_to_buffer_with_mask,
+                    dim=(self.num_instances, self.num_joints),
+                    inputs=[
+                        self.data.default_joint_pos.warp,
+                        env_mask,
+                        self._ALL_JOINT_MASK,
+                    ],
+                    outputs=[
+                        self._prev_commanded_joint_pos_target,
+                    ],
+                    device=self.device,
+                )
+            elif env_ids == slice(None):
                 self._prev_commanded_joint_pos_target.assign(self.data.default_joint_pos.warp)
             else:
                 idx = env_ids if isinstance(env_ids, torch.Tensor) else torch.as_tensor(env_ids, device=self.device)
@@ -1097,6 +1114,15 @@ class Articulation(BaseArticulation):
         .. note::
             May trigger per-environment FK recomputation and solver reset (Kamino) for the affected environments.
 
+        .. note::
+            Also re-seeds the velocity-limit clamp's previous-commanded-target anchor (see
+            :meth:`reset` and :meth:`_clamp_joint_position_target_rate`) for the written
+            environments/joints to the written ``position``, so a subsequent
+            :meth:`write_data_to_sim` call does not rate-limit the next commanded target
+            against a stale pre-write anchor. This is what keeps state-injection paths (e.g.
+            :meth:`~isaaclab.scene.InteractiveScene.reset_to`, which never calls :meth:`reset`)
+            and reset-mode joint randomization consistent with the clamp.
+
         .. tip::
             Both the index and mask methods have dedicated optimized implementations. Performance is similar for both.
             However, to allow graphed pipelines, the mask method must be used.
@@ -1126,6 +1152,22 @@ class Articulation(BaseArticulation):
             ],
             device=self.device,
         )
+        # Re-seed the velocity-limit clamp's anchor for exactly the written envs/joints (see the
+        # note above) so it tracks every joint-position write, not just Articulation.reset().
+        if getattr(self, "_velocity_limit_clamp_active", False):
+            wp.launch(
+                shared_kernels.write_2d_data_to_buffer_with_indices,
+                dim=(env_ids.shape[0], joint_ids.shape[0]),
+                inputs=[
+                    position,
+                    env_ids,
+                    joint_ids,
+                ],
+                outputs=[
+                    self._prev_commanded_joint_pos_target,
+                ],
+                device=self.device,
+            )
         # Let the data class handle the invalidation of pose- and velocity-dependent properties.
         if not skip_forward:
             self.data._reset_pose(env_ids=env_ids)
@@ -1146,6 +1188,15 @@ class Articulation(BaseArticulation):
 
         .. note::
             May trigger per-environment FK recomputation and solver reset (Kamino) for the affected environments.
+
+        .. note::
+            Also re-seeds the velocity-limit clamp's previous-commanded-target anchor (see
+            :meth:`reset` and :meth:`_clamp_joint_position_target_rate`) for the written
+            environments/joints to the written ``position``, so a subsequent
+            :meth:`write_data_to_sim` call does not rate-limit the next commanded target
+            against a stale pre-write anchor. This is what keeps state-injection paths (e.g.
+            :meth:`~isaaclab.scene.InteractiveScene.reset_to`, which never calls :meth:`reset`)
+            and reset-mode joint randomization consistent with the clamp.
 
         .. tip::
             Both the index and mask methods have dedicated optimized implementations. Performance is similar for both.
@@ -1174,6 +1225,22 @@ class Articulation(BaseArticulation):
             ],
             device=self.device,
         )
+        # Re-seed the velocity-limit clamp's anchor for exactly the written envs/joints (see the
+        # note above) so it tracks every joint-position write, not just Articulation.reset().
+        if getattr(self, "_velocity_limit_clamp_active", False):
+            wp.launch(
+                shared_kernels.write_2d_data_to_buffer_with_mask,
+                dim=(env_mask.shape[0], joint_mask.shape[0]),
+                inputs=[
+                    position,
+                    env_mask,
+                    joint_mask,
+                ],
+                outputs=[
+                    self._prev_commanded_joint_pos_target,
+                ],
+                device=self.device,
+            )
         # Let the data class handle the invalidation of pose- and velocity-dependent properties.
         if not skip_forward:
             self.data._reset_pose(env_mask=env_mask)
