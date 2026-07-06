@@ -157,7 +157,16 @@ class MJWarpSolverCfg(NewtonSolverCfg):
     backend: str = "mujoco"
     """Inner physics backend: ``"mujoco"`` (MuJoCo-Warp, default) or ``"sap"`` (the vendored convex SAP
     contact solver :class:`~newton.solvers.SolverSAP`). Overridable at runtime via ``NEWTON_SOLVER`` or
-    ``NEWTON_SAP=1``. With ``"sap"`` the MuJoCo-Warp fields above are ignored; use the ``sap_*`` fields."""
+    ``NEWTON_SAP=1``. With ``"sap"`` the MuJoCo-Warp fields above are ignored; use the ``sap_*`` fields.
+
+    .. note::
+        Per-body :attr:`~isaaclab.sim.schemas.RigidBodyBaseCfg.disable_gravity` (e.g.
+        ``FRANKA_PANDA_HIGH_PD_CFG``'s gravity-free arm) is only honored on ``"mujoco"`` (fixed
+        and adaptive), which maps it onto MuJoCo-Warp's per-body ``gravcomp`` custom attribute.
+        SAP applies gravity per-world only and has no per-body mechanism; a scene with
+        ``disable_gravity`` bodies logs an actionable warning on SAP instead of silently sagging
+        those bodies under gravity.
+    """
 
     sap_adaptive: bool = False
     """SAP only: drive the error-controlled step-doubling controller over SAP

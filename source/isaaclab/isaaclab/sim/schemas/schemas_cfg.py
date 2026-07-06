@@ -488,18 +488,18 @@ class RigidBodyBaseCfg:
     PhysX honors this per-body via ``physxRigidBody:disableGravity``: setting True
     excludes the body from world gravity integration.
 
-    Newton currently consumes the same USD attribute at the **scene level** --
-    Newton's importer reads ``physxRigidBody:disableGravity`` on the scene prim
-    and uses it to drive the scene-wide ``builder.gravity`` flag (``import_usd.py:1212``).
-    Per-body intent is therefore partially honored on Newton: whichever rigid body
-    has the attribute authored ends up controlling scene-wide gravity, and other
-    bodies cannot be selectively excluded.
+    Newton's importer itself only reads ``physxRigidBody:disableGravity`` at the **scene**
+    level, driving the scene-wide ``builder.gravity`` flag (``import_usd.py:1212``) -- per-body
+    intent is not honored there. On top of that, Newton's MuJoCo-Warp solver modes (fixed-step
+    and adaptive) do honor this per-body: the manager re-reads the per-body USD attribute after
+    the model is built and maps it onto MuJoCo's per-body ``gravcomp`` mechanism before the
+    solver is constructed. Newton's SAP backend applies gravity per-world only and has no
+    per-body mechanism; a scene with ``disable_gravity`` bodies logs an actionable warning on
+    SAP instead of silently ignoring the flag.
 
     The field is placed on the base because the user-facing intent (per-body
     gravity exclusion for markers, sensors, kinematic targets) is universal physics
-    and PhysX honors it fully. Closing the Newton gap is a kernel-level fix
-    (introduce ``Model.body_disable_gravity`` boolean array consumed by the
-    integrator) that does not require a cfg-API change.
+    and PhysX honors it fully.
     """
 
 

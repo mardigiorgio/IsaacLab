@@ -16,11 +16,61 @@ from newton import Contacts, Model
 from newton.solvers import SolverMuJoCo, SolverMuJoCoAdaptive
 
 from isaaclab.physics import PhysicsManager
+from isaaclab.sim.utils.stage import get_current_stage
 
 from .mjwarp_manager_cfg import MJWarpSolverCfg
 from .newton_manager import NewtonManager
 
 logger = logging.getLogger(__name__)
+
+
+def _disable_gravity_body_mask(model: Model) -> np.ndarray:
+    """Return a per-body boolean mask, True where the body's USD prim (:attr:`Model.body_label`)
+    has ``physxRigidBody:disableGravity`` authored ``True``.
+
+    :class:`~isaaclab.sim.schemas.RigidBodyBaseCfg.disable_gravity` writes this PhysX-namespaced
+    attribute directly onto each rigid-body prim (see :meth:`~isaaclab.sim.schemas.modify_rigid_body_properties`);
+    Newton's USD importer only reads it at the physics-scene level (scene-wide gravity toggle), so this
+    reproduces the per-body intent by re-reading the same attribute from the prims the finalized model
+    was built from. Bodies with no valid backing prim default to ``False``.
+    """
+    mask = np.zeros(model.body_count, dtype=bool)
+    stage = get_current_stage()
+    for i, path in enumerate(model.body_label):
+        if not path:
+            continue
+        prim = stage.GetPrimAtPath(path)
+        if not prim.IsValid():
+            continue
+        attr = prim.GetAttribute("physxRigidBody:disableGravity")
+        if attr.IsValid() and bool(attr.Get()):
+            mask[i] = True
+    return mask
+
+
+def _apply_gravity_compensation(model: Model, mask: np.ndarray) -> None:
+    """Set MuJoCo-Warp per-body ``gravcomp=1.0`` for bodies flagged by ``mask``.
+
+    Must run on ``model`` before :class:`~newton.solvers.SolverMuJoCo` /
+    :class:`~newton.solvers.SolverMuJoCoAdaptive` construction: the solver copies
+    ``model.mujoco.gravcomp`` into its internal MJWarp model once, at construction time, and never
+    re-reads the Newton :class:`~newton.Model` afterward (verified: patching ``gravcomp`` post-construction
+    has no effect on the running solver).
+    """
+    if not mask.any():
+        return
+    gravcomp = getattr(getattr(model, "mujoco", None), "gravcomp", None)
+    if gravcomp is None:
+        logger.warning(
+            "NewtonMJWarpManager: %d body(ies) have disable_gravity=True, but this model has no "
+            "'mujoco.gravcomp' custom attribute registered -- gravity compensation cannot be applied "
+            "and these bodies will sag under gravity.",
+            int(mask.sum()),
+        )
+        return
+    gravcomp_np = gravcomp.numpy()
+    gravcomp_np[mask] = 1.0
+    gravcomp.assign(gravcomp_np)
 
 
 class NewtonMJWarpManager(NewtonManager):
@@ -63,7 +113,23 @@ class NewtonMJWarpManager(NewtonManager):
             backend = os.environ["NEWTON_SOLVER"]
         if os.environ.get("NEWTON_SAP") == "1":
             backend = "sap"
+
+        # Bodies whose IsaacLab cfg set disable_gravity=True (e.g. FRANKA_PANDA_HIGH_PD_CFG's
+        # gravity-free arm for its 400/80 PD tracking). MuJoCo-Warp honors this per body via
+        # gravcomp (see _apply_gravity_compensation); SAP has no per-body mechanism (gravity is
+        # applied per-world only, see sap_warp/sim/sap_runtime.py) so it can only warn.
+        disable_gravity_mask = _disable_gravity_body_mask(model)
+
         if backend == "sap":
+            if disable_gravity_mask.any():
+                logger.warning(
+                    "NewtonMJWarpManager: %d body(ies) in this scene have disable_gravity=True, "
+                    "but the SAP backend applies gravity per-world only and has no per-body "
+                    "gravity-compensation mechanism -- these bodies will sag under gravity on SAP. "
+                    "Use MJWarpSolverCfg(backend='mujoco') (fixed or adaptive) instead if per-body "
+                    "gravity compensation is required.",
+                    int(disable_gravity_mask.sum()),
+                )
             from newton.solvers import SolverSAP, SolverSAPAdaptive, sap_model_from_newton
 
             _env = os.environ.get
@@ -113,6 +179,10 @@ class NewtonMJWarpManager(NewtonManager):
             NewtonManager._use_single_state = True
             return
         cls._sap = False
+
+        # Must run before SolverMuJoCo/SolverMuJoCoAdaptive construction below (see
+        # _apply_gravity_compensation's docstring for why post-construction is too late).
+        _apply_gravity_compensation(model, disable_gravity_mask)
 
         # Adaptive is opt-in via the cfg field; NEWTON_ADAPTIVE=1 is a shell-level override for quick toggling.
         adaptive = bool(getattr(solver_cfg, "adaptive", False)) or os.environ.get("NEWTON_ADAPTIVE") == "1"
