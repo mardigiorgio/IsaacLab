@@ -316,7 +316,16 @@ class PhysicsCfg(PresetCfg):
             sap_solver_iterations=64,
         ),
         collision_cfg=NewtonCollisionPipelineCfg(),
-        default_shape_cfg=NewtonShapeCfg(),
+        # Stock MuJoCo-Warp default compliance (ke=2.5e3/kd=100, ~20 ms timeconst) lets the
+        # gripper pads sink ~F/ke = 1.6 cm into the cube at the ~40 N pinch force this task
+        # reaches, letting the cube squirt out of a nominally closed grasp. Stiffen contact
+        # (ke=1e6/kd=2000 -> solref (0.001, 1.0), sub-mm sink) so the fingers actually stall on
+        # the cube instead of closing through it. Arm/finger PD gains are intentionally left at
+        # their stock values here: the droop and over-fast finger closure that earlier probes
+        # papered over with detuned gains are now fixed at the source (per-body gravity
+        # compensation and drive velocity-limit clamping), so the high-PD gain assumptions the
+        # stock franka cfg relies on hold again.
+        default_shape_cfg=NewtonShapeCfg(ke=1e6, kd=2000),
         num_substeps=2,
         debug_mode=False,
     )

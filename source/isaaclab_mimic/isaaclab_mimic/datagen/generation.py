@@ -140,6 +140,18 @@ def env_loop(
                     print(f"Reached {generation_num_trials} successes/attempts. Exiting.")
                     break
 
+                # with @generation_guarantee, the loop above only stops on enough successes and would
+                # otherwise retry forever on a zero-success task; bound it on failures too. Without the
+                # guarantee, @generation_num_trials already bounds attempts, so this check is a no-op.
+                max_num_failures = env.cfg.datagen_config.max_num_failures
+                if generation_guarantee and num_failures >= max_num_failures:
+                    print(
+                        f"Reached max_num_failures ({max_num_failures}) with only {num_success} successes"
+                        f" out of {num_attempts} attempts. Exiting without reaching the requested"
+                        f" {generation_num_trials} successes."
+                    )
+                    break
+
             # check that simulation is stopped or not
             if env.sim.is_stopped():
                 break
