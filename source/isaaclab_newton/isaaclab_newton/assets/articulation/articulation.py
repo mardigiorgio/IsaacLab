@@ -995,6 +995,76 @@ class Articulation(BaseArticulation):
         if not skip_forward:
             self.data._reset_velocity(env_mask=env_mask, from_com=False)
 
+    def _reseed_velocity_limit_anchor_index(
+        self,
+        position: torch.Tensor | wp.array,
+        env_ids: wp.array,
+        joint_ids: wp.array,
+    ) -> None:
+        """Re-seed the velocity-limit clamp's previous-commanded-target anchor to ``position``.
+
+        Scatters ``position`` into :attr:`_prev_commanded_joint_pos_target` at exactly
+        ``env_ids``/``joint_ids`` (partial-data semantics), a no-op when the velocity-limit clamp
+        (see :meth:`_clamp_joint_position_target_rate`) is inactive. Called by every
+        joint-position write site that takes indices (:meth:`write_joint_position_to_sim_index`,
+        :meth:`write_joint_state_to_sim_index`) so the anchor tracks every write, not just
+        :meth:`reset`.
+
+        Args:
+            position: Joint positions just written. Shape is (len(env_ids), len(joint_ids)).
+            env_ids: Environment indices the write targeted.
+            joint_ids: Joint indices the write targeted.
+        """
+        if getattr(self, "_velocity_limit_clamp_active", False):
+            wp.launch(
+                shared_kernels.write_2d_data_to_buffer_with_indices,
+                dim=(env_ids.shape[0], joint_ids.shape[0]),
+                inputs=[
+                    position,
+                    env_ids,
+                    joint_ids,
+                ],
+                outputs=[
+                    self._prev_commanded_joint_pos_target,
+                ],
+                device=self.device,
+            )
+
+    def _reseed_velocity_limit_anchor_mask(
+        self,
+        position: torch.Tensor | wp.array,
+        env_mask: wp.array,
+        joint_mask: wp.array,
+    ) -> None:
+        """Re-seed the velocity-limit clamp's previous-commanded-target anchor to ``position``.
+
+        Overwrites :attr:`_prev_commanded_joint_pos_target` at ``env_mask``/``joint_mask`` with
+        ``position`` (full-data semantics), a no-op when the velocity-limit clamp (see
+        :meth:`_clamp_joint_position_target_rate`) is inactive. Called by every joint-position
+        write site that takes masks (:meth:`write_joint_position_to_sim_mask`,
+        :meth:`write_joint_state_to_sim_mask`) so the anchor tracks every write, not just
+        :meth:`reset`.
+
+        Args:
+            position: Joint positions just written. Shape is (num_instances, num_joints).
+            env_mask: Environment mask the write targeted.
+            joint_mask: Joint mask the write targeted.
+        """
+        if getattr(self, "_velocity_limit_clamp_active", False):
+            wp.launch(
+                shared_kernels.write_2d_data_to_buffer_with_mask,
+                dim=(env_mask.shape[0], joint_mask.shape[0]),
+                inputs=[
+                    position,
+                    env_mask,
+                    joint_mask,
+                ],
+                outputs=[
+                    self._prev_commanded_joint_pos_target,
+                ],
+                device=self.device,
+            )
+
     def write_joint_state_to_sim_index(
         self,
         *,
@@ -1011,6 +1081,15 @@ class Articulation(BaseArticulation):
 
         .. note::
             May trigger per-environment FK recomputation and solver reset (Kamino) for the affected environments.
+
+        .. note::
+            Also re-seeds the velocity-limit clamp's previous-commanded-target anchor (see
+            :meth:`reset` and :meth:`_clamp_joint_position_target_rate`) for the written
+            environments/joints to the written ``position``, so a subsequent
+            :meth:`write_data_to_sim` call does not rate-limit the next commanded target
+            against a stale pre-write anchor. This is what keeps state-injection paths (e.g.
+            :meth:`~isaaclab.scene.InteractiveScene.reset_to`, which never calls :meth:`reset`)
+            and reset-mode joint randomization consistent with the clamp.
 
         .. tip::
             Both the index and mask methods have dedicated optimized implementations. Performance is similar for both.
@@ -1045,6 +1124,9 @@ class Articulation(BaseArticulation):
             ],
             device=self.device,
         )
+        # Re-seed the velocity-limit clamp's anchor for exactly the written envs/joints (see the
+        # note above) so it tracks every joint-position write, not just Articulation.reset().
+        self._reseed_velocity_limit_anchor_index(position, env_ids, joint_ids)
         # Let the data class handle the invalidation of the pose and velocity related properties.
         if not skip_forward:
             self.data._reset_pose(env_ids=env_ids)
@@ -1066,6 +1148,15 @@ class Articulation(BaseArticulation):
 
         .. note::
             May trigger per-environment FK recomputation and solver reset (Kamino) for the affected environments.
+
+        .. note::
+            Also re-seeds the velocity-limit clamp's previous-commanded-target anchor (see
+            :meth:`reset` and :meth:`_clamp_joint_position_target_rate`) for the written
+            environments/joints to the written ``position``, so a subsequent
+            :meth:`write_data_to_sim` call does not rate-limit the next commanded target
+            against a stale pre-write anchor. This is what keeps state-injection paths (e.g.
+            :meth:`~isaaclab.scene.InteractiveScene.reset_to`, which never calls :meth:`reset`)
+            and reset-mode joint randomization consistent with the clamp.
 
         .. tip::
             Both the index and mask methods have dedicated optimized implementations. Performance is similar for both.
@@ -1100,6 +1191,9 @@ class Articulation(BaseArticulation):
             ],
             device=self.device,
         )
+        # Re-seed the velocity-limit clamp's anchor for exactly the written envs/joints (see the
+        # note above) so it tracks every joint-position write, not just Articulation.reset().
+        self._reseed_velocity_limit_anchor_mask(position, env_mask, joint_mask)
         # Let the data class handle the invalidation of the pose and velocity related properties.
         if not skip_forward:
             self.data._reset_pose(env_mask=env_mask)
@@ -1161,20 +1255,7 @@ class Articulation(BaseArticulation):
         )
         # Re-seed the velocity-limit clamp's anchor for exactly the written envs/joints (see the
         # note above) so it tracks every joint-position write, not just Articulation.reset().
-        if getattr(self, "_velocity_limit_clamp_active", False):
-            wp.launch(
-                shared_kernels.write_2d_data_to_buffer_with_indices,
-                dim=(env_ids.shape[0], joint_ids.shape[0]),
-                inputs=[
-                    position,
-                    env_ids,
-                    joint_ids,
-                ],
-                outputs=[
-                    self._prev_commanded_joint_pos_target,
-                ],
-                device=self.device,
-            )
+        self._reseed_velocity_limit_anchor_index(position, env_ids, joint_ids)
         # Let the data class handle the invalidation of pose- and velocity-dependent properties.
         if not skip_forward:
             self.data._reset_pose(env_ids=env_ids)
@@ -1234,20 +1315,7 @@ class Articulation(BaseArticulation):
         )
         # Re-seed the velocity-limit clamp's anchor for exactly the written envs/joints (see the
         # note above) so it tracks every joint-position write, not just Articulation.reset().
-        if getattr(self, "_velocity_limit_clamp_active", False):
-            wp.launch(
-                shared_kernels.write_2d_data_to_buffer_with_mask,
-                dim=(env_mask.shape[0], joint_mask.shape[0]),
-                inputs=[
-                    position,
-                    env_mask,
-                    joint_mask,
-                ],
-                outputs=[
-                    self._prev_commanded_joint_pos_target,
-                ],
-                device=self.device,
-            )
+        self._reseed_velocity_limit_anchor_mask(position, env_mask, joint_mask)
         # Let the data class handle the invalidation of pose- and velocity-dependent properties.
         if not skip_forward:
             self.data._reset_pose(env_mask=env_mask)

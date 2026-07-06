@@ -469,3 +469,75 @@ def test_joint_position_write_reseeds_clamp_anchor(backend):
         articulation.update(DT)
         measured = articulation.data.joint_pos.torch.clone()
         torch.testing.assert_close(measured, near_target, atol=5e-3, rtol=0.0)
+
+
+@pytest.mark.parametrize("backend", ["mujoco", "sap"])
+def test_joint_state_write_reseeds_clamp_anchor(backend):
+    """A mid-run fused joint-state write re-seeds the velocity-limit clamp's anchor too.
+
+    Mirrors :func:`test_joint_position_write_reseeds_clamp_anchor` above, but teleports via
+    :meth:`~isaaclab_newton.assets.Articulation.write_joint_state_to_sim_index` (the fused
+    position+velocity writer -- and the implementation the deprecated
+    :meth:`~isaaclab_newton.assets.Articulation.write_joint_state_to_sim` delegates to) instead of
+    the position-only writer used by the test above. The fused writer's position-writing kernel
+    launch is a separate code path from :meth:`~isaaclab_newton.assets.Articulation.
+    write_joint_position_to_sim_index`'s, so re-seeding the clamp anchor there can regress
+    independently of the position-only writer; this test exercises that path directly.
+    """
+    velocity_limit = 0.5
+    newton_cfg = NewtonCfg(
+        solver_cfg=_solver_cfg(backend), num_substeps=1, use_cuda_graph=False, enforce_velocity_limit=True
+    )
+    sim_cfg = SimulationCfg(dt=DT, physics=newton_cfg)
+    art_cfg = _single_joint_cfg(velocity_limit)
+
+    with build_simulation_context(
+        device="cuda:0", gravity_enabled=False, add_ground_plane=False, sim_cfg=sim_cfg
+    ) as sim:
+        sim._app_control_on_stop_handle = None
+        sim_utils.create_prim("/World/Env_0", "Xform")
+        articulation = Articulation(art_cfg.replace(prim_path="/World/Env_0/Robot"))
+
+        import omni.usd  # noqa: PLC0415
+
+        _fix_reversed_joints(omni.usd.get_context().get_stage())
+        sim.reset()
+        assert articulation.is_initialized
+
+        articulation.write_joint_position_to_sim_index(position=articulation.data.default_joint_pos.torch.clone())
+        articulation.write_joint_velocity_to_sim_index(velocity=articulation.data.default_joint_vel.torch.clone())
+
+        # Manufacture a stale anchor, as if a previous episode had commanded a far-away target and
+        # advanced the clamp's memory by one tick's worth of ramp before the episode ended.
+        home = articulation.data.joint_pos.torch.clone()
+        far_target = home + 2.0
+        articulation.set_joint_position_target_index(target=far_target)
+        articulation.write_data_to_sim()
+        sim.step()
+        articulation.update(DT)
+
+        # Simulate state injection via the fused writer: teleport position + zero velocity in a
+        # single write_joint_state_to_sim_index call, without going through Articulation.reset().
+        new_pose = torch.full_like(home, 1.4)
+        articulation.write_joint_state_to_sim_index(position=new_pose.clone(), velocity=torch.zeros_like(new_pose))
+
+        # Command a target close to the injected pose -- well within one tick's velocity_limit *
+        # dt budget.
+        small_delta = 0.5 * velocity_limit * DT
+        near_target = new_pose + small_delta
+        articulation.set_joint_position_target_index(target=near_target)
+        articulation.write_data_to_sim()
+
+        # Read the clamp kernel's output directly, before any physics step (see the rationale in
+        # test_joint_position_write_reseeds_clamp_anchor above).
+        commanded = wp.to_torch(articulation._joint_pos_target_sim).clone()
+        # Correctly re-seeded, the anchor sits at new_pose, so near_target passes through the clamp
+        # completely unmodified. Without the fused writer re-seeding the anchor, the first
+        # post-teleport command is spuriously clamped toward the stale pre-teleport anchor instead.
+        torch.testing.assert_close(commanded, near_target, atol=1e-6, rtol=0.0)
+
+        # Sanity-check the sim still steps stably with the (correctly) clamped-through target.
+        sim.step()
+        articulation.update(DT)
+        measured = articulation.data.joint_pos.torch.clone()
+        torch.testing.assert_close(measured, near_target, atol=5e-3, rtol=0.0)
