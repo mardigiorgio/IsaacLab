@@ -1,8 +1,8 @@
-Added
-^^^^^
+Changed
+^^^^^^^
 
-* Added :attr:`~isaaclab_newton.physics.NewtonCfg.enforce_velocity_limit` (default ``True``) to
-  rate-limit implicit-actuator joint position targets to each joint's configured drive velocity
+* Changed :attr:`~isaaclab_newton.physics.NewtonCfg.enforce_velocity_limit` to default ``True``,
+  rate-limiting implicit-actuator joint position targets to each joint's configured drive velocity
   limit (:attr:`~isaaclab_newton.assets.ArticulationData.joint_vel_limits`), matching PhysX's
   native drive behavior. Newton's MuJoCo-Warp solver explicitly drops the joint velocity limit
   and the vendored SAP solver has no velocity-limit concept at all, so a stiff implicit-PD joint
