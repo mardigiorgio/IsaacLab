@@ -267,9 +267,16 @@ class Articulation(BaseArticulation):
         self._instantaneous_wrench_composer.reset(env_ids, env_mask)
         self._permanent_wrench_composer.reset(env_ids, env_mask)
         # Reset the velocity-limit clamp's "previous commanded target" memory (see
-        # write_data_to_sim) back to the default pose for the resetting envs, so a
-        # stale pre-reset target cannot rate-limit the first post-reset command. This
-        # is a fallback for envs that are reset without a subsequent joint-position write --
+        # write_data_to_sim) to the MEASURED joint positions for the resetting envs, so a
+        # stale pre-reset target cannot rate-limit the first post-reset command. Seeding
+        # from the measured pose (not the default pose) matches PhysX's drive semantics --
+        # the drive rate-limits motion away from wherever the joint actually is -- and is
+        # what keeps the clamp inert for a robot that is never commanded: an anchor that
+        # disagrees with the actual joint state acts as a phantom position command that
+        # the clamped target must ramp away from, fabricating motion out of thin air
+        # (regression: an uncommanded Franka dove from its spawn pose to the default pose
+        # and swept back through a nearby object). This is a fallback for envs that are
+        # reset without a subsequent joint-position write --
         # write_joint_position_to_sim_index/_mask re-seed this same buffer to the actually
         # written pose whenever one occurs (e.g. reset-mode randomization or
         # InteractiveScene.reset_to's state injection), which takes priority in wall-clock
@@ -281,7 +288,7 @@ class Articulation(BaseArticulation):
                     shared_kernels.write_2d_data_to_buffer_with_mask,
                     dim=(self.num_instances, self.num_joints),
                     inputs=[
-                        self.data.default_joint_pos.warp,
+                        self.data.joint_pos.warp,
                         env_mask,
                         self._ALL_JOINT_MASK,
                     ],
@@ -291,11 +298,11 @@ class Articulation(BaseArticulation):
                     device=self.device,
                 )
             elif env_ids == slice(None):
-                self._prev_commanded_joint_pos_target.assign(self.data.default_joint_pos.warp)
+                self._prev_commanded_joint_pos_target.assign(self.data.joint_pos.warp)
             else:
                 idx = env_ids if isinstance(env_ids, torch.Tensor) else torch.as_tensor(env_ids, device=self.device)
                 if idx.numel() > 0:
-                    wp.to_torch(self._prev_commanded_joint_pos_target)[idx] = self.data.default_joint_pos.torch[idx]
+                    wp.to_torch(self._prev_commanded_joint_pos_target)[idx] = self.data.joint_pos.torch[idx]
 
     def write_data_to_sim(self):
         """Write external wrenches and joint commands to the simulation.
@@ -3602,8 +3609,12 @@ class Articulation(BaseArticulation):
             self._velocity_limit_clamp_active = bool(
                 (self.data.joint_vel_limits.torch < articulation_kernels.UNBOUNDED_JOINT_VELOCITY_LIMIT).any()
             )
+        # Seed the clamp's "previous commanded target" anchor from the MEASURED joint positions
+        # (the solver state's spawn pose), not the default pose: the anchor must agree with the
+        # actual joint state or it acts as a phantom position command the clamped target ramps
+        # away from, fabricating motion for robots that were never commanded (see reset()).
         if self._velocity_limit_clamp_active:
-            self._prev_commanded_joint_pos_target.assign(self.data.default_joint_pos.warp)
+            self._prev_commanded_joint_pos_target.assign(self.data.joint_pos.warp)
         # validate configuration
         self._validate_cfg()
         # update the robot data
