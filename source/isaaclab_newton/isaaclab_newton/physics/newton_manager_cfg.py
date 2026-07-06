@@ -171,6 +171,27 @@ class NewtonCfg(PhysicsCfg):
     meshes are intentional, for example thin or hollow MPM colliders.
     """
 
+    enforce_velocity_limit: bool = True
+    """Whether to rate-limit implicit-actuator position targets to each joint's configured
+    velocity limit (:attr:`~isaaclab_newton.assets.ArticulationData.joint_vel_limits`).
+
+    PhysX enforces a joint's drive velocity limit as part of its native drive dynamics; Newton's
+    solvers do not (MuJoCo-Warp explicitly drops ``joint_velocity_limit`` -- see
+    ``SolverMuJoCo``'s docstring -- and the vendored SAP solver has no velocity-limit concept
+    at all). Left unenforced, a stiff implicit-PD joint commanded a large position step can move
+    several times faster than the configured limit, which is enough to fling a grasped object
+    out of a gripper during contact-rich manipulation.
+
+    When ``True``, :meth:`~isaaclab_newton.assets.Articulation.write_data_to_sim` clamps the
+    per-control-tick change of each implicit joint's commanded position target (relative to the
+    previous tick's already-clamped target, not the measured position) to
+    ``velocity_limit * dt``, emulating PhysX's drive behavior at the actuator layer so it applies
+    identically across every Newton solver mode (MuJoCo-Warp fixed/adaptive, SAP fixed/adaptive).
+    Joints whose velocity limit is at or above the PhysX/Newton "no limit" sentinel
+    (``1.0e6`` [m/s or rad/s]) are left untouched. Set to ``False`` to restore the raw
+    (solver-dependent, potentially too-fast) target write.
+    """
+
     def __post_init__(self):
         # NewtonCfg.class_type is auto-derived from solver_cfg.class_type.
         # Refuse a user-set value: setting both is ambiguous and was

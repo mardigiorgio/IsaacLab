@@ -266,6 +266,19 @@ class Articulation(BaseArticulation):
         # reset external wrenches.
         self._instantaneous_wrench_composer.reset(env_ids, env_mask)
         self._permanent_wrench_composer.reset(env_ids, env_mask)
+        # Reset the velocity-limit clamp's "previous commanded target" memory (see
+        # write_data_to_sim) back to the default pose for the resetting envs, so a
+        # stale pre-reset target cannot rate-limit the first post-reset command. This
+        # is an approximation -- the actual post-reset pose may be randomized around
+        # the default -- but avoids depending on reset-ordering relative to the joint
+        # state write.
+        if getattr(self, "_velocity_limit_clamp_active", False):
+            if env_ids == slice(None):
+                self._prev_commanded_joint_pos_target.assign(self.data.default_joint_pos.warp)
+            else:
+                idx = env_ids if isinstance(env_ids, torch.Tensor) else torch.as_tensor(env_ids, device=self.device)
+                if idx.numel() > 0:
+                    wp.to_torch(self._prev_commanded_joint_pos_target)[idx] = self.data.default_joint_pos.torch[idx]
 
     def write_data_to_sim(self):
         """Write external wrenches and joint commands to the simulation.
@@ -317,6 +330,8 @@ class Articulation(BaseArticulation):
             self._apply_actuator_model()
             self.data._sim_bind_joint_effort.assign(self._joint_effort_target_sim)
             if self._has_implicit_actuators:
+                if self._velocity_limit_clamp_active:
+                    self._clamp_joint_position_target_rate()
                 self.data._sim_bind_joint_position_target.assign(self._joint_pos_target_sim)
                 self.data._sim_bind_joint_velocity_target.assign(self._joint_vel_target_sim)
 
@@ -3511,6 +3526,17 @@ class Articulation(BaseArticulation):
         self._process_cfg()
         self._process_actuators_cfg()
         self._process_tendons()
+        # Determine once whether the velocity-limit clamp needs to run at all: the cfg gate is
+        # on AND at least one joint has a real (non-sentinel) configured velocity limit. Skipping
+        # the kernel launch entirely in the common "no joint has a limit" case keeps this feature
+        # zero-cost by default (see write_data_to_sim / NewtonCfg.enforce_velocity_limit).
+        physics_cfg = getattr(self._sim_cfg, "physics", None)
+        if getattr(physics_cfg, "enforce_velocity_limit", True) and self.num_joints > 0:
+            self._velocity_limit_clamp_active = bool(
+                (self.data.joint_vel_limits.torch < articulation_kernels.UNBOUNDED_JOINT_VELOCITY_LIMIT).any()
+            )
+        if self._velocity_limit_clamp_active:
+            self._prev_commanded_joint_pos_target.assign(self.data.default_joint_pos.warp)
         # validate configuration
         self._validate_cfg()
         # update the robot data
@@ -3554,6 +3580,10 @@ class Articulation(BaseArticulation):
         self._joint_pos_target_sim = wp.zeros_like(self.data.joint_pos_target.warp, device=self.device)
         self._joint_vel_target_sim = wp.zeros_like(self.data.joint_pos_target.warp, device=self.device)
         self._joint_effort_target_sim = wp.zeros_like(self.data.joint_pos_target.warp, device=self.device)
+        # -- velocity-limit clamp's "previous commanded target" memory (see write_data_to_sim);
+        # seeded to the default joint pose once _process_actuators_cfg has run (see _initialize_impl).
+        self._prev_commanded_joint_pos_target = wp.zeros_like(self.data.joint_pos_target.warp, device=self.device)
+        self._velocity_limit_clamp_active = False
 
         # soft joint position limits (recommended not to be too close to limits).
         wp.launch(
@@ -3992,6 +4022,33 @@ class Articulation(BaseArticulation):
                 ],
                 device=self.device,
             )
+
+    def _clamp_joint_position_target_rate(self):
+        """Rate-limit ``_joint_pos_target_sim`` to each joint's configured velocity limit.
+
+        Called from :meth:`write_data_to_sim`, once per call, at whichever cadence the caller
+        invokes it -- for the standard (non-Newton-actuator) path this is once per physics tick
+        (see the decimation loop in :meth:`~isaaclab.envs.ManagerBasedEnv.step`), which is also
+        the cadence at which a new commanded target from the RL/control layer can actually
+        appear (:meth:`ActionManager.apply_action` re-applies the same processed action for
+        every tick within one control period). Using the physics tick's ``dt`` here therefore
+        bounds the aggregate change over one control period to
+        ``velocity_limit * (physics_dt * decimation) = velocity_limit * control_dt``, without
+        needing to know the decimation count explicitly.
+        """
+        wp.launch(
+            articulation_kernels.clamp_joint_position_target_rate,
+            dim=(self.num_instances, self.num_joints),
+            inputs=[
+                self.data.joint_vel_limits.warp,
+                SimulationManager.get_physics_dt(),
+            ],
+            outputs=[
+                self._prev_commanded_joint_pos_target,
+                self._joint_pos_target_sim,
+            ],
+            device=self.device,
+        )
 
     """
     Internal helpers -- Debugging.

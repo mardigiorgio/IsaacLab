@@ -757,3 +757,55 @@ def shift_jacobian_com_to_origin(
     dst[n, b, 3, dof] = omega[0]
     dst[n, b, 4, dof] = omega[1]
     dst[n, b, 5, dof] = omega[2]
+
+
+UNBOUNDED_JOINT_VELOCITY_LIMIT = 1.0e6
+"""Sentinel value [m/s or rad/s] for "no velocity limit configured" on a joint.
+
+Both PhysX's ``PhysxJointAPI.maxJointVelocity`` USD schema attribute and Newton's
+``ModelBuilder.JointDofConfig.velocity_limit`` default to exactly this value when a joint has no
+authored/configured limit. :func:`clamp_joint_position_target_rate` treats any
+:attr:`~isaaclab_newton.assets.ArticulationData.joint_vel_limits` entry at or above this threshold
+as unbounded and leaves the corresponding joint's target unmodified.
+"""
+
+
+@wp.kernel
+def clamp_joint_position_target_rate(
+    velocity_limit: wp.array2d(dtype=wp.float32),
+    dt: wp.float32,
+    prev_target: wp.array2d(dtype=wp.float32),
+    target: wp.array2d(dtype=wp.float32),
+):
+    """Rate-limit a commanded position target toward itself, in place.
+
+    Emulates a PhysX-style drive velocity limit for solvers that do not natively enforce
+    :attr:`~isaaclab_newton.assets.ArticulationData.joint_vel_limits` (see
+    :attr:`~isaaclab_newton.physics.NewtonCfg.enforce_velocity_limit` for the motivation). Each
+    call may move ``target`` by at most ``velocity_limit * dt`` relative to ``prev_target`` (the
+    previous call's already-clamped target, not the measured joint position) -- called once per
+    control tick, this bounds the aggregate change over one control period to
+    ``velocity_limit * control_dt``. Joints whose limit is at or above
+    :data:`UNBOUNDED_JOINT_VELOCITY_LIMIT` pass through unmodified.
+
+    Args:
+        velocity_limit: Per-joint configured velocity limit [m/s or rad/s]. Shape is
+            (num_instances, num_joints).
+        dt: Time elapsed since the previous call [s].
+        prev_target: Previous call's clamped commanded target [m or rad, depending on joint
+            type]. Updated in place to the newly clamped value. Shape is
+            (num_instances, num_joints).
+        target: Raw commanded position target [m or rad, depending on joint type] on entry,
+            clamped in place on exit. Shape is (num_instances, num_joints).
+    """
+    i, j = wp.tid()
+    limit = velocity_limit[i, j]
+    raw = target[i, j]
+    if limit < UNBOUNDED_JOINT_VELOCITY_LIMIT:
+        max_delta = limit * dt
+        prev = prev_target[i, j]
+        clamped = wp.clamp(raw, prev - max_delta, prev + max_delta)
+        target[i, j] = clamped
+        prev_target[i, j] = clamped
+    else:
+        prev_target[i, j] = raw
