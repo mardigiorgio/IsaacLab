@@ -10,6 +10,7 @@ from __future__ import annotations
 import inspect
 import logging
 import os
+import re
 
 import numpy as np
 from newton import Contacts, Model
@@ -23,6 +24,67 @@ from .newton_manager import NewtonManager
 
 logger = logging.getLogger(__name__)
 
+_DIGITS_RE = re.compile(r"\d+")
+
+
+def _prim_disable_gravity(stage, path: str) -> bool:
+    """Read ``physxRigidBody:disableGravity`` off the USD prim at ``path``.
+
+    Returns ``False`` for an empty path, a prim that no longer resolves, or an unauthored/invalid
+    attribute -- mirrors the previous inline per-body walk exactly.
+    """
+    if not path:
+        return False
+    prim = stage.GetPrimAtPath(path)
+    if not prim.IsValid():
+        return False
+    attr = prim.GetAttribute("physxRigidBody:disableGravity")
+    return bool(attr.IsValid() and bool(attr.Get()))
+
+
+def _template_world_body_partition(model: Model) -> tuple[int, int, int, int] | None:
+    """Return ``(template_start, template_end, per_world_tail, world_count)`` for the contiguous
+    block of world-0 body indices, or ``None`` if per-world bodies cannot be safely tiled from a
+    single template and the caller must fall back to walking every body.
+
+    :attr:`~newton.Model.body_world_start` always describes a clean, contiguous per-world
+    partition of body indices (an optional prefix/suffix of "global", world-index ``-1`` bodies --
+    e.g. a scene-wide ground plane -- around ``world_count`` per-world blocks); Newton's
+    ``ModelBuilder.finalize`` validates this by construction (see ``_validate_world_ordering`` in
+    ``newton/_src/sim/builder.py``), so IsaacLab does not need to re-check it.
+
+    What Newton does *not* guarantee -- and what the template-and-broadcast fast path in
+    :func:`_disable_gravity_body_mask` needs -- is that every per-world block is the *same size*
+    and lays out its bodies *identically* (up to the per-env numeric index baked into the USD
+    path, e.g. ``env_0`` vs ``env_1``). IsaacLab's env clones are structurally identical, but that
+    is an IsaacLab-level convention, not a Newton invariant, so it is verified here: block sizes
+    must match, and (cheaply, bounded by one env's body count rather than the total) world 0's and
+    world 1's labels must match once per-env digits are normalized out.
+    """
+    starts_arr = getattr(model, "body_world_start", None)
+    world_count = int(getattr(model, "world_count", 0) or 0)
+    if starts_arr is None or world_count <= 0:
+        return None
+    starts = starts_arr.numpy()
+    if len(starts) < world_count + 2:
+        return None
+
+    template_start, template_end = int(starts[0]), int(starts[1])
+    per_world_tail = int(starts[world_count])  # end of the last per-world block (== starts[-2])
+
+    block_sizes = starts[1 : world_count + 1] - starts[0:world_count]
+    if not np.all(block_sizes == block_sizes[0]):
+        return None
+
+    if world_count > 1:
+        next_start, next_end = int(starts[1]), int(starts[2])
+        template_labels = [_DIGITS_RE.sub("#", label) for label in model.body_label[template_start:template_end]]
+        next_labels = [_DIGITS_RE.sub("#", label) for label in model.body_label[next_start:next_end]]
+        if template_labels != next_labels:
+            return None
+
+    return template_start, template_end, per_world_tail, world_count
+
 
 def _disable_gravity_body_mask(model: Model) -> np.ndarray:
     """Return a per-body boolean mask, True where the body's USD prim (:attr:`Model.body_label`)
@@ -33,18 +95,49 @@ def _disable_gravity_body_mask(model: Model) -> np.ndarray:
     Newton's USD importer only reads it at the physics-scene level (scene-wide gravity toggle), so this
     reproduces the per-body intent by re-reading the same attribute from the prims the finalized model
     was built from. Bodies with no valid backing prim default to ``False``.
+
+    Cost: re-reading a USD prim + attribute per body is expensive (a live stage traversal), and this
+    runs on every full solver rebuild (every non-soft :meth:`NewtonManager.reset`, e.g. the mimic
+    annotate replay loop). Walking every body across every one of ``num_envs`` clones would make this
+    ``O(num_envs * bodies_per_env)``. IsaacLab's env clones are structurally identical and MJWarp's
+    per-body model params are shared across worlds regardless (``separate_worlds=True`` consumes only
+    world 0's template), so instead this reads world 0's prims once (see
+    :func:`_template_world_body_partition`) and broadcasts the result to every world -- ``O(1)`` in
+    ``num_envs``. "Global" bodies outside any per-env world (world index ``-1``, e.g. a shared ground
+    plane) are not per-env clones and have no template to broadcast from, so they are always read
+    directly; in practice there are few to none of them, so this stays cheap. If the per-world
+    partition does not cleanly tile (block sizes differ, or world 0/1 bodies differ once per-env
+    indices are normalized out), this falls back to the original full walk so behavior is unchanged
+    for heterogeneous, non-cloned scenes.
     """
     mask = np.zeros(model.body_count, dtype=bool)
+    if model.body_count == 0:
+        return mask
     stage = get_current_stage()
-    for i, path in enumerate(model.body_label):
-        if not path:
-            continue
-        prim = stage.GetPrimAtPath(path)
-        if not prim.IsValid():
-            continue
-        attr = prim.GetAttribute("physxRigidBody:disableGravity")
-        if attr.IsValid() and bool(attr.Get()):
-            mask[i] = True
+
+    partition = _template_world_body_partition(model)
+    if partition is None:
+        for i, path in enumerate(model.body_label):
+            mask[i] = _prim_disable_gravity(stage, path)
+        return mask
+
+    template_start, template_end, per_world_tail, world_count = partition
+
+    # Global (non-cloned) bodies: no template to broadcast from, so read them directly. Bounded by
+    # the (typically zero) number of such bodies, not by num_envs.
+    for i in range(0, template_start):
+        mask[i] = _prim_disable_gravity(stage, model.body_label[i])
+    for i in range(per_world_tail, model.body_count):
+        mask[i] = _prim_disable_gravity(stage, model.body_label[i])
+
+    # Per-env (cloned) bodies: read world 0's prims once and broadcast to every world.
+    template_mask = np.fromiter(
+        (_prim_disable_gravity(stage, path) for path in model.body_label[template_start:template_end]),
+        dtype=bool,
+        count=template_end - template_start,
+    )
+    if template_mask.any():
+        mask[template_start:per_world_tail] = np.tile(template_mask, world_count)
     return mask
 
 
@@ -56,6 +149,12 @@ def _apply_gravity_compensation(model: Model, mask: np.ndarray) -> None:
     ``model.mujoco.gravcomp`` into its internal MJWarp model once, at construction time, and never
     re-reads the Newton :class:`~newton.Model` afterward (verified: patching ``gravcomp`` post-construction
     has no effect on the running solver).
+
+    .. note::
+        This unconditionally overwrites ``gravcomp`` to ``1.0`` for every masked body: a body with
+        ``disable_gravity=True`` always ends up fully gravity-compensated, even if a user-authored
+        ``mujoco:gravcomp`` custom value (any value other than ``1.0``) was set on that body. There is
+        no way to author partial gravity compensation on a ``disable_gravity=True`` body today.
     """
     if not mask.any():
         return
@@ -69,6 +168,7 @@ def _apply_gravity_compensation(model: Model, mask: np.ndarray) -> None:
         )
         return
     gravcomp_np = gravcomp.numpy()
+    # disable_gravity=True always wins: forces gravcomp=1.0, overwriting any user-authored value.
     gravcomp_np[mask] = 1.0
     gravcomp.assign(gravcomp_np)
 

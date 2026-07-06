@@ -166,6 +166,11 @@ class MJWarpSolverCfg(NewtonSolverCfg):
         SAP applies gravity per-world only and has no per-body mechanism; a scene with
         ``disable_gravity`` bodies logs an actionable warning on SAP instead of silently sagging
         those bodies under gravity.
+
+    .. note::
+        ``disable_gravity=True`` always forces that body's ``gravcomp`` to ``1.0``, overwriting any
+        user-authored ``mujoco:gravcomp`` custom value on the same body (see
+        ``mjwarp_manager._apply_gravity_compensation``).
     """
 
     sap_adaptive: bool = False
