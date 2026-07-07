@@ -19,8 +19,8 @@ from isaaclab.envs.utils.spaces import sample_space
 from isaaclab.sim import SimulationContext
 from isaaclab.utils.version import get_isaac_sim_version
 
-from isaaclab_tasks.utils.hydra import apply_overrides, collect_presets
 from isaaclab_tasks.utils.parse_cfg import load_cfg_from_registry, parse_env_cfg
+from isaaclab_tasks.utils.physics_presets import apply_physics_preset
 
 # Map of task IDs to the reason for marking the corresponding parametrized
 # test cases as expected failures.  Tests that consume :func:`setup_environment`
@@ -374,16 +374,16 @@ def _check_random_actions(
         env_cfg = parse_env_cfg(task_name, device=device, num_envs=num_envs)
         # apply physics preset override before creating the environment
         if physics_preset_name is not None:
-            # parse_env_cfg already resolved PresetCfg wrappers to their default,
-            # so we load the raw config to retrieve preset alternatives.
-            raw_cfg = load_cfg_from_registry(task_name, "env_cfg_entry_point")
-            presets = {"env": collect_presets(raw_cfg), "agent": {}}
-            hydra_cfg = {"env": env_cfg.to_dict(), "agent": None}
-            apply_overrides(env_cfg, None, hydra_cfg, [physics_preset_name], [], [], presets)
-            # Re-apply num_envs since apply_overrides may have replaced
-            # the scene config with the preset's default num_envs.
-            if num_envs is not None:
-                env_cfg.scene.num_envs = num_envs
+            # parse_env_cfg already resolved PresetCfg wrappers to their default (PhysX),
+            # so the named preset must be re-applied from the raw registry config. This
+            # also re-preserves scene.num_envs, sim.device, and sim.use_fabric, so no
+            # further re-application is needed here.
+            env_cfg = apply_physics_preset(env_cfg, task_name, physics_preset_name)
+            if "newton" in physics_preset_name:
+                assert type(env_cfg.sim.physics).__name__ == "NewtonCfg", (
+                    f"Expected preset '{physics_preset_name}' to resolve env_cfg.sim.physics to a Newton config, "
+                    f"got {type(env_cfg.sim.physics).__name__!r} instead."
+                )
         # set config args
         env_cfg.sim.create_stage_in_memory = create_stage_in_memory
         if disable_clone_in_fabric:
