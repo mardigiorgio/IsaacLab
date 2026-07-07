@@ -400,15 +400,20 @@ def modify_articulation_root_properties(
                 from omni.physx.scripts import utils as physx_utils
 
                 physx_utils.createJoint(stage=stage, joint_type="Fixed", from_prim=None, to_prim=articulation_prim)
-            except ModuleNotFoundError:
+            except ImportError:
                 # kitless launch (e.g. Newton headless training): author the same
                 # joint with pure USD — body1 is the root link, body0 is the world
                 # frame, anchored at the root link's current world pose
                 from pxr import Gf
 
                 world_tf = UsdGeom.Xformable(articulation_prim).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+                # drop any inherited scale/shear so the extracted rotation is a unit quaternion
+                world_tf = world_tf.RemoveScaleShear()
                 world_rot = Gf.Quatf(world_tf.ExtractRotationQuat())
-                fixed_joint = UsdPhysics.FixedJoint.Define(stage, articulation_prim.GetPath().AppendChild("FixedJoint"))
+                joint_path = articulation_prim.GetPath().AppendChild("FixedJoint")
+                while stage.GetPrimAtPath(joint_path).IsValid():
+                    joint_path = joint_path.GetParentPath().AppendChild(f"{joint_path.name}_0")
+                fixed_joint = UsdPhysics.FixedJoint.Define(stage, joint_path)
                 fixed_joint.CreateBody1Rel().SetTargets([articulation_prim.GetPath()])
                 fixed_joint.CreateLocalPos0Attr().Set(Gf.Vec3f(world_tf.ExtractTranslation()))
                 fixed_joint.CreateLocalRot0Attr().Set(world_rot)

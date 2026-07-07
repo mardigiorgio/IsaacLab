@@ -18,10 +18,19 @@ Changed
   the cube spawn to the robot-side table edge. A reachability study showed the
   standing pose cannot bring a palm closer than ~0.26 m to the cube, so
   policies trained against the old geometry were unable to reach it. Removed
-  ``ee_to_cube_distance_reward`` in favor of the palm-based reward terms.
+  ``ee_to_cube_distance_reward`` in favor of the palm-based reward terms
+  (migrate by using ``palms_to_cube_distance_reward`` with the palm body
+  names).
+* **Breaking:** Removed the ``success`` termination from the G1 pick-cube task
+  and renamed the ``lifted`` reward term to ``lifted_hold``: terminating on
+  lift while paying dense height rewards teaches hovering below the threshold.
+  Detect success by monitoring the ``lifted_hold`` reward term (positive while
+  the cube is held above the success height).
 * Changed the G1 pick-cube arm and hand actuators to hardware-plausible effort
   limits (60 N·m arms, 5 N·m fingers) so arbitrary policy actions cannot
-  destabilize the solver, and clipped the raw joint-position actions.
+  destabilize the solver, and clipped the raw joint-position actions. Restore
+  the asset values by overriding ``scene.robot.actuators`` and
+  ``actions.upper_body.clip`` in a derived environment config.
 
 Fixed
 ^^^^^

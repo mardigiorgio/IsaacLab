@@ -39,7 +39,7 @@ def object_grasped_heuristic(
     """
     robot = env.scene[robot_cfg.name]
     obj = env.scene[object_cfg.name]
-    rest_z = obj.data.default_root_state.torch[:, 2] + env.scene.env_origins[:, 2]
+    rest_z = obj.data.default_root_pose.torch[:, 2] + env.scene.env_origins[:, 2]
     lifted = obj.data.root_pos_w.torch[:, 2] > rest_z + height_delta
     palm_idx = robot.body_names.index(palm_link_name)
     palm_pos = robot.data.body_pos_w.torch[:, palm_idx, :]
@@ -68,59 +68,22 @@ class PickPlaceFixedBaseG1MimicEnvCfg(FixedBaseUpperBodyIKG1EnvCfg, MimicEnvCfg)
         # --record_subtask_signals (no replay-based annotation pass needed)
         self.observations.subtask_terms = SubtaskTermsObsCfg()
 
+        # non-default datagen settings only; everything else keeps DataGenConfig defaults
         self.datagen_config.name = "demo_src_g1_fixedbase_pickplace_task_D0"
-        self.datagen_config.generation_guarantee = True
-        self.datagen_config.generation_keep_failed = False
         self.datagen_config.generation_num_trials = 100
-        self.datagen_config.generation_select_src_per_subtask = False
-        self.datagen_config.generation_select_src_per_arm = False
-        self.datagen_config.generation_relative = False
-        self.datagen_config.generation_joint_pos = False
-        self.datagen_config.generation_transform_first_robot_pose = False
-        self.datagen_config.generation_interpolate_from_last_target_pose = True
         self.datagen_config.max_num_failures = 25
-        self.datagen_config.num_demo_to_render = 10
-        self.datagen_config.num_fail_demo_to_render = 25
-        self.datagen_config.seed = 1
 
-        # right arm: pick the object (ends on grasp_1), then place it (final)
-        self.subtask_configs["right"] = [
-            SubTaskConfig(
+        def _subtask(subtask_term_signal: str | None = None, num_interpolation_steps: int = 5) -> SubTaskConfig:
+            return SubTaskConfig(
                 object_ref="object",
-                subtask_term_signal="grasp_1",
-                first_subtask_start_offset_range=(0, 0),
-                subtask_term_offset_range=(0, 0),
+                subtask_term_signal=subtask_term_signal,
                 selection_strategy="nearest_neighbor_object",
                 selection_strategy_kwargs={"nn_k": 3},
                 action_noise=0.003,
-                num_interpolation_steps=5,
-                num_fixed_steps=0,
-                apply_noise_during_interpolation=False,
-            ),
-            SubTaskConfig(
-                object_ref="object",
-                subtask_term_signal=None,
-                subtask_term_offset_range=(0, 0),
-                selection_strategy="nearest_neighbor_object",
-                selection_strategy_kwargs={"nn_k": 3},
-                action_noise=0.003,
-                num_interpolation_steps=5,
-                num_fixed_steps=0,
-                apply_noise_during_interpolation=False,
-            ),
-        ]
-
-        # left arm: single passive subtask (mirrors the locomanip config)
-        self.subtask_configs["left"] = [
-            SubTaskConfig(
-                object_ref="object",
-                subtask_term_signal=None,
-                subtask_term_offset_range=(0, 0),
-                selection_strategy="nearest_neighbor_object",
-                selection_strategy_kwargs={"nn_k": 3},
-                action_noise=0.003,
-                num_interpolation_steps=0,
-                num_fixed_steps=0,
-                apply_noise_during_interpolation=False,
+                num_interpolation_steps=num_interpolation_steps,
             )
-        ]
+
+        # right arm: pick the object (ends on grasp_1), then place it (final,
+        # needs no signal); left arm: single passive subtask
+        self.subtask_configs["right"] = [_subtask("grasp_1"), _subtask()]
+        self.subtask_configs["left"] = [_subtask(num_interpolation_steps=0)]

@@ -163,7 +163,13 @@ class ObservationsCfg:
         )
         cube_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
         cube_orientation = ObsTerm(func=mdp.object_orientation_in_robot_root_frame)
-        palm_to_cube = ObsTerm(func=mdp.palms_to_object_vector)
+        # SceneEntityCfgs must be passed via params: managers only resolve
+        # body/joint names to indices for cfgs found in params, never for a
+        # term function's default arguments
+        palm_to_cube = ObsTerm(
+            func=mdp.palms_to_object_vector,
+            params={"robot_cfg": SceneEntityCfg("robot", body_names=["left_hand_palm_link", "right_hand_palm_link"])},
+        )
         actions = ObsTerm(func=mdp.last_action)
 
         def __post_init__(self):
@@ -198,11 +204,39 @@ class EventCfg:
 
 @configclass
 class RewardsCfg:
-    """Staged pick-up shaping: reach -> close fingers -> lift -> hold."""
+    """Staged pick-up shaping: reach -> close fingers -> lift -> hold.
 
-    reaching = RewTerm(func=mdp.palms_to_cube_distance_reward, params={"std": 0.30}, weight=1.0)
-    reaching_fine = RewTerm(func=mdp.palms_to_cube_distance_reward, params={"std": 0.05}, weight=1.0)
-    grasp_fingers = RewTerm(func=mdp.fingers_closed_near_cube, params={"distance_threshold": 0.08}, weight=1.0)
+    SceneEntityCfgs are passed via ``params`` deliberately: managers only
+    resolve body/joint names for cfgs found there, never for a term
+    function's default arguments.
+    """
+
+    reaching = RewTerm(
+        func=mdp.palms_to_cube_distance_reward,
+        params={
+            "std": 0.30,
+            "robot_cfg": SceneEntityCfg("robot", body_names=["left_hand_palm_link", "right_hand_palm_link"]),
+        },
+        weight=1.0,
+    )
+    reaching_fine = RewTerm(
+        func=mdp.palms_to_cube_distance_reward,
+        params={
+            "std": 0.05,
+            "robot_cfg": SceneEntityCfg("robot", body_names=["left_hand_palm_link", "right_hand_palm_link"]),
+        },
+        weight=1.0,
+    )
+    grasp_fingers = RewTerm(
+        func=mdp.fingers_closed_near_cube,
+        params={
+            "distance_threshold": 0.08,
+            "palms_cfg": SceneEntityCfg("robot", body_names=["left_hand_palm_link", "right_hand_palm_link"]),
+            "left_fingers_cfg": SceneEntityCfg("robot", joint_names=["left_hand_index_.*", "left_hand_middle_.*"]),
+            "right_fingers_cfg": SceneEntityCfg("robot", joint_names=["right_hand_index_.*", "right_hand_middle_.*"]),
+        },
+        weight=1.0,
+    )
     lift_progress = RewTerm(
         func=mdp.object_lift_progress,
         params={"rest_height": CUBE_REST_Z, "target_height": LIFT_SUCCESS_HEIGHT},
@@ -210,15 +244,18 @@ class RewardsCfg:
     )
     lifted_hold = RewTerm(func=mdp.cube_lifted, params={"minimum_height": LIFT_SUCCESS_HEIGHT}, weight=10.0)
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.005)
+    # knocking the cube off the table must not be free: without this the
+    # policy settles on flicking the cube around (74% drop terminations)
+    dropped_penalty = RewTerm(func=mdp.is_terminated_term, params={"term_keys": "cube_dropped"}, weight=-50.0)
 
 
 @configclass
 class TerminationsCfg:
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
-    # cube knocked off the table (rest z is 0.309; below the tabletop it is lost)
+    # cube knocked off the table: well below the tabletop it is lost
     cube_dropped = DoneTerm(
         func=mdp.root_height_below_minimum,
-        params={"minimum_height": 0.20, "asset_cfg": SceneEntityCfg("cube")},
+        params={"minimum_height": LAB_TABLE_HEIGHT - 0.09, "asset_cfg": SceneEntityCfg("cube")},
     )
     # rare solver divergence guard: constraint blowups pass through finite huge
     # velocities on the way to NaN — reset those envs while the state is still
