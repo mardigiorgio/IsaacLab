@@ -13,14 +13,13 @@ Added
 Changed
 ^^^^^^^
 
-* **Breaking:** Changed the G1 pick-cube base pose to a squat (pelvis lowered
-  to 0.55 m, legs posed bent and held by stiff implicit actuators) and moved
-  the cube spawn to the robot-side table edge. A reachability study showed the
-  standing pose cannot bring a palm closer than ~0.26 m to the cube, so
-  policies trained against the old geometry were unable to reach it. Removed
-  ``ee_to_cube_distance_reward`` in favor of the palm-based reward terms
-  (migrate by using ``palms_to_cube_distance_reward`` with the palm body
-  names).
+* **Breaking:** Changed the G1 pick-cube task geometry: the lab table is now
+  at its real hip height (the asset previously encoded a missed inch-to-meter
+  conversion and sat at the G1's shins), the cube is a standard Rubik's-cube
+  size (5.7 cm), and the legs are held posed by stiff implicit actuators.
+  Removed ``ee_to_cube_distance_reward`` in favor of the palm-based reward
+  terms (migrate by using ``palms_to_cube_distance_reward`` with the palm
+  body names).
 * **Breaking:** Removed the ``success`` termination from the G1 pick-cube task
   and renamed the ``lifted`` reward term to ``lifted_hold``: terminating on
   lift while paying dense height rewards teaches hovering below the threshold.

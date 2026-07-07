@@ -56,8 +56,8 @@ def test_random_actions_smoke(physics_preset_name):
 
 
 @pytest.mark.parametrize("physics_preset_name", [None, "newton_mjwarp"], ids=["physx", "newton_mjwarp"])
-def test_squat_init_pose_is_stable(physics_preset_name):
-    """The squat base pose settles without exploding: joints stay finite and within limits."""
+def test_init_pose_is_stable(physics_preset_name):
+    """The init pose settles without exploding: joints stay finite and within limits."""
     with _settled_env(physics_preset_name) as env:
         robot = env.unwrapped.scene["robot"]
         joint_pos = robot.data.joint_pos.torch

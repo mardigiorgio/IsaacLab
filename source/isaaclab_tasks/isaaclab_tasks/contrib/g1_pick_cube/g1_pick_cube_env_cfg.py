@@ -5,12 +5,9 @@
 
 """G1 pick-cube env at the real lab table.
 
-The G1 crouches at the table in a fixed-base squat: a CEM reachability probe
-(2026-07-07, see the project ledger) showed that at the original standing
-height (pelvis 0.75 m) no valid joint configuration brings a palm closer than
-0.26 m to the cube — the 0.289 m tabletop is simply out of reach. With the
-squat base pose and the cube spawned near the robot-side table edge, the palm
-reaches a pre-grasp pose 4.6 cm above the cube center.
+The G1 stands fixed-base at the long edge of the (hip-height, 0.734 m) lab
+table with a Rubik's-cube-sized DexCube spawned on the tabletop in front of
+it.
 
 Rewards are staged: coarse + fine palm reaching, finger closing gated to
 palm-near-cube, dense lift progress, and a hold bonus at the success height.
@@ -56,35 +53,21 @@ UPPER_BODY_JOINT_NAMES = [
 ]
 """Actuated joint set: waist, both arms, both TriHand hands."""
 
-CUBE_REST_Z = LAB_TABLE_HEIGHT + 0.02
+CUBE_EDGE = 0.057
+"""Cube edge length [m]: a standard Rubik's cube (57 mm)."""
+
+CUBE_REST_Z = LAB_TABLE_HEIGHT + CUBE_EDGE / 2
 """DexCube resting center height on the tabletop [m].
 
-The DexCube asset is natively 6 cm; it is scaled down to 4 cm on spawn
-(see :attr:`G1PickCubeSceneCfg.cube`), so half its 4 cm edge (0.02 m) is
-added to the tabletop height.
+The DexCube asset is natively 6 cm; it is scaled to :data:`CUBE_EDGE` on
+spawn (see :attr:`G1PickCubeSceneCfg.cube`).
 """
 
 LIFT_SUCCESS_HEIGHT = LAB_TABLE_HEIGHT + 0.15
 """Cube center height that counts as a successful lift [m]."""
 
-SQUAT_BASE_POS = (0.0, -0.60, 0.55)
-"""Fixed-base pelvis position [m]: crouched at the long table edge.
-
-Standing height (0.75 m) is kinematically unable to reach the tabletop
-(see module docstring); 0.55 m emulates a squatting G1.
-"""
-
-SQUAT_LEG_JOINT_POS = {".*_hip_pitch_joint": -0.75, ".*_knee_joint": 1.5, ".*_ankle_pitch_joint": -0.7}
-"""Leg joint defaults [rad] posing the legs as a squat.
-
-Keeps the knees clear of the table edge and the feet just above the ground at
-:data:`SQUAT_BASE_POS`; the legs carry no load with the root fixed. The env
-holds this pose with stiff implicit actuators (the asset's explicit DC-motor
-leg actuators would leave unactuated legs dangling under gravity).
-"""
-
-CUBE_SPAWN_POS = (0.0, -0.16, CUBE_REST_Z)
-"""Nominal cube spawn [m]: near the robot-side table edge, within palm reach."""
+CUBE_SPAWN_POS = (0.0, -0.05, CUBE_REST_Z)
+"""Nominal cube spawn [m]: on the tabletop in front of the robot."""
 
 _TABLE = lab_table_cfgs("{ENV_REGEX_NS}/LabTable")
 
@@ -118,8 +101,8 @@ class G1PickCubeSceneCfg(InteractiveSceneCfg):
         prim_path="{ENV_REGEX_NS}/Cube",
         spawn=sim_utils.UsdFileCfg(
             usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
-            # DexCube is natively 6 cm; scale it down to the 4 cm cube this task wants.
-            scale=(2.0 / 3.0, 2.0 / 3.0, 2.0 / 3.0),
+            # DexCube is natively 6 cm; scale it to the Rubik's-cube size this task wants
+            scale=(CUBE_EDGE / 0.06, CUBE_EDGE / 0.06, CUBE_EDGE / 0.06),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 solver_position_iteration_count=8,
                 solver_velocity_iteration_count=0,
@@ -194,9 +177,9 @@ class EventCfg:
         mode="reset",
         params={
             "asset_cfg": SceneEntityCfg("cube"),
-            # kept tight around CUBE_SPAWN_POS: the squatting G1's reachable
-            # patch on the tabletop is small (see module docstring)
-            "pose_range": {"x": (-0.10, 0.10), "y": (-0.04, 0.04)},
+            # far side capped at +0.05: beyond that the cube leaves the
+            # standing robot's comfortable palm reach (CEM probe, 2026-07-07)
+            "pose_range": {"x": (-0.15, 0.15), "y": (-0.05, 0.05)},
             "velocity_range": {},
         },
     )
@@ -340,18 +323,15 @@ class G1PickCubeEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.dt = 0.005  # 200 Hz physics, 50 Hz control
         self.sim.render_interval = self.decimation
         self.sim.physics = PhysicsCfg()
-        # fixed base: the G1 crouches at the table, no locomotion in this task
+        # fixed base: the G1 stands at the table, no locomotion in this task
         self.scene.robot.spawn.articulation_props.fix_root_link = True
-        # squat at the long edge (-Y); the asset default rot already faces the
-        # table (+Y, yaw +90deg). Standing cannot reach the tabletop (see
-        # module docstring), so the base is lowered and the legs posed bent.
-        self.scene.robot.init_state.pos = SQUAT_BASE_POS
-        self.scene.robot.init_state.joint_pos = {
-            **self.scene.robot.init_state.joint_pos,
-            **SQUAT_LEG_JOINT_POS,
-        }
-        # hold the squat: the asset's explicit DC-motor leg actuators leave
-        # unactuated legs dangling under gravity, so pin the pose with stiff
+        # stand at the long edge (-Y); the asset default rot already faces the
+        # table (+Y, yaw +90deg), so only the position is overridden. 0.50 m
+        # from the table center keeps the far side of the cube spawn range
+        # within a comfortable palm reach (CEM probe, 2026-07-07).
+        self.scene.robot.init_state.pos = (0.0, -0.50, 0.75)
+        # pin the leg pose: the asset's explicit DC-motor leg actuators leave
+        # unactuated legs sagging under gravity, so hold them with stiff
         # implicit PD instead (legs are static scenery with the root fixed)
         self.scene.robot.actuators["legs"] = ImplicitActuatorCfg(
             joint_names_expr=[".*_hip_yaw_joint", ".*_hip_roll_joint", ".*_hip_pitch_joint", ".*_knee_joint"],

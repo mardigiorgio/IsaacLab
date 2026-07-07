@@ -18,16 +18,21 @@ import isaaclab.sim as sim_utils
 from isaaclab.assets import AssetBaseCfg
 
 LAB_TABLE_LENGTH = 1.825
-"""Tabletop length along +X [m]."""
+"""Tabletop length along +X [m] (72 in)."""
 
 LAB_TABLE_WIDTH = 0.61
-"""Tabletop width along +Y [m]."""
+"""Tabletop width along +Y [m] (24 in)."""
 
-LAB_TABLE_HEIGHT = 0.289
-"""Height of the top working surface above the floor [m]."""
+LAB_TABLE_HEIGHT = 0.734
+"""Height of the top working surface above the floor [m] (28.9 in).
+
+The table was measured in inches (a standard 6 ft x 2 ft x 29 in lab table);
+an earlier revision recorded the height as 0.289 m — the inch value with a
+missed unit conversion — which put the tabletop at the G1's shins.
+"""
 
 LAB_TABLE_TOP_THICKNESS = 0.03
-"""Top slab thickness [m] (slab spans z in [0.259, 0.289])."""
+"""Top slab thickness [m] (the slab spans the 3 cm below :data:`LAB_TABLE_HEIGHT`)."""
 
 LAB_TABLE_LEG_SECTION = 0.05
 """Square leg cross-section side [m]. Approximate — adjust when measured."""

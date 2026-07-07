@@ -25,9 +25,10 @@ from isaaclab_assets.props.lab_table import (
 
 
 def test_constants_match_real_table():
+    # a standard 6 ft x 2 ft x 29 in lab table, measured in inches
     assert pytest.approx(1.825) == LAB_TABLE_LENGTH
     assert pytest.approx(0.61) == LAB_TABLE_WIDTH
-    assert pytest.approx(0.289) == LAB_TABLE_HEIGHT
+    assert pytest.approx(28.9 * 0.0254, abs=1e-3) == LAB_TABLE_HEIGHT
     assert pytest.approx(0.03) == LAB_TABLE_TOP_THICKNESS
 
 
@@ -45,8 +46,8 @@ def test_top_slab_geometry():
     cfgs = lab_table_cfgs("/World/LabTable")
     top = cfgs["table_top"]
     assert top.spawn.size == pytest.approx((1.825, 0.61, 0.03))
-    # top face at 0.289 -> center at 0.274
-    assert top.init_state.pos[2] == pytest.approx(0.274)
+    # top face at LAB_TABLE_HEIGHT -> center half a slab below it
+    assert top.init_state.pos[2] == pytest.approx(LAB_TABLE_HEIGHT - 0.015)
 
 
 def test_legs_flush_with_corners():
