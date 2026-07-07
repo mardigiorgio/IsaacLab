@@ -34,6 +34,30 @@ def test_random_actions_smoke(physics_preset_name):
 
 
 @pytest.mark.parametrize("physics_preset_name", [None, "newton_mjwarp"], ids=["physx", "newton_mjwarp"])
+def test_squat_init_pose_is_stable(physics_preset_name):
+    """The squat base pose settles without exploding: joints stay finite and within limits."""
+    num_envs = 2
+    env_cfg = parse_env_cfg(TASK, device="cuda:0", num_envs=num_envs)
+    if physics_preset_name is not None:
+        env_cfg = apply_physics_preset(env_cfg, TASK, physics_preset_name)
+    env = gym.make(TASK, cfg=env_cfg)
+    try:
+        env.reset()
+        zero_actions = torch.zeros((num_envs, env.unwrapped.action_space.shape[1]), device=env.unwrapped.device)
+        with torch.inference_mode():
+            for _ in range(30):
+                env.step(zero_actions)
+        robot = env.unwrapped.scene["robot"]
+        joint_pos = robot.data.joint_pos.torch
+        limits = robot.data.joint_pos_limits.torch
+        assert torch.isfinite(joint_pos).all(), "joint positions are not finite after settling"
+        assert torch.all(joint_pos > limits[..., 0] - 0.1), "joint positions below lower limits"
+        assert torch.all(joint_pos < limits[..., 1] + 0.1), "joint positions above upper limits"
+    finally:
+        env.close()
+
+
+@pytest.mark.parametrize("physics_preset_name", [None, "newton_mjwarp"], ids=["physx", "newton_mjwarp"])
 def test_cube_settles_on_tabletop(physics_preset_name):
     """The table collision geometry is right: a spawned cube rests at tabletop + half edge."""
     from isaaclab_tasks.contrib.g1_pick_cube.g1_pick_cube_env_cfg import CUBE_REST_Z

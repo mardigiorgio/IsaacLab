@@ -7,13 +7,19 @@ __all__ = [
     "object_position_in_robot_root_frame",
     "object_orientation_in_robot_root_frame",
     "cube_lifted",
-    "ee_to_cube_distance_reward",
+    "palms_to_object_vector",
+    "palms_to_cube_distance_reward",
+    "fingers_closed_near_cube",
+    "object_lift_progress",
 ]
 
 from .functions import (
     cube_lifted,
-    ee_to_cube_distance_reward,
+    fingers_closed_near_cube,
+    object_lift_progress,
     object_orientation_in_robot_root_frame,
     object_position_in_robot_root_frame,
+    palms_to_cube_distance_reward,
+    palms_to_object_vector,
 )
 from isaaclab.envs.mdp import *

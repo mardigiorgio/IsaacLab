@@ -3,16 +3,27 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Skeleton G1 pick-cube env at the real lab table.
+"""G1 pick-cube env at the real lab table.
 
-Rewards here are PLACEHOLDERS to make the env trainable end-to-end; reward
-design is intentionally left to the user (see the task board's PPO item).
+The G1 crouches at the table in a fixed-base squat: a CEM reachability probe
+(2026-07-07, see the project ledger) showed that at the original standing
+height (pelvis 0.75 m) no valid joint configuration brings a palm closer than
+0.26 m to the cube — the 0.289 m tabletop is simply out of reach. With the
+squat base pose and the cube spawned near the robot-side table edge, the palm
+reaches a pre-grasp pose 4.6 cm above the cube center.
+
+Rewards are staged: coarse + fine palm reaching, finger closing gated to
+palm-near-cube, dense lift progress, and a hold bonus at the success height.
+There is deliberately no success termination — terminating on lift while
+paying dense height rewards teaches hovering just below the threshold;
+holding the cube up pays instead.
 """
 
 from isaaclab_newton.physics import MJWarpSolverCfg, NewtonCfg, NewtonCollisionPipelineCfg, NewtonShapeCfg
 from isaaclab_physx.physics import PhysxCfg
 
 import isaaclab.sim as sim_utils
+from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import EventTermCfg as EventTerm
@@ -56,6 +67,25 @@ added to the tabletop height.
 LIFT_SUCCESS_HEIGHT = LAB_TABLE_HEIGHT + 0.15
 """Cube center height that counts as a successful lift [m]."""
 
+SQUAT_BASE_POS = (0.0, -0.60, 0.55)
+"""Fixed-base pelvis position [m]: crouched at the long table edge.
+
+Standing height (0.75 m) is kinematically unable to reach the tabletop
+(see module docstring); 0.55 m emulates a squatting G1.
+"""
+
+SQUAT_LEG_JOINT_POS = {".*_hip_pitch_joint": -0.75, ".*_knee_joint": 1.5, ".*_ankle_pitch_joint": -0.7}
+"""Leg joint defaults [rad] posing the legs as a squat.
+
+Keeps the knees clear of the table edge and the feet just above the ground at
+:data:`SQUAT_BASE_POS`; the legs carry no load with the root fixed. The env
+holds this pose with stiff implicit actuators (the asset's explicit DC-motor
+leg actuators would leave unactuated legs dangling under gravity).
+"""
+
+CUBE_SPAWN_POS = (0.0, -0.16, CUBE_REST_Z)
+"""Nominal cube spawn [m]: near the robot-side table edge, within palm reach."""
+
 _TABLE = lab_table_cfgs("{ENV_REGEX_NS}/LabTable")
 
 
@@ -97,7 +127,7 @@ class G1PickCubeSceneCfg(InteractiveSceneCfg):
             ),
             mass_props=sim_utils.MassPropertiesCfg(density=400.0),
         ),
-        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, -0.05, CUBE_REST_Z)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=CUBE_SPAWN_POS),
     )
 
 
@@ -108,8 +138,14 @@ class G1PickCubeSceneCfg(InteractiveSceneCfg):
 
 @configclass
 class ActionsCfg:
+    # raw actions are clipped: unbounded Gaussian exploration against the stiff
+    # (3 kN·m/rad) arm PD can otherwise explode the fixed-step solver into NaNs
     upper_body = mdp.JointPositionActionCfg(
-        asset_name="robot", joint_names=UPPER_BODY_JOINT_NAMES, scale=0.5, use_default_offset=True
+        asset_name="robot",
+        joint_names=UPPER_BODY_JOINT_NAMES,
+        scale=0.5,
+        use_default_offset=True,
+        clip={".*": (-3.0, 3.0)},
     )
 
 
@@ -127,6 +163,7 @@ class ObservationsCfg:
         )
         cube_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
         cube_orientation = ObsTerm(func=mdp.object_orientation_in_robot_root_frame)
+        palm_to_cube = ObsTerm(func=mdp.palms_to_object_vector)
         actions = ObsTerm(func=mdp.last_action)
 
         def __post_init__(self):
@@ -138,12 +175,22 @@ class ObservationsCfg:
 
 @configclass
 class EventCfg:
+    # write the robot joint state back to defaults on every reset; without
+    # this the articulation keeps (Newton) or drifts from (PhysX) its previous
+    # joint state and only the PD targets pull it toward the squat
+    reset_robot_joints = EventTerm(
+        func=mdp.reset_joints_by_scale,
+        mode="reset",
+        params={"position_range": (1.0, 1.0), "velocity_range": (0.0, 0.0)},
+    )
     reset_cube = EventTerm(
         func=mdp.reset_root_state_uniform,
         mode="reset",
         params={
             "asset_cfg": SceneEntityCfg("cube"),
-            "pose_range": {"x": (-0.15, 0.15), "y": (-0.05, 0.10)},
+            # kept tight around CUBE_SPAWN_POS: the squatting G1's reachable
+            # patch on the tabletop is small (see module docstring)
+            "pose_range": {"x": (-0.10, 0.10), "y": (-0.04, 0.04)},
             "velocity_range": {},
         },
     )
@@ -151,26 +198,42 @@ class EventCfg:
 
 @configclass
 class RewardsCfg:
-    # ------------------------------------------------------------------
-    # PLACEHOLDER reward — intentionally simple. Reward design is owned by
-    # the user (task board: "Pick up cube rl policy (PPO)").
-    # ------------------------------------------------------------------
-    reaching = RewTerm(
-        func=mdp.ee_to_cube_distance_reward,
-        params={
-            "std": 0.2,
-            "robot_cfg": SceneEntityCfg("robot", body_names="right_wrist_yaw_link"),
-            "object_cfg": SceneEntityCfg("cube"),
-        },
-        weight=1.0,
+    """Staged pick-up shaping: reach -> close fingers -> lift -> hold."""
+
+    reaching = RewTerm(func=mdp.palms_to_cube_distance_reward, params={"std": 0.30}, weight=1.0)
+    reaching_fine = RewTerm(func=mdp.palms_to_cube_distance_reward, params={"std": 0.05}, weight=1.0)
+    grasp_fingers = RewTerm(func=mdp.fingers_closed_near_cube, params={"distance_threshold": 0.08}, weight=1.0)
+    lift_progress = RewTerm(
+        func=mdp.object_lift_progress,
+        params={"rest_height": CUBE_REST_Z, "target_height": LIFT_SUCCESS_HEIGHT},
+        weight=8.0,
     )
-    lifted = RewTerm(func=mdp.cube_lifted, params={"minimum_height": LIFT_SUCCESS_HEIGHT}, weight=10.0)
+    lifted_hold = RewTerm(func=mdp.cube_lifted, params={"minimum_height": LIFT_SUCCESS_HEIGHT}, weight=10.0)
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.005)
 
 
 @configclass
 class TerminationsCfg:
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
-    success = DoneTerm(func=mdp.cube_lifted, params={"minimum_height": LIFT_SUCCESS_HEIGHT})
+    # cube knocked off the table (rest z is 0.309; below the tabletop it is lost)
+    cube_dropped = DoneTerm(
+        func=mdp.root_height_below_minimum,
+        params={"minimum_height": 0.20, "asset_cfg": SceneEntityCfg("cube")},
+    )
+    # rare solver divergence guard: constraint blowups pass through finite huge
+    # velocities on the way to NaN — reset those envs while the state is still
+    # finite instead of poisoning the whole rollout. Fingers are excluded:
+    # their tiny links spike legitimately on contact, and they never diverge
+    # without the arm chain going with them (waist/shoulder/wrist trip first).
+    robot_exploded = DoneTerm(
+        func=mdp.joint_vel_out_of_manual_limit,
+        params={
+            "max_velocity": 200.0,
+            "asset_cfg": SceneEntityCfg(
+                "robot", joint_names=["waist_.*_joint", ".*_shoulder_.*_joint", ".*_elbow_joint", ".*_wrist_.*_joint"]
+            ),
+        },
+    )
 
 
 ##
@@ -210,7 +273,9 @@ class PhysicsCfg(PresetCfg):
         # Stiff contact so the TriHand fingers stall on the cube instead of
         # closing through it (see the stack task preset for the full rationale).
         default_shape_cfg=NewtonShapeCfg(ke=1e6, kd=2000),
-        num_substeps=2,
+        # 4 substeps (1.25 ms): PPO exploration slams the stiff arms into the
+        # ke=1e6 contacts; the stack task's 2 substeps NaN out under that
+        num_substeps=4,
         debug_mode=False,
     )
     physx = default
@@ -238,8 +303,37 @@ class G1PickCubeEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.dt = 0.005  # 200 Hz physics, 50 Hz control
         self.sim.render_interval = self.decimation
         self.sim.physics = PhysicsCfg()
-        # fixed base: the G1 stands at the table, no locomotion in this task
+        # fixed base: the G1 crouches at the table, no locomotion in this task
         self.scene.robot.spawn.articulation_props.fix_root_link = True
-        # place the robot at the long edge (-Y); the asset default rot already
-        # faces the table (+Y, yaw +90deg), so only the position is overridden
-        self.scene.robot.init_state.pos = (0.0, -0.55, 0.75)
+        # squat at the long edge (-Y); the asset default rot already faces the
+        # table (+Y, yaw +90deg). Standing cannot reach the tabletop (see
+        # module docstring), so the base is lowered and the legs posed bent.
+        self.scene.robot.init_state.pos = SQUAT_BASE_POS
+        self.scene.robot.init_state.joint_pos = {
+            **self.scene.robot.init_state.joint_pos,
+            **SQUAT_LEG_JOINT_POS,
+        }
+        # hold the squat: the asset's explicit DC-motor leg actuators leave
+        # unactuated legs dangling under gravity, so pin the pose with stiff
+        # implicit PD instead (legs are static scenery with the root fixed)
+        self.scene.robot.actuators["legs"] = ImplicitActuatorCfg(
+            joint_names_expr=[".*_hip_yaw_joint", ".*_hip_roll_joint", ".*_hip_pitch_joint", ".*_knee_joint"],
+            stiffness=400.0,
+            damping=40.0,
+            armature=0.03,
+        )
+        self.scene.robot.actuators["feet"] = ImplicitActuatorCfg(
+            joint_names_expr=[".*_ankle_pitch_joint", ".*_ankle_roll_joint"],
+            stiffness=100.0,
+            damping=10.0,
+            armature=0.03,
+        )
+        # bound the arm/hand efforts to hardware-plausible values: the asset's
+        # 300 N*m everywhere lets random exploration targets fight the joint
+        # limits with unbounded energy and NaN the solver (fingers blow up in
+        # a single step); bounded torque makes arbitrary policy actions safe
+        self.scene.robot.actuators["arms"].effort_limit = None
+        self.scene.robot.actuators["arms"].effort_limit_sim = 60.0
+        self.scene.robot.actuators["arms"].damping = 30.0
+        self.scene.robot.actuators["hands"].effort_limit = None
+        self.scene.robot.actuators["hands"].effort_limit_sim = 5.0

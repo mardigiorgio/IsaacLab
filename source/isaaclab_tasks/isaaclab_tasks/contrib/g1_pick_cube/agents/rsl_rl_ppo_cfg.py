@@ -20,7 +20,9 @@ class G1PickCubePPORunnerCfg(RslRlOnPolicyRunnerCfg):
         hidden_dims=[256, 128, 64],
         activation="elu",
         obs_normalization=True,
-        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=1.0),
+        # modest initial exploration: the arms are stiff (3 kN·m/rad) and wild
+        # early targets destabilize the fixed-step solver
+        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=0.5),
     )
     critic = RslRlMLPModelCfg(
         hidden_dims=[256, 128, 64],
