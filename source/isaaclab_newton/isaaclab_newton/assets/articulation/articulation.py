@@ -3727,7 +3727,8 @@ class Articulation(BaseArticulation):
         self._joint_vel_target_sim = wp.zeros_like(self.data.joint_pos_target.warp, device=self.device)
         self._joint_effort_target_sim = wp.zeros_like(self.data.joint_pos_target.warp, device=self.device)
         # -- velocity-limit clamp's "previous commanded target" memory (see write_data_to_sim);
-        # seeded from measured joint positions at init/reset, and re-seeded with written positions at every joint-position write (see _initialize_impl).
+        # seeded from measured joint positions at init/reset, and re-seeded with written positions
+        # at every joint-position write (see _initialize_impl).
         self._prev_commanded_joint_pos_target = wp.zeros_like(self.data.joint_pos_target.warp, device=self.device)
         self._velocity_limit_clamp_active = False
 
