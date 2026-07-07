@@ -9,6 +9,9 @@ Rewards here are PLACEHOLDERS to make the env trainable end-to-end; reward
 design is intentionally left to the user (see the task board's PPO item).
 """
 
+from isaaclab_newton.physics import MJWarpSolverCfg, NewtonCfg, NewtonCollisionPipelineCfg, NewtonShapeCfg
+from isaaclab_physx.physics import PhysxCfg
+
 import isaaclab.sim as sim_utils
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
@@ -21,12 +24,11 @@ from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.utils.configclass import configclass
-from isaaclab_newton.physics import MJWarpSolverCfg, NewtonCfg, NewtonCollisionPipelineCfg, NewtonShapeCfg
-from isaaclab_physx.physics import PhysxCfg
+
+from isaaclab_tasks.utils.hydra import PresetCfg
 
 from isaaclab_assets.props.lab_table import LAB_TABLE_HEIGHT, lab_table_cfgs
 from isaaclab_assets.robots.unitree import G1_29DOF_CFG
-from isaaclab_tasks.utils.hydra import PresetCfg
 
 from . import mdp
 
@@ -145,7 +147,15 @@ class RewardsCfg:
     # PLACEHOLDER reward — intentionally simple. Reward design is owned by
     # the user (task board: "Pick up cube rl policy (PPO)").
     # ------------------------------------------------------------------
-    reaching = RewTerm(func=mdp.ee_to_cube_distance_reward, params={"std": 0.2}, weight=1.0)
+    reaching = RewTerm(
+        func=mdp.ee_to_cube_distance_reward,
+        params={
+            "std": 0.2,
+            "robot_cfg": SceneEntityCfg("robot", body_names="right_wrist_yaw_link"),
+            "object_cfg": SceneEntityCfg("cube"),
+        },
+        weight=1.0,
+    )
     lifted = RewTerm(func=mdp.cube_lifted, params={"minimum_height": LIFT_SUCCESS_HEIGHT}, weight=10.0)
 
 
@@ -222,6 +232,6 @@ class G1PickCubeEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.physics = PhysicsCfg()
         # fixed base: the G1 stands at the table, no locomotion in this task
         self.scene.robot.spawn.articulation_props.fix_root_link = True
-        # place the robot at the long edge (-Y), facing the table (+Y, yaw +90deg)
+        # place the robot at the long edge (-Y); the asset default rot already
+        # faces the table (+Y, yaw +90deg), so only the position is overridden
         self.scene.robot.init_state.pos = (0.0, -0.55, 0.75)
-        self.scene.robot.init_state.rot = (0.7071, 0.0, 0.0, 0.7071)
