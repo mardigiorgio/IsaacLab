@@ -380,7 +380,7 @@ def _check_random_actions(
             # further re-application is needed here.
             env_cfg = apply_physics_preset(env_cfg, task_name, physics_preset_name)
             if "newton" in physics_preset_name:
-                assert type(env_cfg.sim.physics).__name__ == "NewtonCfg", (
+                assert any(c.__name__ == "NewtonCfg" for c in type(env_cfg.sim.physics).__mro__), (
                     f"Expected preset '{physics_preset_name}' to resolve env_cfg.sim.physics to a Newton config, "
                     f"got {type(env_cfg.sim.physics).__name__!r} instead."
                 )
