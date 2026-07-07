@@ -35,7 +35,7 @@ from isaaclab.utils.configclass import configclass
 
 from isaaclab_tasks.utils.hydra import PresetCfg
 
-from isaaclab_assets.props.lab_table import LAB_TABLE_HEIGHT, lab_table_cfgs
+from isaaclab_assets.props.lab_table import LAB_TABLE_HEIGHT, LAB_TABLE_WIDTH, lab_table_cfgs
 from isaaclab_assets.robots.unitree import G1_29DOF_CFG
 
 from . import mdp
@@ -68,6 +68,29 @@ LIFT_SUCCESS_HEIGHT = LAB_TABLE_HEIGHT + 0.15
 
 CUBE_SPAWN_POS = (0.0, -0.05, CUBE_REST_Z)
 """Nominal cube spawn [m]: on the tabletop in front of the robot."""
+
+G1_TOE_REACH = 0.142
+"""Forward extent of the G1 toe tips from the pelvis origin [m].
+
+Measured from the foot-mesh world bounding box in the standing pose
+(scratchpad ``ready_pose_and_toes.py``, 2026-07-07).
+"""
+
+ROBOT_STAND_POS = (0.0, -(LAB_TABLE_WIDTH / 2 + G1_TOE_REACH), 0.75)
+"""Fixed-base pelvis position [m]: standing at the long table edge.
+
+The y places the TOE TIPS exactly on the vertical plane dropped from the
+table's near edge — in the lab, roll the G1 toward the desk until its toes
+touch the desk-edge footprint and it matches the sim placement.
+"""
+
+READY_ARM_JOINT_POS = {"left_shoulder_roll_joint": 0.12, "right_shoulder_roll_joint": -0.12}
+"""Ready-pose tweak [rad]: a subtle shoulder splay over the asset's zero arms.
+
+The G1 zero pose already has a built-in ~90 deg elbow bend that puts the
+palms in front of the chest ~0.11 m above the tabletop — a natural
+manipulation-ready stance; only the slight arm splay is added.
+"""
 
 _TABLE = lab_table_cfgs("{ENV_REGEX_NS}/LabTable")
 
@@ -325,11 +348,14 @@ class G1PickCubeEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.physics = PhysicsCfg()
         # fixed base: the G1 stands at the table, no locomotion in this task
         self.scene.robot.spawn.articulation_props.fix_root_link = True
-        # stand at the long edge (-Y); the asset default rot already faces the
-        # table (+Y, yaw +90deg), so only the position is overridden. 0.50 m
-        # from the table center keeps the far side of the cube spawn range
-        # within a comfortable palm reach (CEM probe, 2026-07-07).
-        self.scene.robot.init_state.pos = (0.0, -0.50, 0.75)
+        # stand at the long edge (-Y), toes on the table-edge plane (see
+        # ROBOT_STAND_POS for the real-world alignment convention); the asset
+        # default rot already faces the table (+Y, yaw +90deg)
+        self.scene.robot.init_state.pos = ROBOT_STAND_POS
+        self.scene.robot.init_state.joint_pos = {
+            **self.scene.robot.init_state.joint_pos,
+            **READY_ARM_JOINT_POS,
+        }
         # pin the leg pose: the asset's explicit DC-motor leg actuators leave
         # unactuated legs sagging under gravity, so hold them with stiff
         # implicit PD instead (legs are static scenery with the root fixed)
