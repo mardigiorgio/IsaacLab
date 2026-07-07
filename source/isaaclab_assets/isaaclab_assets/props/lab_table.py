@@ -59,9 +59,7 @@ def lab_table_cfgs(prim_path: str) -> dict[str, AssetBaseCfg]:
                 collision_props=collision,
                 visual_material=visual,
             ),
-            init_state=AssetBaseCfg.InitialStateCfg(
-                pos=(0.0, 0.0, LAB_TABLE_HEIGHT - LAB_TABLE_TOP_THICKNESS / 2)
-            ),
+            init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, LAB_TABLE_HEIGHT - LAB_TABLE_TOP_THICKNESS / 2)),
         )
     }
     half_len = LAB_TABLE_LENGTH / 2 - LAB_TABLE_LEG_SECTION / 2

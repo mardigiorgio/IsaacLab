@@ -25,10 +25,10 @@ from isaaclab_assets.props.lab_table import (
 
 
 def test_constants_match_real_table():
-    assert LAB_TABLE_LENGTH == pytest.approx(1.825)
-    assert LAB_TABLE_WIDTH == pytest.approx(0.61)
-    assert LAB_TABLE_HEIGHT == pytest.approx(0.289)
-    assert LAB_TABLE_TOP_THICKNESS == pytest.approx(0.03)
+    assert pytest.approx(1.825) == LAB_TABLE_LENGTH
+    assert pytest.approx(0.61) == LAB_TABLE_WIDTH
+    assert pytest.approx(0.289) == LAB_TABLE_HEIGHT
+    assert pytest.approx(0.03) == LAB_TABLE_TOP_THICKNESS
 
 
 def test_factory_returns_five_static_parts():
