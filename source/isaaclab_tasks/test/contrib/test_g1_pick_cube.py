@@ -19,6 +19,7 @@ import torch
 
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.utils.parse_cfg import parse_env_cfg
+from isaaclab_tasks.utils.physics_presets import apply_physics_preset
 
 # Local imports should be imported last
 from env_test_utils import _run_environments  # isort: skip
@@ -32,15 +33,21 @@ def test_random_actions_smoke(physics_preset_name):
     _run_environments(TASK, "cuda", 2, num_steps=20, physics_preset_name=physics_preset_name)
 
 
-def test_cube_settles_on_tabletop():
+@pytest.mark.parametrize("physics_preset_name", [None, "newton_mjwarp"], ids=["physx", "newton_mjwarp"])
+def test_cube_settles_on_tabletop(physics_preset_name):
     """The table collision geometry is right: a spawned cube rests at tabletop + half edge."""
     from isaaclab_tasks.contrib.g1_pick_cube.g1_pick_cube_env_cfg import CUBE_REST_Z
 
-    env_cfg = parse_env_cfg(TASK, device="cuda:0", num_envs=2)
+    num_envs = 2
+    env_cfg = parse_env_cfg(TASK, device="cuda:0", num_envs=num_envs)
+    # parse_env_cfg collapses PresetCfg wrappers to their default (PhysX), so a
+    # named preset must be re-applied from the raw registry config afterwards.
+    if physics_preset_name is not None:
+        env_cfg = apply_physics_preset(env_cfg, TASK, physics_preset_name)
     env = gym.make(TASK, cfg=env_cfg)
     try:
         env.reset()
-        zero_actions = torch.zeros((2, env.unwrapped.action_space.shape[1]), device=env.unwrapped.device)
+        zero_actions = torch.zeros((num_envs, env.unwrapped.action_space.shape[1]), device=env.unwrapped.device)
         with torch.inference_mode():
             for _ in range(30):  # settle
                 env.step(zero_actions)

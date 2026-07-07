@@ -46,7 +46,12 @@ UPPER_BODY_JOINT_NAMES = [
 """Actuated joint set: waist, both arms, both TriHand hands."""
 
 CUBE_REST_Z = LAB_TABLE_HEIGHT + 0.02
-"""DexCube (4 cm) resting center height on the tabletop [m]."""
+"""DexCube resting center height on the tabletop [m].
+
+The DexCube asset is natively 6 cm; it is scaled down to 4 cm on spawn
+(see :attr:`G1PickCubeSceneCfg.cube`), so half its 4 cm edge (0.02 m) is
+added to the tabletop height.
+"""
 
 LIFT_SUCCESS_HEIGHT = LAB_TABLE_HEIGHT + 0.15
 """Cube center height that counts as a successful lift [m]."""
@@ -83,6 +88,8 @@ class G1PickCubeSceneCfg(InteractiveSceneCfg):
         prim_path="{ENV_REGEX_NS}/Cube",
         spawn=sim_utils.UsdFileCfg(
             usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
+            # DexCube is natively 6 cm; scale it down to the 4 cm cube this task wants.
+            scale=(2.0 / 3.0, 2.0 / 3.0, 2.0 / 3.0),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 solver_position_iteration_count=8,
                 solver_velocity_iteration_count=0,
