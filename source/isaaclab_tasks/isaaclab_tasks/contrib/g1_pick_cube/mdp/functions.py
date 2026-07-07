@@ -95,7 +95,9 @@ def palms_to_cube_distance_reward(
     obj = env.scene[object_cfg.name]
     palm_pos = robot.data.body_pos_w.torch[:, robot_cfg.body_ids, :]
     dist = torch.linalg.vector_norm(obj.data.root_pos_w.torch[:, None, :] - palm_pos, dim=-1).min(dim=1).values
-    return torch.exp(-dist / std)
+    # nan_to_num: rewards are computed before resets, so a solver-diverged
+    # (non-finite) state must not leak NaN into the rollout
+    return torch.exp(-dist / std).nan_to_num(0.0)
 
 
 def fingers_closed_near_cube(
@@ -133,7 +135,30 @@ def fingers_closed_near_cube(
 
     # palms_cfg body order is [left, right] (body-index order on the G1)
     flexion = torch.where(nearest_palm == 0, _flexion(left_fingers_cfg), _flexion(right_fingers_cfg))
-    return flexion * (nearest_dist < distance_threshold)
+    return (flexion * (nearest_dist < distance_threshold)).nan_to_num(0.0)
+
+
+def robot_or_object_state_invalid(
+    env: ManagerBasedRLEnv,
+    max_velocity: float,
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cube"),
+) -> torch.Tensor:
+    """True when the robot joint state runs away or any watched state goes non-finite.
+
+    Solver-divergence guard: blowups usually pass through finite joint
+    velocities above ``max_velocity`` [rad/s] on the way to NaN, but a single
+    step can also jump straight to non-finite — and NaN never trips a
+    magnitude comparison. Both cases must terminate so the env resets instead
+    of poisoning the rollout.
+    """
+    robot = env.scene[robot_cfg.name]
+    obj = env.scene[object_cfg.name]
+    joint_pos = robot.data.joint_pos.torch[:, robot_cfg.joint_ids]
+    joint_vel = robot.data.joint_vel.torch[:, robot_cfg.joint_ids]
+    bad_robot = (~torch.isfinite(joint_pos) | ~torch.isfinite(joint_vel) | (joint_vel.abs() > max_velocity)).any(dim=1)
+    bad_object = ~torch.isfinite(obj.data.root_pos_w.torch).all(dim=1)
+    return bad_robot | bad_object
 
 
 def object_lift_progress(
@@ -145,4 +170,4 @@ def object_lift_progress(
     """Cube height progress from ``rest_height`` toward ``target_height`` [m], clamped to [0, 1]."""
     obj = env.scene[object_cfg.name]
     height = obj.data.root_pos_w.torch[:, 2] - env.scene.env_origins[:, 2]
-    return ((height - rest_height) / (target_height - rest_height)).clamp(0.0, 1.0)
+    return ((height - rest_height) / (target_height - rest_height)).clamp(0.0, 1.0).nan_to_num(0.0)

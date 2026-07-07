@@ -11,6 +11,7 @@ __all__ = [
     "palms_to_cube_distance_reward",
     "fingers_closed_near_cube",
     "object_lift_progress",
+    "robot_or_object_state_invalid",
 ]
 
 from .functions import (
@@ -21,5 +22,6 @@ from .functions import (
     object_position_in_robot_root_frame,
     palms_to_cube_distance_reward,
     palms_to_object_vector,
+    robot_or_object_state_invalid,
 )
 from isaaclab.envs.mdp import *

@@ -257,16 +257,16 @@ class TerminationsCfg:
         func=mdp.root_height_below_minimum,
         params={"minimum_height": LAB_TABLE_HEIGHT - 0.09, "asset_cfg": SceneEntityCfg("cube")},
     )
-    # rare solver divergence guard: constraint blowups pass through finite huge
-    # velocities on the way to NaN — reset those envs while the state is still
-    # finite instead of poisoning the whole rollout. Fingers are excluded:
-    # their tiny links spike legitimately on contact, and they never diverge
-    # without the arm chain going with them (waist/shoulder/wrist trip first).
+    # rare solver divergence guard: blowups either pass through finite huge
+    # velocities on the way to NaN or jump straight to non-finite — both must
+    # reset the env instead of poisoning the whole rollout. Fingers are
+    # excluded from the velocity check: their tiny links spike legitimately on
+    # contact, and they never diverge without the arm chain going with them.
     robot_exploded = DoneTerm(
-        func=mdp.joint_vel_out_of_manual_limit,
+        func=mdp.robot_or_object_state_invalid,
         params={
             "max_velocity": 200.0,
-            "asset_cfg": SceneEntityCfg(
+            "robot_cfg": SceneEntityCfg(
                 "robot", joint_names=["waist_.*_joint", ".*_shoulder_.*_joint", ".*_elbow_joint", ".*_wrist_.*_joint"]
             ),
         },
