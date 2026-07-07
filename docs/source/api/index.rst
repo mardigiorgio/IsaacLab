@@ -184,6 +184,7 @@ The following modules are available in the ``isaaclab_assets`` extension:
 
    robots
    sensors
+   props
 
 isaaclab_visualizers extension
 ------------------------------
