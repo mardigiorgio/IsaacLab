@@ -208,3 +208,18 @@ gym.register(
     kwargs={"env_cfg_entry_point": f"{__name__}.locomanipulation_g1_mimic_env_cfg:LocomanipulationG1MimicEnvCfg"},
     disable_env_checker=True,
 )
+
+##
+# Fixed-base upper-body-IK G1 pick-place with Pink IK - Absolute Pose Control
+##
+
+gym.register(
+    id="IsaacContrib-PickPlace-FixedBaseUpperBodyIK-G1-Abs-Mimic-v0",
+    entry_point=f"{__name__}.pickplace_fixed_base_g1_mimic_env:PickPlaceFixedBaseG1MimicEnv",
+    kwargs={
+        "env_cfg_entry_point": (
+            f"{__name__}.pickplace_fixed_base_g1_mimic_env_cfg:PickPlaceFixedBaseG1MimicEnvCfg"
+        ),
+    },
+    disable_env_checker=True,
+)
