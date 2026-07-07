@@ -396,9 +396,24 @@ def modify_articulation_root_properties(
                 )
 
             # create a fixed joint between the root link and the world frame
-            from omni.physx.scripts import utils as physx_utils
+            try:
+                from omni.physx.scripts import utils as physx_utils
 
-            physx_utils.createJoint(stage=stage, joint_type="Fixed", from_prim=None, to_prim=articulation_prim)
+                physx_utils.createJoint(stage=stage, joint_type="Fixed", from_prim=None, to_prim=articulation_prim)
+            except ModuleNotFoundError:
+                # kitless launch (e.g. Newton headless training): author the same
+                # joint with pure USD — body1 is the root link, body0 is the world
+                # frame, anchored at the root link's current world pose
+                from pxr import Gf
+
+                world_tf = UsdGeom.Xformable(articulation_prim).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+                world_rot = Gf.Quatf(world_tf.ExtractRotationQuat())
+                fixed_joint = UsdPhysics.FixedJoint.Define(stage, articulation_prim.GetPath().AppendChild("FixedJoint"))
+                fixed_joint.CreateBody1Rel().SetTargets([articulation_prim.GetPath()])
+                fixed_joint.CreateLocalPos0Attr().Set(Gf.Vec3f(world_tf.ExtractTranslation()))
+                fixed_joint.CreateLocalRot0Attr().Set(world_rot)
+                fixed_joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0.0))
+                fixed_joint.CreateLocalRot1Attr().Set(Gf.Quatf(1.0))
 
             # Having a fixed joint on a rigid body is not treated as "fixed base articulation".
             # instead, it is treated as a part of the maximal coordinate tree.

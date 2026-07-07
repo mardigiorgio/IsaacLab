@@ -753,6 +753,35 @@ def test_modify_properties_on_articulation_usd(setup_simulation):
 
 
 @pytest.mark.isaacsim_ci
+def test_fix_root_link_authors_fixed_joint_without_omni_physx(setup_simulation, monkeypatch):
+    """A world fixed joint is authored with pure USD when ``omni.physx`` is unavailable (kitless launches)."""
+    import sys
+
+    from pxr import Gf, Sdf
+
+    sim, arti_cfg, *_ = setup_simulation
+    # author a minimal articulation: root link nested under an asset xform
+    sim_utils.create_prim("/World/asset_kitless", prim_type="Xform")
+    root_prim = sim_utils.create_prim("/World/asset_kitless/root", prim_type="Xform", translation=(1.0, 2.0, 0.5))
+    UsdPhysics.RigidBodyAPI.Apply(root_prim)
+    UsdPhysics.ArticulationRootAPI.Apply(root_prim)
+
+    # simulate a kitless launch: importing omni.physx raises ModuleNotFoundError
+    monkeypatch.setitem(sys.modules, "omni.physx.scripts", None)
+
+    arti_cfg.fix_root_link = True
+    schemas.modify_articulation_root_properties("/World/asset_kitless", arti_cfg)
+
+    stage = root_prim.GetStage()
+    joint = UsdPhysics.FixedJoint(stage.GetPrimAtPath("/World/asset_kitless/root/FixedJoint"))
+    assert joint, "pure-USD fallback did not author the FixedJoint prim"
+    assert joint.GetBody1Rel().GetTargets() == [Sdf.Path("/World/asset_kitless/root")]
+    # the joint anchors the root link at its current world pose
+    assert joint.GetLocalPos0Attr().Get() == Gf.Vec3f(1.0, 2.0, 0.5)
+    assert joint.GetLocalRot1Attr().Get() == Gf.Quatf(1.0)
+
+
+@pytest.mark.isaacsim_ci
 def test_defining_rigid_body_properties_on_prim(setup_simulation):
     """Test defining rigid body properties on a prim."""
     sim, _, rigid_cfg, collision_cfg, mass_cfg, _ = setup_simulation
