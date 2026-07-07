@@ -32,6 +32,27 @@ def object_position_in_robot_root_frame(
     return object_pos_b
 
 
+def object_orientation_in_robot_root_frame(
+    env: ManagerBasedRLEnv,
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cube"),
+) -> torch.Tensor:
+    """Cube orientation expressed in the robot root frame, shape [num_envs, 4].
+
+    Quaternion is in (x, y, z, w) convention, matching
+    :func:`isaaclab.utils.math.subtract_frame_transforms`.
+    """
+    robot = env.scene[robot_cfg.name]
+    obj = env.scene[object_cfg.name]
+    _, object_quat_b = subtract_frame_transforms(
+        robot.data.root_pos_w.torch,
+        robot.data.root_quat_w.torch,
+        obj.data.root_pos_w.torch,
+        obj.data.root_quat_w.torch,
+    )
+    return object_quat_b
+
+
 def cube_lifted(
     env: ManagerBasedRLEnv,
     minimum_height: float,

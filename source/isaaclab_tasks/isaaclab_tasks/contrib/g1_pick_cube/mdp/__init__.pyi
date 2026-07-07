@@ -5,9 +5,15 @@
 
 __all__ = [
     "object_position_in_robot_root_frame",
+    "object_orientation_in_robot_root_frame",
     "cube_lifted",
     "ee_to_cube_distance_reward",
 ]
 
-from .functions import cube_lifted, ee_to_cube_distance_reward, object_position_in_robot_root_frame
+from .functions import (
+    cube_lifted,
+    ee_to_cube_distance_reward,
+    object_orientation_in_robot_root_frame,
+    object_position_in_robot_root_frame,
+)
 from isaaclab.envs.mdp import *

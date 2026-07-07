@@ -126,6 +126,7 @@ class ObservationsCfg:
             params={"asset_cfg": SceneEntityCfg("robot", joint_names=UPPER_BODY_JOINT_NAMES)},
         )
         cube_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
+        cube_orientation = ObsTerm(func=mdp.object_orientation_in_robot_root_frame)
         actions = ObsTerm(func=mdp.last_action)
 
         def __post_init__(self):
