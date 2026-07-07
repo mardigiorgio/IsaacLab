@@ -6,14 +6,18 @@
 """G1 pick-cube env at the real lab table.
 
 The G1 stands fixed-base at the long edge of the (hip-height, 0.734 m) lab
-table with a Rubik's-cube-sized DexCube spawned on the tabletop in front of
-it.
+table, toes aligned to the table-edge plane. A Rubik's-cube-sized DexCube
+spawns ANYWHERE on the tabletop; the objective is always the same: pick it
+up and hold it at a fixed point in front of the chest
+(:data:`HOLD_TARGET_OFFSET`, robot-relative). Spawns beyond the fixed-base
+reach envelope (|x| beyond roughly 0.5 m) are deliberately included, and the
+robot's placement is jittered slightly around its nominal stance.
 
 Rewards are staged: coarse + fine palm reaching, finger closing gated to
-palm-near-cube, dense lift progress, and a hold bonus at the success height.
-There is deliberately no success termination — terminating on lift while
-paying dense height rewards teaches hovering just below the threshold;
-holding the cube up pays instead.
+palm-near-cube, dense lift progress, goal tracking toward the hold point,
+and a hold bonus near it. There is deliberately no success termination —
+terminating while paying dense proximity rewards teaches hovering short of
+the objective; holding the cube at the target pays instead.
 """
 
 from isaaclab_newton.physics import MJWarpSolverCfg, NewtonCfg, NewtonCollisionPipelineCfg, NewtonShapeCfg
@@ -66,8 +70,16 @@ spawn (see :attr:`G1PickCubeSceneCfg.cube`).
 LIFT_SUCCESS_HEIGHT = LAB_TABLE_HEIGHT + 0.15
 """Cube center height that counts as a successful lift [m]."""
 
-CUBE_SPAWN_POS = (0.0, -0.05, CUBE_REST_Z)
-"""Nominal cube spawn [m]: on the tabletop in front of the robot."""
+CUBE_SPAWN_POS = (0.0, 0.0, CUBE_REST_Z)
+"""Nominal cube spawn [m]: tabletop center; randomized across the whole surface."""
+
+HOLD_TARGET_OFFSET = (0.20, 0.0, 0.20)
+"""Objective point in the ROBOT ROOT frame [m]: 20 cm ahead of and above the pelvis.
+
+Wherever on the table the cube spawns — and wherever the (jittered) robot
+stands — it must be brought to this same spot in front of the G1's chest,
+just over the table edge, slightly above the ready-pose palms.
+"""
 
 G1_TOE_REACH = 0.142
 """Forward extent of the G1 toe tips from the pelvis origin [m].
@@ -76,12 +88,21 @@ Measured from the foot-mesh world bounding box in the standing pose
 (scratchpad ``ready_pose_and_toes.py``, 2026-07-07).
 """
 
-ROBOT_STAND_POS = (0.0, -(LAB_TABLE_WIDTH / 2 + G1_TOE_REACH), 0.75)
+TOE_STANDOFF = 0.02
+"""Gap between the toe tips and the table-edge plane [m].
+
+Keeps the feet visibly clear of the table footprint; alignment tolerance in
+the real world is about this size anyway.
+"""
+
+ROBOT_STAND_POS = (0.0, -(LAB_TABLE_WIDTH / 2 + G1_TOE_REACH + TOE_STANDOFF), 0.75)
 """Fixed-base pelvis position [m]: standing at the long table edge.
 
-The y places the TOE TIPS exactly on the vertical plane dropped from the
-table's near edge — in the lab, roll the G1 toward the desk until its toes
-touch the desk-edge footprint and it matches the sim placement.
+The y places the TOE TIPS a :data:`TOE_STANDOFF` gap short of the vertical
+plane dropped from the table's near edge. Real-world alignment: the front
+faces of the table legs are flush with that plane, so lay a straight bar on
+the floor against both near legs and bring the toes up to it (the bar's
+thickness conveniently provides the standoff), then remove the bar.
 """
 
 READY_ARM_JOINT_POS = {"left_shoulder_roll_joint": 0.12, "right_shoulder_roll_joint": -0.12}
@@ -195,14 +216,27 @@ class EventCfg:
         mode="reset",
         params={"position_range": (1.0, 1.0), "velocity_range": (0.0, 0.0)},
     )
+    # placement jitter: the real robot is never positioned exactly — vary the
+    # stance around mid-table/up-close so the policy tolerates misalignment
+    # (works for the fixed base: the world joint re-anchors on root writes)
+    jitter_robot = EventTerm(
+        func=mdp.reset_root_state_uniform,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "pose_range": {"x": (-0.15, 0.15), "y": (-0.03, 0.02), "yaw": (-0.08, 0.08)},
+            "velocity_range": {},
+        },
+    )
     reset_cube = EventTerm(
         func=mdp.reset_root_state_uniform,
         mode="reset",
         params={
             "asset_cfg": SceneEntityCfg("cube"),
-            # far side capped at +0.05: beyond that the cube leaves the
-            # standing robot's comfortable palm reach (CEM probe, 2026-07-07)
-            "pose_range": {"x": (-0.15, 0.15), "y": (-0.05, 0.05)},
+            # the whole tabletop (with a margin so the cube never spawns
+            # hanging over an edge); spawns beyond the fixed-base reach are
+            # deliberate — the policy should handle any cube position
+            "pose_range": {"x": (-0.87, 0.87), "y": (-0.27, 0.27)},
             "velocity_range": {},
         },
     )
@@ -210,7 +244,7 @@ class EventCfg:
 
 @configclass
 class RewardsCfg:
-    """Staged pick-up shaping: reach -> close fingers -> lift -> hold.
+    """Staged shaping: reach -> close fingers -> lift -> carry to the hold target.
 
     SceneEntityCfgs are passed via ``params`` deliberately: managers only
     resolve body/joint names for cfgs found there, never for a term
@@ -246,9 +280,20 @@ class RewardsCfg:
     lift_progress = RewTerm(
         func=mdp.object_lift_progress,
         params={"rest_height": CUBE_REST_Z, "target_height": LIFT_SUCCESS_HEIGHT},
-        weight=8.0,
+        weight=4.0,
     )
-    lifted_hold = RewTerm(func=mdp.cube_lifted, params={"minimum_height": LIFT_SUCCESS_HEIGHT}, weight=10.0)
+    # the objective: carry the cube to the hold point in front of the chest,
+    # wherever on the table it spawned and wherever the robot stands
+    goal_tracking = RewTerm(
+        func=mdp.object_to_target_distance_reward,
+        params={"std": 0.25, "target_offset": HOLD_TARGET_OFFSET},
+        weight=6.0,
+    )
+    held_at_target = RewTerm(
+        func=mdp.object_near_target,
+        params={"threshold": 0.10, "target_offset": HOLD_TARGET_OFFSET},
+        weight=10.0,
+    )
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.005)
     # knocking the cube off the table must not be free: without this the
     # policy settles on flicking the cube around (74% drop terminations)
@@ -342,7 +387,8 @@ class G1PickCubeEnvCfg(ManagerBasedRLEnvCfg):
 
     def __post_init__(self):
         self.decimation = 4
-        self.episode_length_s = 8.0
+        # long enough to reach a far cube and carry it back to the hold point
+        self.episode_length_s = 10.0
         self.sim.dt = 0.005  # 200 Hz physics, 50 Hz control
         self.sim.render_interval = self.decimation
         self.sim.physics = PhysicsCfg()

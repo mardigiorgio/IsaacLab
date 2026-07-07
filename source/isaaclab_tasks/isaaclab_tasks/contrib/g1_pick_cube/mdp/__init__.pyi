@@ -11,6 +11,8 @@ __all__ = [
     "palms_to_cube_distance_reward",
     "fingers_closed_near_cube",
     "object_lift_progress",
+    "object_to_target_distance_reward",
+    "object_near_target",
     "robot_or_object_state_invalid",
 ]
 
@@ -18,6 +20,8 @@ from .functions import (
     cube_lifted,
     fingers_closed_near_cube,
     object_lift_progress,
+    object_near_target,
+    object_to_target_distance_reward,
     object_orientation_in_robot_root_frame,
     object_position_in_robot_root_frame,
     palms_to_cube_distance_reward,

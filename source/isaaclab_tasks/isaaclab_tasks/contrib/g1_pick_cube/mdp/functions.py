@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 import torch
 
 from isaaclab.managers import SceneEntityCfg
-from isaaclab.utils.math import quat_apply_inverse, subtract_frame_transforms
+from isaaclab.utils.math import quat_apply, quat_apply_inverse, subtract_frame_transforms
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
@@ -136,6 +136,44 @@ def fingers_closed_near_cube(
     # palms_cfg body order is [left, right] (body-index order on the G1)
     flexion = torch.where(nearest_palm == 0, _flexion(left_fingers_cfg), _flexion(right_fingers_cfg))
     return (flexion * (nearest_dist < distance_threshold)).nan_to_num(0.0)
+
+
+def _target_pos_w(env: ManagerBasedRLEnv, robot_cfg: SceneEntityCfg, target_offset: tuple[float, float, float]):
+    """World position of a robot-root-relative target offset [m], shape [num_envs, 3]."""
+    robot = env.scene[robot_cfg.name]
+    offset = torch.tensor(target_offset, device=env.device).expand(env.num_envs, 3)
+    return robot.data.root_pos_w.torch + quat_apply(robot.data.root_quat_w.torch, offset)
+
+
+def object_to_target_distance_reward(
+    env: ManagerBasedRLEnv,
+    std: float,
+    target_offset: tuple[float, float, float],
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cube"),
+) -> torch.Tensor:
+    """Kernelized cube distance to a robot-relative target point, in (0, 1].
+
+    ``target_offset`` [m] is expressed in the robot root frame, so the target
+    follows the robot's (jittered) placement; ``std`` [m] sets the kernel
+    width.
+    """
+    obj = env.scene[object_cfg.name]
+    dist = torch.linalg.vector_norm(obj.data.root_pos_w.torch - _target_pos_w(env, robot_cfg, target_offset), dim=1)
+    return torch.exp(-dist / std).nan_to_num(0.0)
+
+
+def object_near_target(
+    env: ManagerBasedRLEnv,
+    threshold: float,
+    target_offset: tuple[float, float, float],
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cube"),
+) -> torch.Tensor:
+    """True when the cube center is within ``threshold`` [m] of the robot-relative target point."""
+    obj = env.scene[object_cfg.name]
+    dist = torch.linalg.vector_norm(obj.data.root_pos_w.torch - _target_pos_w(env, robot_cfg, target_offset), dim=1)
+    return dist < threshold
 
 
 def robot_or_object_state_invalid(
