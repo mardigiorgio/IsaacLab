@@ -1,0 +1,74 @@
+The goal of this training env is to train the G1 to pick up the spatula by the handle with its right hand. The G1 stands fixed base at the table with its left arm
+down by its side and its right hand over the table. Touching the blade ends the episode. Lifting the spatula off the table ends the episode successfully.
+
+Reward Terms (cfg = g1_spatula_lift_env_cfg.py RewardsCfg, fn = mdp/functions.py) — ManiSkill
+UnitreeG1PlaceAppleInBowl recipe adapted to the spatula (see class docstring):
+    reaching        1 - tanh(5 d): pinch center (thumb/index tip midpoint)   cfg L367  mdp.pinch_center_reaching fn L243
+                    to the handle grasp point — never anchor reach on the
+                    palm/wrist link (the policy plants the wrist on it)
+    grasp           3-FINGER CLAW, per-digit credit (1/3 per digit           cfg L379  mdp.grasp_force_reward fn L262
+                    pressing >= 0.5 N, whole-digit sensors): dense bridge
+                    to the full claw; lift/success REQUIRE all three
+    lifting         height progress from rest, GATED on finger contact —     cfg L385  mdp.spatula_lift_progress fn L312
+                    pays from the first press-tilt (probe-verified)
+    success_bonus   one-time bonus when the pick succeeds                    cfg L395  mdp.is_terminated_term
+    blade_penalty   one-time penalty for the blade termination               cfg L396  mdp.is_terminated_term
+    dropped_penalty one-time penalty for losing the spatula                  cfg L397  mdp.is_terminated_term
+    action_l2       small smoothness penalty                                 cfg L398  mdp.action_l2_clamped fn L174
+    action_rate_l2  small smoothness penalty                                 cfg L399  mdp.action_rate_l2_clamped fn L179
+
+Scene: the spatula lies flat on the table (natural). The intended pick is a
+LEVER: fingers brace against the tabletop and close the claw so the handle
+scoops up into the grip (hand-table contact is legal and expected — only
+blade contact terminates). Active-press probing verified thumb+finger force
+closure on the flat handle (228 N / 296 N simultaneous). Actions are tightly
+bounded joint deltas (waist+arm <= 0.2, fingers <= 0.5 rad/step) with firm
+hand PD — the ManiSkill pick recipe. Waist frozen.
+
+Reset Events (cfg = g1_spatula_lift_env_cfg.py EventCfg):
+    reset_grasp_map caged-start machinery, currently DISABLED via            cfg L355  mdp.reset_from_grasp_map fn L444
+                    GRASP_MAP_STAGE_PROBS = (1.0, 0.0); grasp_map.pt stays
+                    authored (assets/author_grasp_map.py)
+
+Termination Conditions (cfg = g1_spatula_lift_env_cfg.py TerminationsCfg, fn = mdp/functions.py):
+    Picked up (success)       success          cfg L411  mdp.object_lifted_above_while_grasped fn L347
+                                                         (spatula 15+ cm up WHILE a finger presses it — catapults pay nothing)
+    Hand contact with blade   blade_contact    cfg L420  mdp.blade_contact fn L364 (blade force over 1 N)
+    Spatula lost              spatula_dropped  cfg L426  mdp.object_out_of_bound fn L375 (off the table or out of reach)
+    Physics blow-up           robot_exploded   cfg L440  mdp.robot_or_object_state_invalid fn L390 (joint vel over 2x limit)
+    Timeout                   time_out         cfg L406  (3 s episode)
+
+Best Practices:
+
+    - Start from the nearest WORKING env and change one thing at a time. Novel mechanics
+      each breed their own RL exploit; you find out one training run later.
+    - Solve the task first: fix everything fixable (base, object pose, scene) and add
+      randomization/realism only after a policy demonstrably works.
+    - Match episode length to task duration. A 2 second task does not need a 20 second
+      episode; short episodes turn over experience faster.
+    - Enforce "never do X" with a termination, not by gating every reward on not-X.
+      One rule beats reward plumbing.
+    - Every reward channel needs a dense path to its first nonzero signal. A term gated on
+      contact/success is flat 0 until the policy stumbles into it - bridge the gap with
+      dense shaping (reach, close-fingers-near, progress) or a curriculum that makes the
+      gate easy early.
+    - Keep dense penalties tiny relative to dense income. Large per-step penalties make
+      dying cheaper than living and the policy will find the nearest exit.
+    - Price terminations consistently: a controllable early exit must cost more than the
+      worst case of living out the episode, and pricing one exit cheaper than another just
+      reroutes the exploit through it.
+    - A success termination's bonus must exceed the dense income it cuts off, or the
+      policy learns to hover just short of success and farm shaping forever.
+    - Income that can be collected without progress (pay-for-holding, pay-for-being-near)
+      is farmable through reset cycles. Prefer penalties (doing nothing = 0) over income.
+    - Watch the per-term reward and termination breakdowns from iteration 1. Flat-zero
+      channels and a single dominant termination are diagnoses, not noise.
+    - Verify geometry with printed positions AND rendered frames before training, then
+      bake the measured values into the config. Assumptions about frames, joint
+      conventions, and rest poses are usually wrong.
+    - Guard every reward against non-finite states - one diverged env can poison the
+      whole batch.
+    - Know where your framework resolves config references (e.g. entity cfgs resolve only
+      when passed as term params). Unresolved defaults fail silently.
+    - Measure throughput before committing to a long run; profile the sim settings on a
+      short run first. A wrong solver mode or logging cadence can be a 10x tax.
