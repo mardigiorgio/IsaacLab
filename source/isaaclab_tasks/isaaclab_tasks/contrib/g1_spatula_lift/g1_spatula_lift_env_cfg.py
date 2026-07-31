@@ -200,9 +200,11 @@ class G1SpatulaLiftSceneCfg(InteractiveSceneCfg):
             usd_path=SPATULA_USD_PATH,
             activate_contact_sensors=True,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
-                solver_position_iteration_count=8,
+                solver_position_iteration_count=16,
                 solver_velocity_iteration_count=0,
-                max_depenetration_velocity=5.0,
+                # 5.0 let the solver eject the 66 g spatula at 5 m/s whenever
+                # a finger penetrated it — the "exploding spatula" (video)
+                max_depenetration_velocity=0.5,
             ),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=SPATULA_SPAWN_POS, rot=SPATULA_SPAWN_QUAT),
