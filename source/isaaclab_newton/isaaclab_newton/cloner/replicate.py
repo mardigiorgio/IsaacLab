@@ -44,6 +44,7 @@ def _build_newton_builder_from_mapping(
     quaternions: torch.Tensor | None = None,
     up_axis: str = "Z",
     simplify_meshes: bool = True,
+    simplify_meshes_exclude: Sequence[str] | None = None,
 ) -> tuple[ModelBuilder, object, dict, list, dict[str, ModelBuilder]]:
     """Build a Newton model builder from clone mapping inputs.
 
@@ -89,6 +90,7 @@ def _build_newton_builder_from_mapping(
         schema_resolvers,
         ignore_paths=deformable_ignore_paths or None,
         simplify_meshes=simplify_meshes,
+        simplify_meshes_exclude=simplify_meshes_exclude,
     )
 
     # Inject registered sites into source builders (and global sites into main builder).
@@ -140,6 +142,10 @@ class NewtonReplicateContext:
             cfg = PhysicsManager._cfg
             simplify_meshes = cfg.simplify_meshes if isinstance(cfg, NewtonCfg) else True
         self.simplify_meshes = simplify_meshes
+        from isaaclab_newton.physics import NewtonCfg as _NewtonCfg
+
+        _cfg = PhysicsManager._cfg
+        self.simplify_meshes_exclude = list(_cfg.simplify_meshes_exclude) if isinstance(_cfg, _NewtonCfg) else []
         self.commit_to_manager = commit_to_manager
         self._queue: list[_MappingBatch] = []
 
@@ -225,6 +231,7 @@ class NewtonReplicateContext:
             quaternions=quaternions,
             up_axis=self.up_axis,
             simplify_meshes=self.simplify_meshes,
+            simplify_meshes_exclude=self.simplify_meshes_exclude,
         )
         fabric_body_bindings = rename_builder_labels(builder, sources, destinations, env_ids, mapping)
         if self.commit_to_manager:

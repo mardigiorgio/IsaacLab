@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -18,6 +19,31 @@ from isaaclab.cloner.cloner_utils import replace_path_prefix
 from isaaclab.sim.utils.newton_model_utils import replace_newton_builder_shape_colors
 
 
+def _hullable_shape_indices(builder: ModelBuilder, exclude_patterns: Sequence[str] | None) -> list[int]:
+    """Mesh-shape indices safe to hull: collidable MESH shapes without SDF or
+    hydroelastic state whose labels match no exclusion pattern."""
+    from newton import GeoType, ShapeFlags
+
+    patterns = [re.compile(p) for p in (exclude_patterns or [])]
+    indices = []
+    for i, stype in enumerate(builder.shape_type):
+        if stype != GeoType.MESH or not (builder.shape_flags[i] & ShapeFlags.COLLIDE_SHAPES):
+            continue
+        has_sdf_state = (
+            builder.shape_sdf_max_resolution[i] is not None
+            or builder.shape_sdf_target_voxel_size[i] is not None
+            or builder.shape_sdf_padding[i] is not None
+            or bool(builder.shape_flags[i] & ShapeFlags.HYDROELASTIC)
+        )
+        if has_sdf_state:
+            continue
+        label = builder.shape_label[i] or ""
+        if any(p.search(label) for p in patterns):
+            continue
+        indices.append(i)
+    return indices
+
+
 def build_source_builders(
     stage: Usd.Stage,
     sources: Sequence[str],
@@ -26,8 +52,15 @@ def build_source_builders(
     *,
     ignore_paths: Sequence[str] | None = None,
     simplify_meshes: bool = True,
+    simplify_meshes_exclude: Sequence[str] | None = None,
 ) -> dict[str, ModelBuilder]:
-    """Build one Newton builder for each clone source prim path."""
+    """Build one Newton builder for each clone source prim path.
+
+    ``simplify_meshes_exclude`` holds regex patterns matched against shape
+    labels (prim paths): matching mesh shapes keep their RAW triangle geometry
+    when ``simplify_meshes`` is enabled. Shapes carrying SDF/hydroelastic
+    state are always excluded — hulling them would discard that state.
+    """
     builders: dict[str, ModelBuilder] = {}
     for source in sources:
         builder = create_builder()
@@ -41,7 +74,9 @@ def build_source_builders(
             ignore_paths=ignore_paths,
         )
         if simplify_meshes:
-            builder.approximate_meshes("convex_hull", keep_visual_shapes=True)
+            indices = _hullable_shape_indices(builder, simplify_meshes_exclude)
+            if indices:
+                builder.approximate_meshes("convex_hull", shape_indices=indices, keep_visual_shapes=True)
         replace_newton_builder_shape_colors(builder, stage)
         builders[source] = builder
     return builders

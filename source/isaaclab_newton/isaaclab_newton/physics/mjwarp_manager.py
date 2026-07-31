@@ -31,7 +31,7 @@ def _prim_disable_gravity(stage, path: str) -> bool:
     """Read ``physxRigidBody:disableGravity`` off the USD prim at ``path``.
 
     Returns ``False`` for an empty path, a prim that no longer resolves, or an unauthored/invalid
-    attribute -- mirrors the previous inline per-body walk exactly.
+    attribute.
     """
     if not path:
         return False
@@ -47,19 +47,15 @@ def _template_world_body_partition(model: Model) -> tuple[int, int, int, int] | 
     block of world-0 body indices, or ``None`` if per-world bodies cannot be safely tiled from a
     single template and the caller must fall back to walking every body.
 
-    :attr:`~newton.Model.body_world_start` always describes a clean, contiguous per-world
-    partition of body indices (an optional prefix/suffix of "global", world-index ``-1`` bodies --
-    e.g. a scene-wide ground plane -- around ``world_count`` per-world blocks); Newton's
-    ``ModelBuilder.finalize`` validates this by construction (see ``_validate_world_ordering`` in
-    ``newton/_src/sim/builder.py``), so IsaacLab does not need to re-check it.
+    :attr:`~newton.Model.body_world_start` describes the per-world partition of body indices,
+    with an optional prefix/suffix of "global", world-index ``-1`` bodies (e.g. a scene-wide
+    ground plane) around ``world_count`` per-world blocks.
 
-    What Newton does *not* guarantee -- and what the template-and-broadcast fast path in
-    :func:`_disable_gravity_body_mask` needs -- is that every per-world block is the *same size*
-    and lays out its bodies *identically* (up to the per-env numeric index baked into the USD
-    path, e.g. ``env_0`` vs ``env_1``). IsaacLab's env clones are structurally identical, but that
-    is an IsaacLab-level convention, not a Newton invariant, so it is verified here: block sizes
-    must match, and (cheaply, bounded by one env's body count rather than the total) world 0's and
-    world 1's labels must match once per-env digits are normalized out.
+    The template-and-broadcast fast path in :func:`_disable_gravity_body_mask` additionally
+    requires every per-world block to be the *same size* and lay out its bodies *identically*
+    (up to the per-env numeric index baked into the USD path, e.g. ``env_0`` vs ``env_1``).
+    That is verified here: block sizes must match, and world 0's and world 1's labels must
+    match once per-env digits are normalized out.
     """
     starts_arr = getattr(model, "body_world_start", None)
     world_count = int(getattr(model, "world_count", 0) or 0)
@@ -91,24 +87,16 @@ def _disable_gravity_body_mask(model: Model) -> np.ndarray:
     has ``physxRigidBody:disableGravity`` authored ``True``.
 
     :class:`~isaaclab.sim.schemas.RigidBodyBaseCfg.disable_gravity` writes this PhysX-namespaced
-    attribute directly onto each rigid-body prim (see :meth:`~isaaclab.sim.schemas.modify_rigid_body_properties`);
-    Newton's USD importer only reads it at the physics-scene level (scene-wide gravity toggle), so this
-    reproduces the per-body intent by re-reading the same attribute from the prims the finalized model
-    was built from. Bodies with no valid backing prim default to ``False``.
+    attribute directly onto each rigid-body prim (see :meth:`~isaaclab.sim.schemas.modify_rigid_body_properties`),
+    so the per-body intent is recovered by re-reading the same attribute from the prims the
+    finalized model was built from. Bodies with no valid backing prim default to ``False``.
 
-    Cost: re-reading a USD prim + attribute per body is expensive (a live stage traversal), and this
-    runs on every full solver rebuild (every non-soft :meth:`NewtonManager.reset`, e.g. the mimic
-    annotate replay loop). Walking every body across every one of ``num_envs`` clones would make this
-    ``O(num_envs * bodies_per_env)``. IsaacLab's env clones are structurally identical and MJWarp's
-    per-body model params are shared across worlds regardless (``separate_worlds=True`` consumes only
-    world 0's template), so instead this reads world 0's prims once (see
-    :func:`_template_world_body_partition`) and broadcasts the result to every world -- ``O(1)`` in
-    ``num_envs``. "Global" bodies outside any per-env world (world index ``-1``, e.g. a shared ground
-    plane) are not per-env clones and have no template to broadcast from, so they are always read
-    directly; in practice there are few to none of them, so this stays cheap. If the per-world
-    partition does not cleanly tile (block sizes differ, or world 0/1 bodies differ once per-env
-    indices are normalized out), this falls back to the original full walk so behavior is unchanged
-    for heterogeneous, non-cloned scenes.
+    Re-reading a USD prim + attribute per body is expensive, so when the per-world partition
+    cleanly tiles from a single template (see :func:`_template_world_body_partition`), world 0's
+    prims are read once and the result is broadcast to every world. "Global" bodies outside any
+    per-env world (world index ``-1``, e.g. a shared ground plane) have no template to broadcast
+    from and are always read directly. If the partition does not cleanly tile, this falls back
+    to walking every body.
     """
     mask = np.zeros(model.body_count, dtype=bool)
     if model.body_count == 0:
@@ -145,10 +133,8 @@ def _apply_gravity_compensation(model: Model, mask: np.ndarray) -> None:
     """Set MuJoCo-Warp per-body ``gravcomp=1.0`` for bodies flagged by ``mask``.
 
     Must run on ``model`` before :class:`~newton.solvers.SolverMuJoCo` /
-    :class:`~newton.solvers.SolverMuJoCoAdaptive` construction: the solver copies
-    ``model.mujoco.gravcomp`` into its internal MJWarp model once, at construction time, and never
-    re-reads the Newton :class:`~newton.Model` afterward (verified: patching ``gravcomp`` post-construction
-    has no effect on the running solver).
+    :class:`~newton.solvers.SolverMuJoCoAdaptive` construction: the solver reads
+    ``model.mujoco.gravcomp`` at construction time only.
 
     .. note::
         This unconditionally overwrites ``gravcomp`` to ``1.0`` for every masked body: a body with
@@ -206,18 +192,17 @@ class NewtonMJWarpManager(NewtonManager):
         field are not forwarded. Sets :attr:`NewtonManager._needs_collision_pipeline` to ``True`` only
         when ``use_mujoco_contacts=False``.
         """
-        # SAP backend selector (parallel branch off the new _sap latch). cfg.backend is the source of
-        # truth; NEWTON_SOLVER / NEWTON_SAP=1 are shell-level overrides for quick toggling.
+        # Backend selection: cfg.backend is the source of truth; NEWTON_SOLVER / NEWTON_SAP=1
+        # are shell-level env overrides.
         backend = str(getattr(solver_cfg, "backend", "mujoco"))
         if os.environ.get("NEWTON_SOLVER"):
             backend = os.environ["NEWTON_SOLVER"]
         if os.environ.get("NEWTON_SAP") == "1":
             backend = "sap"
 
-        # Bodies whose IsaacLab cfg set disable_gravity=True (e.g. FRANKA_PANDA_HIGH_PD_CFG's
-        # gravity-free arm for its 400/80 PD tracking). MuJoCo-Warp honors this per body via
-        # gravcomp (see _apply_gravity_compensation); SAP has no per-body mechanism (gravity is
-        # applied per-world only, see sap_warp/sim/sap_runtime.py) so it can only warn.
+        # Bodies whose IsaacLab cfg set disable_gravity=True. MuJoCo-Warp honors this per body
+        # via gravcomp (see _apply_gravity_compensation); the SAP backend has no per-body
+        # gravity-compensation mechanism, so it can only warn.
         disable_gravity_mask = _disable_gravity_body_mask(model)
 
         if backend == "sap":
@@ -235,9 +220,9 @@ class NewtonMJWarpManager(NewtonManager):
             _env = os.environ.get
             sap_adaptive = bool(getattr(solver_cfg, "sap_adaptive", False)) or _env("NEWTON_SAP_ADAPTIVE") == "1"
             if sap_adaptive:
-                # Error-controlled step-doubling SAP (even+global tiling). Owns its own pipeline,
-                # so no manager-level collision pipeline; reuses the existing _adaptive step/reset/
-                # no-graph wiring (host-synced boundary, like SolverMuJoCoAdaptive).
+                # Error-controlled step-doubling SAP. Owns its own contact pipeline, so no
+                # manager-level collision pipeline; reuses the _adaptive step/reset/no-graph
+                # wiring (host-synced boundary, like SolverMuJoCoAdaptive).
                 NewtonManager._solver = SolverSAPAdaptive(
                     model,
                     tol=float(_env("NEWTON_ADAPTIVE_TOL", getattr(solver_cfg, "adaptive_tol", 1e-3))),
@@ -260,8 +245,8 @@ class NewtonMJWarpManager(NewtonManager):
                     "solver-internal per-N CUDA-graph capture, set NEWTON_SAP_ADAPTIVE_GRAPH=0 to disable)"
                 )
             else:
-                # Fixed-step SAP: the RL-ideal (stable+consistent+fast). Newton's CollisionPipeline
-                # feeds SapContacts each step (converted in _step_solver).
+                # Fixed-step SAP: Newton's CollisionPipeline feeds SapContacts each step
+                # (converted in _step_solver).
                 sap_model = sap_model_from_newton(model)
                 NewtonManager._solver = SolverSAP(
                     sap_model,
@@ -317,6 +302,9 @@ class NewtonMJWarpManager(NewtonManager):
             _env = os.environ.get
             NewtonManager._solver = SolverMuJoCoAdaptive(
                 model,
+                # honor the cfg's contact source: with use_mujoco_contacts=False the
+                # manager's Newton CollisionPipeline contacts are injected per boundary
+                use_newton_contacts=not bool(getattr(solver_cfg, "use_mujoco_contacts", True)),
                 tol=float(_env("NEWTON_ADAPTIVE_TOL", getattr(solver_cfg, "adaptive_tol", 1e-3))),
                 dt_mode=str(_env("NEWTON_ADAPTIVE_DTMODE", getattr(solver_cfg, "adaptive_dt_mode", "per_world"))),
                 dt_inner_init=float(_env("NEWTON_ADAPTIVE_DT_INIT", getattr(solver_cfg, "adaptive_dt_init", 0.01))),
@@ -329,6 +317,25 @@ class NewtonMJWarpManager(NewtonManager):
             )
             cls._adaptive = True
             cls._adaptive_frame = 0
+            # NEWTON_ADAPTIVE_JOINT_SCALE=<s> down-weights hinge/slide qpos coords in the error
+            # metric: sets S=s for every hinge/slide coord (free-joint coords keep S=1), i.e.
+            # tol/s on joints only. Runs before the first step, so the in-place copy is
+            # CUDA-graph-capture safe.
+            js = os.environ.get("NEWTON_ADAPTIVE_JOINT_SCALE")
+            if js:
+                import warp as _wp
+
+                solver = NewtonManager._solver
+                mjm = solver.mj_model
+                scale = solver._state_scale.numpy()
+                for j in range(mjm.njnt):
+                    if mjm.jnt_type[j] in (2, 3):  # slide, hinge
+                        scale[:, mjm.jnt_qposadr[j]] = float(js)
+                _wp.copy(
+                    solver._state_scale,
+                    _wp.array(scale, dtype=_wp.float32, device=solver._state_scale.device),
+                )
+                logger.info(f"NewtonMJWarpManager: joint error-scale override S={js} on hinge/slide coords")
             logger.info(
                 "NewtonMJWarpManager: SolverMuJoCoAdaptive (adaptive step-doubling; solver-internal "
                 "per-iteration CUDA-graph replay, set NEWTON_MJ_ADAPTIVE_GRAPH=0 to disable)"
@@ -390,22 +397,18 @@ class NewtonMJWarpManager(NewtonManager):
         if cls._adaptive:
             # MuJoCo-adaptive: step() is the boundary call (state_in, state_out, control,
             # contacts, dt); it owns its inner step-doubling loop + its own contacts.
-            # No per-substep divergence reset: the solver's floor latch was removed
-            # (`diverged` stays all-False), so that reset call was a dead kernel launch.
             cls._solver.step(state_0, state_1, control, contacts, substep_dt)
         else:
             cls._solver.step(state_0, state_1, control, contacts, substep_dt)
 
     @classmethod
     def _run_solver_substeps(cls, contacts) -> None:
-        """MuJoCo-adaptive: march the WHOLE control period in one boundary call.
+        """MuJoCo-adaptive: march the whole control period in one boundary call.
 
-        The adaptive solver is itself the substepper (error-controlled inner dt), so
-        driving it once per manager substep would only add forced boundary landings,
-        duplicate control application, and duplicate Newton<->MuJoCo conversion + FK
-        round-trips -- control is constant across the decimation tick (actuators run
-        once per tick, before this call). SAP and fixed-step paths keep the stock
-        per-substep loop.
+        The adaptive solver is itself the substepper (error-controlled inner dt), and
+        control is constant across the decimation tick (actuators run once per tick,
+        before this call), so one boundary call per tick suffices. SAP and fixed-step
+        paths keep the stock per-substep loop.
         """
         if cls._adaptive and not cls._sap:
             cls._step_solver(cls._state_0, cls._state_0, cls._control, contacts, cls._solver_dt * cls._num_substeps)
@@ -446,7 +449,7 @@ class NewtonMJWarpManager(NewtonManager):
 
     @classmethod
     def _log_adaptive_telemetry(cls) -> None:
-        """File-based dt/substep telemetry (Kit swallows stdout), throttled to every Nth frame.
+        """File-based dt/substep telemetry, throttled to every Nth frame (``NEWTON_ADAPTIVE_LOG_EVERY``).
 
         Writes per-world inner-dt spread + cumulative substeps so adaptivity is observable: ``spread > 0``
         (per-world mode) or a changing cumulative substep count means the controller is subdividing.

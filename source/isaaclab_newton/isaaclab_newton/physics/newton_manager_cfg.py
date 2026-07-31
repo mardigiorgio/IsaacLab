@@ -67,9 +67,8 @@ class NewtonShapeCfg:
     margin: float = 0.0
     """Default per-shape collision margin [m].
 
-    A nonzero margin (e.g. ``0.01``) is required for stable contact on
-    triangle-mesh terrain — without it, lightweight robots fail to learn
-    rough-terrain locomotion on Newton. Newton's upstream default is ``0.0``.
+    Triangle-mesh terrain typically needs a nonzero margin (e.g. ``0.01``) for
+    stable contact. Newton's upstream default is ``0.0``.
     """
 
     gap: float = 0.01
@@ -79,11 +78,8 @@ class NewtonShapeCfg:
     """Default contact elastic stiffness [N/m]. Newton's upstream default is ``2.5e3``.
 
     On the MuJoCo-Warp backend, (:attr:`ke`, :attr:`kd`) convert to contact ``solref``
-    as timeconst = 2/kd, dampratio = (kd/2)*sqrt(1/ke) — BOTH must be > 0 or the
-    contact silently falls back to MuJoCo's default compliance (solref 0.02/1). The
-    upstream defaults reproduce exactly that default (20 ms timeconst), which lets
-    feet/graspers transiently sink ~v*timeconst at impact (~1-2 cm at 1 m/s).
-    Stiff example: ``ke=1e6, kd=2000`` -> solref (0.001, 1.0), sub-mm sink.
+    as timeconst = 2/kd, dampratio = (kd/2)*sqrt(1/ke) — both must be > 0 or the
+    contact falls back to MuJoCo's default compliance (solref 0.02/1).
     """
 
     kd: float = 100.0
@@ -171,25 +167,31 @@ class NewtonCfg(PhysicsCfg):
     meshes are intentional, for example thin or hollow MPM colliders.
     """
 
+    simplify_meshes_exclude: list[str] = []
+    """Regex patterns matched against shape labels (prim paths) that keep their
+    RAW triangle collision geometry when :attr:`simplify_meshes` is enabled.
+
+    Selective fidelity: hull the bulk of the scene (e.g. robot links) while
+    task-critical shapes keep exact meshes. Shapes carrying SDF or
+    hydroelastic state are always kept raw regardless of this list — hulling
+    would discard that state.
+    """
+
     enforce_velocity_limit: bool = True
     """Whether to rate-limit implicit-actuator position targets to each joint's configured
     velocity limit (:attr:`~isaaclab_newton.assets.ArticulationData.joint_vel_limits`).
 
-    PhysX enforces a joint's drive velocity limit as part of its native drive dynamics; Newton's
-    solvers do not (MuJoCo-Warp explicitly drops ``joint_velocity_limit`` -- see
-    ``SolverMuJoCo``'s docstring -- and the vendored SAP solver has no velocity-limit concept
-    at all). Left unenforced, a stiff implicit-PD joint commanded a large position step can move
-    several times faster than the configured limit, which is enough to fling a grasped object
-    out of a gripper during contact-rich manipulation.
+    Newton's solvers do not enforce a joint's drive velocity limit as part of their drive
+    dynamics, so a stiff implicit-PD joint commanded a large position step can move faster
+    than the configured limit.
 
     When ``True``, :meth:`~isaaclab_newton.assets.Articulation.write_data_to_sim` clamps the
     per-control-tick change of each implicit joint's commanded position target (relative to the
     previous tick's already-clamped target, not the measured position) to
-    ``velocity_limit * dt``, emulating PhysX's drive behavior at the actuator layer so it applies
-    identically across every Newton solver mode (MuJoCo-Warp fixed/adaptive, SAP fixed/adaptive).
-    Joints whose velocity limit is at or above the PhysX/Newton "no limit" sentinel
-    (``1.0e6`` [m/s or rad/s]) are left untouched. Set to ``False`` to restore the raw
-    (solver-dependent, potentially too-fast) target write.
+    ``velocity_limit * dt``, applied at the actuator layer so it behaves identically across
+    every Newton solver mode. Joints whose velocity limit is at or above the "no limit"
+    sentinel (``1.0e6`` [m/s or rad/s]) are left untouched. Set to ``False`` to write raw
+    targets without rate limiting.
     """
 
     def __post_init__(self):
