@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""G1 pick-cube task at the real lab table (skeleton env; rewards are user-owned)."""
+"""G1 pick-up-cube task at the real lab table."""
 
 import gymnasium as gym
 

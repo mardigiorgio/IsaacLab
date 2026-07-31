@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Smoke tests for the G1 pick-cube skeleton env (PhysX + Newton presets)."""
+"""Smoke tests for the G1 pick-up-cube env (PhysX + Newton presets)."""
 
 from isaaclab.app import AppLauncher
 
@@ -69,19 +69,20 @@ def test_init_pose_is_stable(physics_preset_name):
 
 @pytest.mark.parametrize("physics_preset_name", [None, "newton_mjwarp"], ids=["physx", "newton_mjwarp"])
 def test_cube_settles_on_tabletop(physics_preset_name):
-    """The table collision geometry is right: a spawned cube rests at tabletop + half edge."""
-    from isaaclab_tasks.contrib.g1_pick_cube.g1_pick_cube_env_cfg import CUBE_REST_Z
+    """The cube rests on the tabletop at its deterministic spawn, not inside or below it."""
+    from isaaclab_tasks.contrib.g1_pick_cube.g1_pick_cube_env_cfg import CUBE_REST_Z, CUBE_SPAWN_POS
 
-    with _settled_env(physics_preset_name) as env:
+    with _settled_env(physics_preset_name, steps=60) as env:
         cube = env.unwrapped.scene["cube"]
-        rest_z = cube.data.root_pos_w.torch[:, 2] - env.unwrapped.scene.env_origins[:, 2]
-        # 1 cm tolerance: on the table, not inside it, not on the floor
-        assert torch.all(torch.abs(rest_z - CUBE_REST_Z) < 0.01), f"cube rest z = {rest_z.tolist()}"
+        pos = cube.data.root_pos_w.torch - env.unwrapped.scene.env_origins
+        assert torch.all(torch.abs(pos[:, 2] - CUBE_REST_Z) < 0.01), f"cube rest z = {pos[:, 2].tolist()}"
+        xy_drift = torch.linalg.vector_norm(pos[:, :2] - torch.tensor(CUBE_SPAWN_POS[:2], device=pos.device), dim=1)
+        assert torch.all(xy_drift < 0.05), f"cube drifted in xy: {xy_drift.tolist()}"
 
 
 @pytest.mark.parametrize("physics_preset_name", [None, "newton_mjwarp"], ids=["physx", "newton_mjwarp"])
-def test_palm_obs_and_rewards_use_palm_bodies(physics_preset_name):
-    """SceneEntityCfgs resolve to the two palms: 6-dim palm obs, palm-based reaching reward.
+def test_reach_obs_and_rewards_use_palm_body(physics_preset_name):
+    """SceneEntityCfgs resolve: 3-dim palm obs and the right palm for reaching.
 
     Guards against the silent-failure mode where SceneEntityCfg defaults in
     term functions are never resolved by the managers (body_ids stays
@@ -90,7 +91,7 @@ def test_palm_obs_and_rewards_use_palm_bodies(physics_preset_name):
     with _settled_env(physics_preset_name, steps=5) as env:
         obs_manager = env.unwrapped.observation_manager
         dims = dict(zip(obs_manager.active_terms["policy"], obs_manager.group_obs_term_dim["policy"]))
-        assert dims["palm_to_cube"] == (6,), f"palm_to_cube obs dim = {dims['palm_to_cube']}, expected (6,)"
+        assert dims["palm_to_cube"] == (3,), f"palm_to_cube obs dim = {dims['palm_to_cube']}, expected (3,)"
         reaching_cfg = env.unwrapped.reward_manager.get_term_cfg("reaching")
         body_ids = reaching_cfg.params["robot_cfg"].body_ids
-        assert isinstance(body_ids, list) and len(body_ids) == 2, f"reaching resolved body_ids = {body_ids}"
+        assert isinstance(body_ids, list) and len(body_ids) == 1, f"reach resolved body_ids = {body_ids}"

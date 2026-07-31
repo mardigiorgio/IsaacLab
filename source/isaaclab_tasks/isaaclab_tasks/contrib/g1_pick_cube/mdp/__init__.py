@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""MDP functions for the G1 pick-cube task."""
+"""MDP functions for the G1 pick-up-cube task."""
 
 from isaaclab.utils.module import lazy_export
 

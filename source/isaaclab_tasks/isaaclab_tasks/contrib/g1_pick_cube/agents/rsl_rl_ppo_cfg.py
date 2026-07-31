@@ -10,22 +10,22 @@ from isaaclab_rl.rsl_rl import RslRlMLPModelCfg, RslRlOnPolicyRunnerCfg, RslRlPp
 
 @configclass
 class G1PickCubePPORunnerCfg(RslRlOnPolicyRunnerCfg):
-    """PPO starting-point config for the G1 pick-cube skeleton (untuned)."""
+    """PPO config for the G1 pick-up-cube task."""
 
     num_steps_per_env = 24
-    max_iterations = 1000
+    max_iterations = 5000
     save_interval = 100
     experiment_name = "g1_pick_cube"
+    logger = "wandb"
+    wandb_project = "g1-pick-cube"
     actor = RslRlMLPModelCfg(
-        hidden_dims=[256, 128, 64],
+        hidden_dims=[512, 256, 128],
         activation="elu",
         obs_normalization=True,
-        # modest initial exploration: the arms are stiff (3 kN·m/rad) and wild
-        # early targets destabilize the fixed-step solver
         distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=0.5),
     )
     critic = RslRlMLPModelCfg(
-        hidden_dims=[256, 128, 64],
+        hidden_dims=[512, 256, 128],
         activation="elu",
         obs_normalization=True,
     )
