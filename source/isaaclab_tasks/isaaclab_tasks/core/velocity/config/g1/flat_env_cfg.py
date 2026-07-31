@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-from isaaclab_newton.physics import MJWarpSolverCfg, NewtonCfg, NewtonShapeCfg
+from isaaclab_newton.physics import MJWarpSolverCfg, NewtonCfg, NewtonCollisionPipelineCfg, NewtonShapeCfg
 from isaaclab_physx.physics import PhysxCfg
 
 from isaaclab.managers import SceneEntityCfg
@@ -20,20 +20,27 @@ class PhysicsCfg(PresetCfg):
     default = PhysxCfg(gpu_max_rigid_patch_count=10 * 2**15)
     newton_mjwarp = NewtonCfg(
         solver_cfg=MJWarpSolverCfg(
-            njmax=95,
-            nconmax=10,
+            # use_mujoco_contacts=False: contacts come from Newton's CollisionPipeline
+            # and are injected into the solver. njmax/nconmax need headroom for
+            # mesh-vertex contacts.
+            njmax=400,
+            nconmax=200,
             cone="pyramidal",
             impratio=1,
             integrator="implicitfast",
+            use_mujoco_contacts=False,
         ),
+        # rigid_contact_max must be >= nconmax * nworld (MuJoCo's contact arena
+        # demand); do not rely on the auto-estimator here.
+        collision_cfg=NewtonCollisionPipelineCfg(rigid_contact_max=2_000_000, max_triangle_pairs=2_500_000),
         num_substeps=1,
-        # Stiff foot-ground contact: solref (1 ms, 1.0) instead of the 20 ms default
-        # compliance that lets feet sink ~1-2 cm at footfall. The physics step here
-        # is 5 ms (sim.dt 0.005, num_substeps 1): at this stiffness that is in the
-        # penetration-tail regime for the fixed-step solver (measured on the
-        # single-impact probe: p90 5 mm tail at dt=5 ms, clean at <=2 ms); the
-        # adaptive solver removes the tail at any tolerance.
+        # Stiff foot-ground contact: high stiffness/damping (ke/kd) to limit foot
+        # penetration at footfall.
         default_shape_cfg=NewtonShapeCfg(ke=1.0e6, kd=2000.0),
+        # The foot colliders keep their raw collision meshes; other collision
+        # meshes are simplified.
+        simplify_meshes=True,
+        simplify_meshes_exclude=[".*ankle_roll_link.*"],
         debug_mode=False,
     )
 

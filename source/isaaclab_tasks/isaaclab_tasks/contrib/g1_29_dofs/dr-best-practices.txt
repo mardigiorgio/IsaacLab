@@ -1,0 +1,55 @@
+Domain Randomization Best Practices:
+
+  - Get a policy working with ZERO randomization first. DR widens a working
+    basin; it cannot create one, and it hides which change broke training.
+  - Randomize what you measured failing, not everything you can. Each lever
+    should trace to a symptom (sway -> COM/IMU bias, chatter -> latency+rate)
+    or a known model gap; blanket DR just makes the task harder to learn.
+  - Per-episode constants and per-step noise are different tools. Noise teaches
+    filtering; constant biases (COM, IMU trim, gains, latency, payload) teach
+    estimation and adaptation. Most sim-to-real error is a constant, not noise.
+  - Derive ranges from measured hardware error with margin, not vibes: a
+    measured ~2 deg trim becomes +-2.5 deg trained. Too narrow does nothing;
+    too wide taxes learning for robustness you'll never need.
+  - Train wider than you deploy. Behavior degrades at the edge of the training
+    distribution, so the whole deployed envelope must sit in the interior.
+  - A regime not sampled is a regime not learned. Check the command/schedule
+    distribution covers standing, transitions through zero, direct-rate control
+    - whatever the operator will actually do - not just the steady cases.
+  - Command realism is DR too: resample fast enough that each episode sees
+    several transitions, and shape them like the real input device (ramps,
+    wind-downs), or the policy meets its first real transition on hardware.
+  - The real control chain is never instantaneous. Randomize 0-1 control steps
+    of action delay plus first-order lag instead of modeling exact latency;
+    exact models are wrong, tolerance to a range is robust.
+  - Widen DR specifically where the model is known-wrong (parallel-mechanism
+    ankles: +-50% there vs +-15% global). Uniform ranges assume uniform model
+    quality, which is never true.
+  - Randomize identically in every pipeline stage. A student distilled or
+    finetuned in cleaner dynamics than its teacher trained in silently loses
+    the robustness you paid for.
+  - Never randomize the contract. Obs/action dimensions, order, and scaling
+    stay fixed; randomize dynamics and inputs behind the interface, so the
+    deploy stack survives every retrain.
+  - Prove each lever reaches the physics, per env. Read back the solver-side
+    values (masses, gains, COM) and check cross-env variance after a step - a
+    lever that only writes a config buffer is a silent no-op, and the run will
+    happily "succeed" without it.
+  - Know each lever's reset semantics: some writes are startup-only (CPU-side
+    gain writes), some must re-randomize from STORED DEFAULTS on reset - an
+    additive mass event that re-adds every episode accumulates to nonsense.
+  - Build rotations and biases through the framework's own math helpers. A
+    hand-built identity quaternion in the wrong component convention is a
+    180-degree flip that no error message will ever report.
+  - DR slows convergence; raise the iteration budget and judge by the curves
+    (failure rate, tracking error still falling), not by a fixed count.
+  - Gate every retrain on the same fixed eval suite, with the previous
+    policy's numbers as the baseline to beat. If the retrain doesn't move the
+    measured symptoms, the new levers didn't do what you think.
+  - Cap disturbances at what the ALLOWED recovery strategy can physically
+    absorb. Feet-planted balance captures ~0.3 m/s; train it against 1.5 m/s
+    shoves and RL will correctly invent stepping or a wide stance - the policy
+    solved the task you posed, not the one you meant.
+  - Prefer bounded force pulses over velocity kicks for contact-rich scenarios:
+    forces are resistible by posture and resemble real manipulation reactions;
+    velocity kicks teleport momentum into the root and mandate stepping.
