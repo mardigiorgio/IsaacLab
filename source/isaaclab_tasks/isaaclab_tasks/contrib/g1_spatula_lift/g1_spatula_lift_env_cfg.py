@@ -21,6 +21,7 @@ import isaaclab.sim as sim_utils
 from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg, ViewerCfg
+from isaaclab.managers import CurriculumTermCfg as CurrTerm
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
@@ -140,11 +141,20 @@ REST_SPATULA_Z = SPATULA_SPAWN_POS[2]
 """Spatula root height at rest, env frame [m]. Lifting is measured from here."""
 
 LIFT_SUCCESS_Z = LAB_TABLE_HEIGHT + 0.20
-"""Success: spatula root above this height [m] (~19 cm of lift from rest)."""
+"""Carry-point height [m]: the hold income peaks with the spatula root here
+(~19 cm of lift from rest)."""
 
-FORCE_GRASP_THRESHOLD = 0.5
-"""Fingertip-on-handle contact force [N] that counts as pressing (ManiSkill
-G1 pick recipe: is_grasped = thumb >= 0.5 N AND an opposing finger >= 0.5 N)."""
+CARRY_POINT = (SPATULA_SPAWN_POS[0], SPATULA_SPAWN_POS[1], LIFT_SUCCESS_Z)
+"""Fixed carry target, env frame [m]: straight up from the spawn. The task
+income is a continuous kernel on distance to this point while grasped —
+there is no success termination to game (core-lift/dexsuite invariant)."""
+
+CONTACT_GATE_N = 0.1
+"""Opposed-contact gate force [N] (dexsuite recipe): thumb AND one opposing
+digit pressing the handle above this zeroes-or-enables all task income."""
+
+CONTACT_COUNT_N = 0.01
+"""Per-digit touch threshold [N] for the ungated contact-count bootstrap."""
 
 BLADE_FORCE_THRESHOLD = 1.0
 """Hand-on-blade force [N] that ends the episode — feather grazes forgiven."""
@@ -441,77 +451,59 @@ class EventCfg:
 
 @configclass
 class RewardsCfg:
-    """ManiSkill G1 pick recipe: tanh reach on the pinch center, force-closure
-    grasp bonus, lift progress gated on the force grasp, terminal bonuses."""
+    """Stripped to the proven lift recipe (core-lift + dexsuite invariants).
 
-    reaching = RewTerm(
-        func=mdp.pinch_center_reaching,
+    Continuous flow only — no terminal bonus, no closure/aim/posture shaping
+    to farm. The ladder is steep in the right direction: reach breadcrumb 1,
+    touch bootstrap 1, lifted 5, hold-at-carry-point 10. Nothing pays without
+    either touching the handle or holding it in the air, and the wide reach
+    kernel keeps gradient across the whole workspace (no absorbing far pose).
+    """
+
+    # breadcrumb: worst of palm+tips to the grasp point, std 0.4 (gradient
+    # everywhere), x0.1 floor without the contact gate / x1.0 with it
+    fingers_to_handle = RewTerm(
+        func=mdp.fingers_to_handle,
         params={
+            "std": 0.4,
+            "contact_threshold": CONTACT_GATE_N,
             "grasp_offset_b": HANDLE_GRASP_OFFSET_B,
-            "thumb_cfg": SceneEntityCfg("robot", body_names=["right_hand_thumb_2_link"]),
-            "finger_cfg": SceneEntityCfg("robot", body_names=["right_hand_index_1_link"]),
-            "palm_cfg": SceneEntityCfg("robot", body_names=["right_hand_palm_link"]),
+            "bodies_cfg": SceneEntityCfg("robot", body_names=["right_hand_palm_link", *FINGERTIP_BODY_NAMES]),
         },
         weight=1.0,
     )
-    # the arrow out of the palm must point at the handle: signed aim,
-    # NEGATIVE when the palm points away (kills back-of-hand approaches)
-    palm_aim = RewTerm(
-        func=mdp.palm_aim,
-        params={
-            "grasp_offset_b": HANDLE_GRASP_OFFSET_B,
-            "palm_cfg": SceneEntityCfg("robot", body_names=["right_hand_palm_link"]),
-        },
-        weight=0.5,
-    )
-    # dense closure bridge: finger flexion pays only while the palm is within
-    # reach of the handle AND pointing at it (multiplicative aim grade —
-    # knuckle-first closure earns nothing). Bridges the zero-gradient gap
-    # between hovering and the 0.5 N force-closure grasp
-    closure = RewTerm(
-        func=mdp.fingers_closed_near_handle,
-        params={
-            "distance_threshold": PALM_GRASP_RADIUS,
-            "grasp_offset_b": HANDLE_GRASP_OFFSET_B,
-            "palm_cfg": SceneEntityCfg("robot", body_names=["right_hand_palm_link"]),
-            "fingers_cfg": SceneEntityCfg("robot", joint_names=["right_hand_.*_joint"]),
-        },
-        weight=0.4,
-    )
-    # force closure measured by the physics engine (thumb + opposing
-    # finger, whole-digit sensors) — the ManiSkill is_grasped bonus
-    grasp = RewTerm(
-        func=mdp.grasp_force_reward,
-        params={"threshold": FORCE_GRASP_THRESHOLD},
+    # ungated bootstrap: any digit touching the handle pays a third
+    contact_count = RewTerm(
+        func=mdp.handle_contact_count,
+        params={"threshold": CONTACT_COUNT_N},
         weight=1.0,
     )
-    # lift income only while actually pressing the handle
-    lifting = RewTerm(
-        func=mdp.spatula_lift_progress,
+    # the Franka-lift height gate, contact-gated against the catapult:
+    # 5/60 = 0.083/step for every step the spatula is held off the table
+    lifted = RewTerm(
+        func=mdp.lifted_with_handle_contact,
         params={
             "rest_height": REST_SPATULA_Z,
-            "target_height": LIFT_SUCCESS_Z,
-            "force_threshold": FORCE_GRASP_THRESHOLD,
+            "minimal_offset": 0.03,
+            "contact_threshold": CONTACT_GATE_N,
         },
-        weight=2.0,
+        weight=5.0,
     )
-    # ONE-SHOT terms are dt-scaled like everything else (reward = w * value
-    # * dt, dt = 1/60), so weights here are ~60x their effective payout.
-    # finishing must beat loitering: crossing the success height forfeits the
-    # remaining flow income (<= ~4.7/s, worth <= ~6 discounted at gamma 0.99),
-    # so the bonus must pay more than that AFTER dt scaling: 500/60 = +8.3.
-    # The old 50 paid +0.83 — holding just under the threshold strictly
-    # dominated finishing
-    success_bonus = RewTerm(func=mdp.is_terminated_term, params={"term_keys": "success"}, weight=500.0)
-    # -60/60 = -1.0: the no-blade rule needs teeth even early in training,
-    # when the forfeited-income cost of the termination is still near zero
-    blade_penalty = RewTerm(func=mdp.is_terminated_term, params={"term_keys": "blade_contact"}, weight=-60.0)
-    # -30/60 = -0.5: milder than the blade rule ON PURPOSE — knock-offs are
-    # exploration accidents next to the grasp, and pricing them like the
-    # safety rule teaches keep-the-hand-away before closure can be discovered
-    dropped_penalty = RewTerm(func=mdp.is_terminated_term, params={"term_keys": "spatula_dropped"}, weight=-30.0)
+    # THE task income: grasped at the carry point = best-paying state in the
+    # MDP, every step, to timeout. A fling pays only for its airborne-and-
+    # grasped-near-target frames, i.e. nothing
+    hold_at_point = RewTerm(
+        func=mdp.hold_at_carry_point,
+        params={"carry_point": CARRY_POINT, "std": 0.15, "contact_threshold": CONTACT_GATE_N},
+        weight=10.0,
+    )
+    # start near-zero; the curriculum ramps these 10x at 15k steps, after
+    # competence (the proven ordering — never author fear from step 0)
     action_l2 = RewTerm(func=mdp.action_l2_clamped, weight=-0.005)
     action_rate_l2 = RewTerm(func=mdp.action_rate_l2_clamped, weight=-0.005)
+    # -6/60 = -0.1 once: the no-blade rule's real cost is losing the income
+    # stream; the explicit penalty is a tiebreaker, not a wall
+    blade_penalty = RewTerm(func=mdp.is_terminated_term, params={"term_keys": "blade_contact"}, weight=-6.0)
 
 
 @configclass
@@ -520,16 +512,9 @@ class TerminationsCfg:
 
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
 
-    # pick it up: spatula lifted well off the table WHILE GRASPED = done,
-    # successfully. The grasp gate kills the catapult exploit (flinging the
-    # spatula through the height threshold paid the bonus in ~2 steps)
-    success = DoneTerm(
-        func=mdp.object_lifted_above_while_grasped,
-        params={
-            "minimum_height": LIFT_SUCCESS_Z,
-            "force_threshold": FORCE_GRASP_THRESHOLD,
-        },
-    )
+    # NO success termination (core-lift/dexsuite invariant): success is the
+    # hold_at_point flow paying to timeout, so there is no terminal-bonus
+    # economics to game and no almost-done attractor
 
     # the no-blade rule: pressing the blade ends the episode
     blade_contact = DoneTerm(
@@ -562,6 +547,21 @@ class TerminationsCfg:
                 "robot", joint_names=["waist_.*_joint", ".*_shoulder_.*_joint", ".*_elbow_joint", ".*_wrist_.*_joint"]
             ),
         },
+    )
+
+
+@configclass
+class CurriculumCfg:
+    """Penalty ramp AFTER competence (the core-lift pattern: regularization
+    is curricula'd, task rewards never are)."""
+
+    action_rate = CurrTerm(
+        func=mdp.modify_reward_weight,
+        params={"term_name": "action_rate_l2", "weight": -0.05, "num_steps": 15000},
+    )
+    action_l2 = CurrTerm(
+        func=mdp.modify_reward_weight,
+        params={"term_name": "action_l2", "weight": -0.05, "num_steps": 15000},
     )
 
 
@@ -639,6 +639,7 @@ class G1SpatulaLiftEnvCfg(ManagerBasedRLEnvCfg):
     events: EventCfg = EventCfg()
     rewards: RewardsCfg = RewardsCfg()
     terminations: TerminationsCfg = TerminationsCfg()
+    curriculum: CurriculumCfg = CurriculumCfg()
 
     def __post_init__(self):
         """Post initialization."""
@@ -648,7 +649,9 @@ class G1SpatulaLiftEnvCfg(ManagerBasedRLEnvCfg):
         # spatula pops airborne from finger/table impacts at 120 Hz —
         # halving the step stabilizes the contact dynamics the lever relies on
         self.decimation = 4
-        self.episode_length_s = 3.0
+        # 5 s (300 steps at 60 Hz): the hold income needs runway — the value
+        # of a grasp is the flow it pays until timeout (proven lifts run 5-6 s)
+        self.episode_length_s = 5.0
         self.sim.dt = 1 / 240
         self.sim.render_interval = self.decimation
         self.sim.physics = PhysicsCfg()

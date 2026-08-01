@@ -93,7 +93,6 @@ def test_reach_obs_and_rewards_use_right_hand_bodies(physics_preset_name):
         obs_manager = env.unwrapped.observation_manager
         dims = dict(zip(obs_manager.active_terms["policy"], obs_manager.group_obs_term_dim["policy"]))
         assert dims["palm_to_handle"] == (3,), f"palm_to_handle obs dim = {dims['palm_to_handle']}, expected (3,)"
-        reaching_cfg = env.unwrapped.reward_manager.get_term_cfg("reaching")
-        for key in ("thumb_cfg", "finger_cfg"):
-            body_ids = reaching_cfg.params[key].body_ids
-            assert isinstance(body_ids, list) and len(body_ids) == 1, f"reach {key} resolved body_ids = {body_ids}"
+        reach_cfg = env.unwrapped.reward_manager.get_term_cfg("fingers_to_handle")
+        body_ids = reach_cfg.params["bodies_cfg"].body_ids
+        assert isinstance(body_ids, list) and len(body_ids) == 4, f"reach bodies_cfg resolved body_ids = {body_ids}"

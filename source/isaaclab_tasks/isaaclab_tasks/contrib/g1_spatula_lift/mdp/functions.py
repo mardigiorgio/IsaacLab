@@ -332,6 +332,79 @@ def fingers_closed_near_handle(
     return (flexion * near.float() * aim).nan_to_num(0.0)
 
 
+def _opposed_handle_contact(env: ManagerBasedRLEnv, threshold: float) -> torch.Tensor:
+    """Grasp gate bool [num_envs], the dexsuite recipe: thumb pressing the
+    handle above ``threshold`` [N] AND at least one opposing digit doing the
+    same. Multiplicatively zeroes all task income when False."""
+    thumb = _sensor_peak_force(env, "thumb_handle_contact") >= threshold
+    index = _sensor_peak_force(env, "index_handle_contact") >= threshold
+    middle = _sensor_peak_force(env, "middle_handle_contact") >= threshold
+    return thumb & (index | middle)
+
+
+def fingers_to_handle(
+    env: ManagerBasedRLEnv,
+    std: float,
+    contact_threshold: float,
+    grasp_offset_b: tuple[float, float, float],
+    bodies_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=["right_hand_palm_link"]),
+    object_cfg: SceneEntityCfg = SceneEntityCfg("spatula"),
+) -> torch.Tensor:
+    """Reach/enclosure flow (dexsuite ``object_ee_distance`` shape): kernel on
+    the WORST distance over palm + fingertips to the handle grasp point, so
+    the whole hand must wrap the handle, times a contact bonus that floors at
+    0.1 without the opposed-contact gate and 1.0 with it.
+
+    ``std`` is wide (0.4 m in the proven recipe) ON PURPOSE: the kernel keeps
+    gradient across the whole workspace — no absorbing far region.
+    """
+    robot = env.scene[bodies_cfg.name]
+    bodies = robot.data.body_pos_w.torch[:, bodies_cfg.body_ids, :]
+    gp = _handle_grasp_point_w(env, grasp_offset_b, object_cfg).unsqueeze(1)
+    worst = torch.linalg.vector_norm(bodies - gp, dim=-1).max(dim=1).values
+    bonus = _opposed_handle_contact(env, contact_threshold).float().clamp(0.1, 1.0)
+    return ((1.0 - torch.tanh(worst / std)) * bonus).nan_to_num(0.0)
+
+
+def handle_contact_count(env: ManagerBasedRLEnv, threshold: float) -> torch.Tensor:
+    """Fraction of digits pressing the handle above ``threshold`` [N] — the
+    ungated bootstrap gradient toward touching (dexsuite ``contact_count``)."""
+    digits = torch.stack(
+        [
+            _sensor_peak_force(env, "thumb_handle_contact") >= threshold,
+            _sensor_peak_force(env, "index_handle_contact") >= threshold,
+            _sensor_peak_force(env, "middle_handle_contact") >= threshold,
+        ],
+        dim=1,
+    )
+    return digits.float().mean(dim=1).nan_to_num(0.0)
+
+
+def lifted_with_handle_contact(
+    env: ManagerBasedRLEnv, rest_height: float, minimal_offset: float, contact_threshold: float
+) -> torch.Tensor:
+    """Binary lifted flow (the Franka-lift height gate, contact-gated for the
+    no-catapult rule): 1.0 every step the spatula root is ``minimal_offset``
+    above rest WHILE the opposed-contact gate holds."""
+    z = env.scene["spatula"].data.root_pos_w.torch[:, 2] - env.scene.env_origins[:, 2]
+    lifted = z > (rest_height + minimal_offset)
+    return (lifted & _opposed_handle_contact(env, contact_threshold)).float()
+
+
+def hold_at_carry_point(
+    env: ManagerBasedRLEnv, carry_point: tuple[float, float, float], std: float, contact_threshold: float
+) -> torch.Tensor:
+    """THE task income: squared tanh kernel on spatula-root distance to the
+    fixed carry point, hard-gated on opposed handle contact. Continuous flow
+    — being grasped at the carry point is the best-paying state in the MDP,
+    every step, with no success termination to game."""
+    pos = env.scene["spatula"].data.root_pos_w.torch - env.scene.env_origins
+    target = torch.tensor(carry_point, device=env.device).expand(env.num_envs, 3)
+    dist = torch.linalg.vector_norm(pos - target, dim=-1)
+    gate = _opposed_handle_contact(env, contact_threshold).float()
+    return (gate * (1.0 - torch.tanh(dist / std)) ** 2).nan_to_num(0.0)
+
+
 def _force_grasp(env: ManagerBasedRLEnv, threshold: float) -> torch.Tensor:
     """Force-closure grasp bool [num_envs], the ManiSkill G1 pick recipe:
     adapted to a full three-finger CLAW: thumb AND index AND middle all
