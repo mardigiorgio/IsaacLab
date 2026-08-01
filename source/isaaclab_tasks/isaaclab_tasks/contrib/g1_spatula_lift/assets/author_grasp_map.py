@@ -111,15 +111,18 @@ SEARCH_GRID = {
     # bracketing the handle just above contact so the zero-action arm sag
     # slides them through air (a tip in contact drags the spatula past the
     # 5 mm validation gate).
-    "sh_pitch": (-0.38, -0.35, -0.32),
-    "sh_roll": (-0.26,),
-    "sh_yaw": (0.0, 0.06),
-    "elbow": (0.45, 0.48),
-    "w_yaw": (0.7, 0.75, 0.8),
-    "curls": ((0.7, 0.3), (0.7, 0.5), (0.8, 0.3)),
+    # Round-3 grid, re-centered for the 83 cm table + raised ready pose
+    # (shoulder -0.60/elbow 0.70 hover; descend region below it). The old
+    # grid was authored for the 73 cm table and lands 30-40 cm short now.
+    "sh_pitch": (-0.76, -0.72),
+    "sh_roll": (-0.15, -0.08),
+    "sh_yaw": (0.0,),
+    "elbow": (0.95, 1.05, 1.15),
+    "w_yaw": (0.6, 0.7, 0.8),
+    "w_pitch": (0.30, 0.55, 0.80),
+    "curls": ((0.7, 0.3), (0.55, 0.4)),
 }
 SEARCH_WRIST_ROLL = -1.87
-SEARCH_WRIST_PITCH = 0.30
 
 
 def main():  # noqa: C901
@@ -251,9 +254,9 @@ def main():  # noqa: C901
         if args_cli.search:
             g = SEARCH_GRID
             cands = [
-                (sp, sr, sy, el, SEARCH_WRIST_ROLL, SEARCH_WRIST_PITCH, wy, cf, tf)
-                for sp, sr, sy, el, wy, (cf, tf) in itertools.product(
-                    g["sh_pitch"], g["sh_roll"], g["sh_yaw"], g["elbow"], g["w_yaw"], g["curls"]
+                (sp, sr, sy, el, SEARCH_WRIST_ROLL, wp, wy, cf, tf)
+                for sp, sr, sy, el, wy, wp, (cf, tf) in itertools.product(
+                    g["sh_pitch"], g["sh_roll"], g["sh_yaw"], g["elbow"], g["w_yaw"], g["w_pitch"], g["curls"]
                 )
             ]
             print(f"[grasp_map] searching {len(cands)} candidates over {SEARCH_ENVS} envs")
