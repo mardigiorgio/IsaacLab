@@ -5,10 +5,11 @@
 
 """G1 spatula pick-up env at the lab table.
 
-A fixed-base G1 stands at the lab table with an LBM wooden spatula at a fixed
-pose on the tabletop. Task: pick the spatula up BY THE HANDLE with the right
-TriHand. Touching the blade ends the episode; lifting the spatula ends the
-episode successfully. Nothing is randomized.
+A fixed-base G1 stands at the lab table with an LBM wooden spatula on the
+tabletop. Task: pick the spatula up BY THE HANDLE with the right TriHand and
+hold it at the carry point — the hold income pays continuously to timeout
+(no success termination). Touching the blade ends the episode. Resets jitter
+the right arm/hand joints and the spatula pose for exploration diversity.
 """
 
 import os
