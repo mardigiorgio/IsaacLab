@@ -44,13 +44,14 @@ from . import mdp
 ##
 
 ACTUATED_JOINT_NAMES = [
-    "waist_.*_joint",
     "right_shoulder_.*_joint",
     "right_elbow_joint",
     "right_wrist_.*_joint",
     "right_hand_.*_joint",
 ]
-"""Observed joints: waist + right arm + right TriHand fingers (17 dims).
+"""Observed joints: right arm + right TriHand fingers (14 dims). The waist is
+FROZEN (held at defaults like the legs): the waist-enabled variant let the
+policy drape the torso/elbow onto the tabletop instead of reaching.
 The ARM is actuated in task space (``arm_ik``), the fingers in joint space;
 the waist, left arm and legs are inert, held at their defaults by the
 ``hold_inert_joints`` event."""
@@ -240,17 +241,17 @@ class G1SpatulaLiftSceneCfg(InteractiveSceneCfg):
                 solver_velocity_iteration_count=0,
                 max_depenetration_velocity=0.5,
             ),
-            # CONTACT-STIFFNESS CURRICULUM (staged across resumed runs): the
-            # stage-1 softness (ke 625/kd 50, solref 0.04 s) let the policy
-            # discover the pick via a penetration weld (~300 N pinch on a
-            # 0.65 N object, autopsy-measured); each stage stiffens so the
-            # weld stops working and the grasp must become force-realistic.
-            #   stage 1: 625 / 50     (0.04 s)  <- discovery, run jvf7cph4
-            #   stage 2: 2500 / 100   (0.02 s)  <- CURRENT
-            #   stage 3: 62500 / 500  (4 ms)
-            #   stage 4: 1e6 / 2000   (1 ms, the stack/locomotion setting)
-            compliant_contact_stiffness=2500.0,
-            compliant_contact_damping=100.0,
+            # CONTACT STIFFNESS: research-validated pinch regime — ManipTrans
+            # grasp tuning uses solref (0.003 s, 1.0), i.e. ke ~1.1e5 /
+            # kd ~667 through this fork's ke/kd -> solref conversion. History:
+            # stage-1 softness (625/50, 0.04 s) let PPO discover the pick via
+            # a penetration weld (~300 N pinch on a 0.65 N object, autopsy-
+            # measured, run jvf7cph4); 2500/100 (0.02 s) was stage 2. The
+            # scripted-pick existence proof is the gate for this value: a
+            # scripted close-and-lift must hold with <= 10x object weight and
+            # release the spatula below 0.5 m/s
+            compliant_contact_stiffness=111000.0,
+            compliant_contact_damping=667.0,
             physics_material_prim_path=["collisions_blade/mesh", "collisions_handle/mesh"],
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=SPATULA_SPAWN_POS, rot=SPATULA_SPAWN_QUAT),
@@ -295,14 +296,12 @@ class ActionsCfg:
     upper_body = mdp.RelativeJointPositionActionCfg(
         asset_name="robot",
         joint_names=[
-            "waist_.*_joint",
             "right_shoulder_.*_joint",
             "right_elbow_joint",
             "right_wrist_.*_joint",
             "right_hand_.*_joint",
         ],
         scale={
-            "waist_.*_joint": 0.2,
             "right_shoulder_.*_joint": 0.2,
             "right_elbow_joint": 0.2,
             "right_wrist_.*_joint": 0.2,
@@ -428,7 +427,7 @@ class EventCfg:
     """Configuration for events."""
 
     reset_all = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
-    # non-actioned joints (left arm/hand, legs, feet, waist roll+pitch) get
+    # non-actioned joints (left arm/hand, legs, feet, full waist) get
     # their PD TARGETS written to the defaults — in this fork untargeted
     # joints otherwise drive to the ZERO pose, not init_state.joint_pos
     hold_inert_joints = EventTerm(
@@ -438,6 +437,7 @@ class EventCfg:
             "robot_cfg": SceneEntityCfg(
                 "robot",
                 joint_names=[
+                    "waist_.*_joint",
                     "left_shoulder_.*_joint",
                     "left_elbow_joint",
                     "left_wrist_.*_joint",
@@ -707,8 +707,8 @@ class G1SpatulaLiftEnvCfg(ManagerBasedRLEnvCfg):
         }
         # pin the leg pose with stiff implicit PD (legs are static scenery
         # with the root fixed; the asset's DC-motor gains would sag).
-        # full waist is policy-actuated (waist-enabled variant) with
-        # moderate PD and a hardware-plausible effort cap
+        # waist is FROZEN (held at defaults by hold_inert_joints) with firm
+        # PD: policy-actuated waist converged to torso-on-table draping
         self.scene.robot.actuators["waist"] = ImplicitActuatorCfg(
             joint_names_expr=["waist_.*_joint"],
             stiffness=400.0,
