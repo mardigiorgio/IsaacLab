@@ -220,8 +220,11 @@ def main():
     # Newton preset must be re-applied BEFORE launch_simulation so the scan
     # picks the kitless backend
     env_cfg = apply_physics_preset(env_cfg, TASK, "newton_mjwarp")
-    # probes measure the NOMINAL reset — never draw a curated grasp-map stage
+    # probes measure the NOMINAL reset — no curated grasp-map stage, no
+    # reset randomization
     env_cfg.events.reset_grasp_map = None
+    env_cfg.events.randomize_right_arm = None
+    env_cfg.events.randomize_spatula_pose = None
     if args_cli.mode in ("names", "labels"):
         # these modes exist to DISCOVER the link names / model labels the
         # blade-contact sensor assumes, so strip the sensor and its dependents

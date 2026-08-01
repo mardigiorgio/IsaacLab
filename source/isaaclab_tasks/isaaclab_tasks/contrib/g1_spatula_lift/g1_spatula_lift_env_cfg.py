@@ -443,6 +443,36 @@ class EventCfg:
             )
         },
     )
+    # reset diversity (the exemplar invariant we were missing): with a single
+    # deterministic start, PPO converges onto the first local optimum of the
+    # pre-contact gradient and nothing ever perturbs it out. Franka lift
+    # jitters the cube +-10/25 cm; dexsuite randomizes all joints +-0.5 rad
+    randomize_right_arm = EventTerm(
+        func=mdp.reset_joints_by_offset,
+        mode="reset",
+        params={
+            "position_range": (-0.15, 0.15),
+            "velocity_range": (0.0, 0.0),
+            "asset_cfg": SceneEntityCfg(
+                "robot",
+                joint_names=[
+                    "right_shoulder_.*_joint",
+                    "right_elbow_joint",
+                    "right_wrist_.*_joint",
+                    "right_hand_.*_joint",
+                ],
+            ),
+        },
+    )
+    randomize_spatula_pose = EventTerm(
+        func=mdp.reset_root_state_uniform,
+        mode="reset",
+        params={
+            "pose_range": {"x": (-0.05, 0.05), "y": (-0.03, 0.03), "yaw": (-0.15, 0.15)},
+            "velocity_range": {},
+            "asset_cfg": SceneEntityCfg("spatula"),
+        },
+    )
     # caged starts: teleport a sampled share of resets into the authored
     # fingers-around-the-handle pose. Declared LAST so the teleport survives
     # the default resets above (event terms run in declaration order); no-op

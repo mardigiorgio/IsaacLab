@@ -128,8 +128,11 @@ def main():  # noqa: C901
     # Newton preset must be applied BEFORE launch_simulation (kitless scan) and
     # before any other mutation (apply_physics_preset discards later edits)
     env_cfg = apply_physics_preset(env_cfg, TASK, "newton_mjwarp")
-    # author from nominal resets even if a previous map exists
+    # author from nominal resets even if a previous map exists — and without
+    # the reset randomization (stage snapshots must be deterministic)
     env_cfg.events.reset_grasp_map = None
+    env_cfg.events.randomize_right_arm = None
+    env_cfg.events.randomize_spatula_pose = None
     # the scripted teleport/settle/validate sequence outlives the 3 s training
     # episode — stretch it so no timeout reset fires mid-authoring
     env_cfg.episode_length_s = 60.0
