@@ -102,17 +102,40 @@ stage. Caged starts DISABLED (user call): starting in contact with the 66 g
 spatula under exploration noise batters it airborne every episode. The map
 stays authored/validated — flip to (0.6, 0.4) to re-enable."""
 
-SPATULA_SPAWN_POS = (0.0958, -0.1607, 0.7460)
-"""Spatula spawn, env frame [m] (probe-baked settled pose): flat on the
-tabletop, handle along +X threading the pronated vertical-curl hand's
-thumb/finger aperture (re-baked for the wrist-roll -1.87 ready pose)."""
+G1_TOE_REACH = 0.142
+"""Forward extent of the G1 toe tips from the pelvis origin [m]."""
 
-SPATULA_SPAWN_QUAT = (0.0131, 0.1032, 0.0039, 0.9946)
+TOE_STANDOFF = 0.02
+"""Gap between the toe tips and the table-edge plane [m]."""
+
+ROBOT_STAND_POS = (0.0, -(LAB_TABLE_WIDTH / 2 + G1_TOE_REACH + TOE_STANDOFF), 0.75)
+"""Fixed-base pelvis position [m]: standing at the long table edge, facing the table (+Y)."""
+
+PELVIS_TO_SPATULA_Y = 0.3058
+"""Pelvis -> spatula-spawn Y offset [m], carried over from the 61 cm-table
+bake: the ready-pose hand-over-handle alignment is authored relative to the
+pelvis, so the spawn must track ROBOT_STAND_POS, not the table center."""
+
+SPATULA_REST_TABLE_OFFSET = 0.0125
+"""Settled spatula root height above the tabletop [m] (probe ``--mode settle``,
+83 cm table, 1 mm Newton contact margin)."""
+
+SPATULA_SPAWN_POS = (
+    0.0958,
+    ROBOT_STAND_POS[1] + PELVIS_TO_SPATULA_Y,
+    LAB_TABLE_HEIGHT + SPATULA_REST_TABLE_OFFSET,
+)
+"""Spatula spawn, env frame [m]: flat on the tabletop, handle along +X
+threading the pronated vertical-curl hand's thumb/finger aperture. Derived
+from LAB_TABLE_HEIGHT and ROBOT_STAND_POS so a table remeasure cannot strand
+the spawn inside (or off) the tabletop; only the offsets are probe-baked."""
+
+SPATULA_SPAWN_QUAT = (0.0107, 0.1013, 0.0036, 0.9948)
 """Spawn orientation (x, y, z, w) — THIS FORK'S CONVENTION, not wxyz: the
 probe-baked at-rest attitude (slight pitch; the flat handle hovers a few mm
 above the tabletop)."""
 
-REST_SPATULA_Z = 0.7460
+REST_SPATULA_Z = SPATULA_SPAWN_POS[2]
 """Spatula root height at rest, env frame [m]. Lifting is measured from here."""
 
 LIFT_SUCCESS_Z = LAB_TABLE_HEIGHT + 0.20
@@ -124,15 +147,6 @@ G1 pick recipe: is_grasped = thumb >= 0.5 N AND an opposing finger >= 0.5 N)."""
 
 BLADE_FORCE_THRESHOLD = 1.0
 """Hand-on-blade force [N] that ends the episode — feather grazes forgiven."""
-
-G1_TOE_REACH = 0.142
-"""Forward extent of the G1 toe tips from the pelvis origin [m] (see g1_pick_cube)."""
-
-TOE_STANDOFF = 0.02
-"""Gap between the toe tips and the table-edge plane [m] (see g1_pick_cube)."""
-
-ROBOT_STAND_POS = (0.0, -(LAB_TABLE_WIDTH / 2 + G1_TOE_REACH + TOE_STANDOFF), 0.75)
-"""Fixed-base pelvis position [m]: standing at the long table edge, facing the table (+Y)."""
 
 DEFAULT_ARM_JOINT_POS = {
     # left arm STRAIGHT DOWN by the side, inert. G1 elbow convention
@@ -157,10 +171,13 @@ DEFAULT_ARM_JOINT_POS = {
     # Fingers are OPEN by default (no right-hand joint entries = zeros):
     # the pick is approach -> press digits to the table around the handle ->
     # close the claw horizontally -> lever up
-    "right_shoulder_pitch_joint": -0.35,
-    "right_shoulder_roll_joint": -0.30,
+    # raised for the 83 cm table (the 73 cm-table pose put the forearm inside
+    # the taller slab at reset): more shoulder lift, straighter elbow, roll
+    # tucked in; wrist unchanged to keep the pronated palm-down claw
+    "right_shoulder_pitch_joint": -0.60,
+    "right_shoulder_roll_joint": -0.15,
     "right_shoulder_yaw_joint": -0.10,
-    "right_elbow_joint": 1.05,
+    "right_elbow_joint": 0.70,
     "right_wrist_roll_joint": 0.30,
     "right_wrist_pitch_joint": -0.90,
     "right_wrist_yaw_joint": -0.30,
@@ -193,19 +210,26 @@ class G1SpatulaLiftSceneCfg(InteractiveSceneCfg):
 
     robot: ArticulationCfg = G1_29DOF_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
 
-
     spatula = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/Spatula",
-        spawn=sim_utils.UsdFileCfg(
+        spawn=sim_utils.UsdFileWithCompliantContactCfg(
             usd_path=SPATULA_USD_PATH,
             activate_contact_sensors=True,
+            # PhysX-preset knobs ONLY: the Newton importer never reads
+            # physxRigidBody attributes (its levers are the compliant material
+            # below and the preset's MJWarpSolverCfg/NewtonShapeCfg)
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 solver_position_iteration_count=16,
                 solver_velocity_iteration_count=0,
-                # 5.0 let the solver eject the 66 g spatula at 5 m/s whenever
-                # a finger penetrated it — the "exploding spatula" (video)
                 max_depenetration_velocity=0.5,
             ),
+            # soften spatula contacts on BOTH backends: Newton maps the bound
+            # material's compliantContact stiffness/damping to per-shape ke/kd
+            # -> solref (0.04 s, 1.0), twice the 20 ms default timeconst;
+            # PhysX gets spring contacts (66 g on 625 N/m rests ~1 mm deep)
+            compliant_contact_stiffness=625.0,
+            compliant_contact_damping=50.0,
+            physics_material_prim_path=["collisions_blade/mesh", "collisions_handle/mesh"],
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=SPATULA_SPAWN_POS, rot=SPATULA_SPAWN_QUAT),
     )
@@ -362,6 +386,20 @@ class RewardsCfg:
         },
         weight=0.5,
     )
+    # dense closure bridge: finger flexion pays only while the palm is within
+    # reach of the handle AND pointing at it (multiplicative aim grade —
+    # knuckle-first closure earns nothing). Bridges the zero-gradient gap
+    # between hovering and the 0.5 N force-closure grasp
+    closure = RewTerm(
+        func=mdp.fingers_closed_near_handle,
+        params={
+            "distance_threshold": PALM_GRASP_RADIUS,
+            "grasp_offset_b": HANDLE_GRASP_OFFSET_B,
+            "palm_cfg": SceneEntityCfg("robot", body_names=["right_hand_palm_link"]),
+            "fingers_cfg": SceneEntityCfg("robot", joint_names=["right_hand_.*_joint"]),
+        },
+        weight=0.4,
+    )
     # force closure measured by the physics engine (thumb + opposing
     # finger, whole-digit sensors) — the ManiSkill is_grasped bonus
     grasp = RewTerm(
@@ -379,7 +417,7 @@ class RewardsCfg:
         },
         weight=2.0,
     )
-    # finishing must beat loitering near the goal (g1_pick_cube rationale)
+    # finishing must beat loitering near the goal
     success_bonus = RewTerm(func=mdp.is_terminated_term, params={"term_keys": "success"}, weight=50.0)
     blade_penalty = RewTerm(func=mdp.is_terminated_term, params={"term_keys": "blade_contact"}, weight=-5.0)
     dropped_penalty = RewTerm(func=mdp.is_terminated_term, params={"term_keys": "spatula_dropped"}, weight=-5.0)
@@ -416,7 +454,9 @@ class TerminationsCfg:
         params={
             "in_bound_range": {
                 "x": (-0.7, 0.7),
-                "y": (-0.35, 0.35),
+                # just past the table's long edges: batted off the near/far
+                # side = dropped (the z floor catches actual falls)
+                "y": (-(LAB_TABLE_WIDTH / 2 + 0.045), LAB_TABLE_WIDTH / 2 + 0.045),
                 "z": (LAB_TABLE_HEIGHT - 0.09, 2.0),
             }
         },
@@ -480,8 +520,15 @@ class PhysicsCfg(PresetCfg):
         # asset's own low-res collision surface); everything else hulls
         simplify_meshes=True,
         simplify_meshes_exclude=[".*/Spatula/collisions.*"],
-        default_shape_cfg=NewtonShapeCfg(),
-        num_substeps=2,
+        # 1 mm contact margin (thin-shell runway): force ramps in before true
+        # penetration of the 7 mm-thin raw spatula meshes; margins sum per
+        # pair, so resting contacts stand off ~2 mm
+        default_shape_cfg=NewtonShapeCfg(margin=0.001),
+        # 1 substep: +54% throughput measured at 4096 envs (10.9k -> 16.9k
+        # env-steps/s). The 2-substep setting predated the compliant spatula
+        # contacts (solref 0.04 s >> the 1/240 step), which are what actually
+        # tamed the finger/table impact pops
+        num_substeps=1,
         debug_mode=False,
     )
     physx = default

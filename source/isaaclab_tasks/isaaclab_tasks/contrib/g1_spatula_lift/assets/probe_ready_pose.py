@@ -48,10 +48,10 @@ args_cli = parser.parse_args()
 import gymnasium as gym
 import torch
 
-import isaaclab_tasks  # noqa: F401
 from isaaclab.app import launch_simulation
 from isaaclab.managers import SceneEntityCfg
 
+import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.contrib.g1_spatula_lift.g1_spatula_lift_env_cfg import (
     HANDLE_GRASP_OFFSET_B,
     LAB_TABLE_HEIGHT,
@@ -101,7 +101,7 @@ def mode_labels(env):
     print(f"[probe] env_0 body labels ({len(bodies)}):")
     for b in bodies:
         print(f"[probe]   body: {b}")
-    print(f"[probe] env_0 shape labels containing Spatula/hand:")
+    print("[probe] env_0 shape labels containing Spatula/hand:")
     for s in shapes:
         if "Spatula" in s or "hand" in s:
             print(f"[probe]   shape: {s}")
@@ -187,7 +187,9 @@ def _drive_arm_to(env, targets: dict, steps: int = 90):
             " the env now uses task-space IK actions (candidate mode retired)"
         )
     act_joint_ids = action_term._joint_ids
-    act_names = list(robot.joint_names) if act_joint_ids == slice(None) else [robot.joint_names[i] for i in act_joint_ids]
+    act_names = (
+        list(robot.joint_names) if act_joint_ids == slice(None) else [robot.joint_names[i] for i in act_joint_ids]
+    )
     slots = {name: act_names.index(name) for name in targets}
     action = torch.zeros((1, uenv.action_space.shape[1]), device=uenv.device)
     with torch.inference_mode():

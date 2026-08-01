@@ -25,11 +25,11 @@ from isaaclab_assets.props.lab_table import (
 
 
 def test_constants_match_real_table():
-    # a standard 6 ft x 2 ft x 29 in lab table, measured in inches
-    assert pytest.approx(1.825) == LAB_TABLE_LENGTH
-    assert pytest.approx(0.61) == LAB_TABLE_WIDTH
-    assert pytest.approx(28.9 * 0.0254, abs=1e-3) == LAB_TABLE_HEIGHT
-    assert pytest.approx(0.03) == LAB_TABLE_TOP_THICKNESS
+    # measured: 122 cm long, 30 in wide, 7 cm thick top, tabletop 83 cm off the floor
+    assert pytest.approx(1.22) == LAB_TABLE_LENGTH
+    assert pytest.approx(0.762) == LAB_TABLE_WIDTH
+    assert pytest.approx(0.83) == LAB_TABLE_HEIGHT
+    assert pytest.approx(0.07) == LAB_TABLE_TOP_THICKNESS
 
 
 def test_factory_returns_five_static_parts():
@@ -45,15 +45,15 @@ def test_factory_returns_five_static_parts():
 def test_top_slab_geometry():
     cfgs = lab_table_cfgs("/World/LabTable")
     top = cfgs["table_top"]
-    assert top.spawn.size == pytest.approx((1.825, 0.61, 0.03))
+    assert top.spawn.size == pytest.approx((1.22, 0.762, 0.07))
     # top face at LAB_TABLE_HEIGHT -> center half a slab below it
-    assert top.init_state.pos[2] == pytest.approx(LAB_TABLE_HEIGHT - 0.015)
+    assert top.init_state.pos[2] == pytest.approx(LAB_TABLE_HEIGHT - 0.035)
 
 
 def test_legs_flush_with_corners():
     cfgs = lab_table_cfgs("/World/LabTable")
-    half_len = 1.825 / 2 - LAB_TABLE_LEG_SECTION / 2
-    half_wid = 0.61 / 2 - LAB_TABLE_LEG_SECTION / 2
+    half_len = 1.22 / 2 - LAB_TABLE_LEG_SECTION / 2
+    half_wid = 0.762 / 2 - LAB_TABLE_LEG_SECTION / 2
     leg_height = LAB_TABLE_HEIGHT - LAB_TABLE_TOP_THICKNESS
     expected_xy = {(sx * half_len, sy * half_wid) for sx in (-1, 1) for sy in (-1, 1)}
     actual_xy = set()

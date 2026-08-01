@@ -77,9 +77,7 @@ def test_spatula_settles_on_tabletop(physics_preset_name):
         pos = spatula.data.root_pos_w.torch - env.unwrapped.scene.env_origins
         assert torch.all(pos[:, 2] > LAB_TABLE_HEIGHT - 0.01), f"spatula below tabletop: z = {pos[:, 2].tolist()}"
         assert torch.all(pos[:, 2] < LAB_TABLE_HEIGHT + 0.08), f"spatula not settled: z = {pos[:, 2].tolist()}"
-        xy_drift = torch.linalg.vector_norm(
-            pos[:, :2] - torch.tensor(SPATULA_SPAWN_POS[:2], device=pos.device), dim=1
-        )
+        xy_drift = torch.linalg.vector_norm(pos[:, :2] - torch.tensor(SPATULA_SPAWN_POS[:2], device=pos.device), dim=1)
         assert torch.all(xy_drift < 0.05), f"spatula drifted in xy: {xy_drift.tolist()}"
 
 

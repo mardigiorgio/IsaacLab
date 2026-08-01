@@ -23,8 +23,7 @@ import urllib.request
 import zipfile
 
 WHEEL_URL = (
-    "https://github.com/ToyotaResearchInstitute/lbm_eval/releases/download/1.1.0/"
-    "lbm_eval_models-1.1.0-py3-none-any.whl"
+    "https://github.com/ToyotaResearchInstitute/lbm_eval/releases/download/1.1.0/lbm_eval_models-1.1.0-py3-none-any.whl"
 )
 STASH_DIR = os.path.expanduser("~/Documents/code/newton-adaptive/scripts/assets/lbm")
 WHEEL_PATH = os.path.join(STASH_DIR, "lbm_eval_models-1.1.0-py3-none-any.whl")

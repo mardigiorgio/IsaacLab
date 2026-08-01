@@ -22,7 +22,6 @@ from isaaclab.utils.configclass import configclass
 
 import isaaclab_tasks.core.velocity.mdp as mdp
 
-
 ##
 # Actuation latency + first-order lag (obs -> action -> torque is NOT instantaneous
 # on hardware: 50 Hz tick + DDS + firmware PD add up to ~a control step of delay).
@@ -38,7 +37,7 @@ class DelayedJointPositionAction(JointPositionAction):
     untouched — only the target reaching the PD controller is delayed/lagged.
     """
 
-    cfg: "DelayedJointPositionActionCfg"
+    cfg: DelayedJointPositionActionCfg
 
     def __init__(self, cfg, env):
         super().__init__(cfg, env)
@@ -48,7 +47,9 @@ class DelayedJointPositionAction(JointPositionAction):
         self._applied = torch.zeros(shape, device=dev)
         self._delay = torch.zeros(self.num_envs, 1, device=dev)
         self._beta = torch.ones(self.num_envs, 1, device=dev)
-        self._default_target = self._offset if isinstance(self._offset, torch.Tensor) else torch.zeros(shape, device=dev)
+        self._default_target = (
+            self._offset if isinstance(self._offset, torch.Tensor) else torch.zeros(shape, device=dev)
+        )
 
     def process_actions(self, actions: torch.Tensor):
         super().process_actions(actions)
@@ -200,7 +201,7 @@ class SlewedVelocityCommand(UniformVelocityCommand):
     zero-vx target, guaranteeing decelerate-through-zero practice.
     """
 
-    cfg: "SlewedVelocityCommandCfg"
+    cfg: SlewedVelocityCommandCfg
 
     def __init__(self, cfg, env):
         super().__init__(cfg, env)
@@ -214,14 +215,20 @@ class SlewedVelocityCommand(UniformVelocityCommand):
         r = torch.rand(len(env_ids), device=self.device)
         stop_mask = (old_lin[:, 0] < -0.1) & (r < self.cfg.stop_from_backward_prob)
         if stop_mask.any():
-            ids = env_ids[stop_mask] if isinstance(env_ids, torch.Tensor) else torch.tensor(env_ids, device=self.device)[stop_mask]
+            ids = (
+                env_ids[stop_mask]
+                if isinstance(env_ids, torch.Tensor)
+                else torch.tensor(env_ids, device=self.device)[stop_mask]
+            )
             self.vel_command_b[ids, 0] = 0.0
         self._target[env_ids] = self.vel_command_b[env_ids].clone()
         # ramp envs keep their previous linear command and slew toward the target
         ramp = torch.rand(len(env_ids), device=self.device) < self.cfg.ramp_fraction
         self._is_ramp_env[env_ids] = ramp
         if ramp.any():
-            ids = env_ids[ramp] if isinstance(env_ids, torch.Tensor) else torch.tensor(env_ids, device=self.device)[ramp]
+            ids = (
+                env_ids[ramp] if isinstance(env_ids, torch.Tensor) else torch.tensor(env_ids, device=self.device)[ramp]
+            )
             self.vel_command_b[ids, :2] = old_lin[ramp]
 
     def _update_command(self):
@@ -268,7 +275,7 @@ class UpperBodyMotionCommand(CommandTerm):
     position target that is never re-seeded on reset).
     """
 
-    cfg: "UpperBodyMotionCommandCfg"
+    cfg: UpperBodyMotionCommandCfg
 
     def __init__(self, cfg, env):
         super().__init__(cfg, env)
@@ -295,8 +302,8 @@ class UpperBodyMotionCommand(CommandTerm):
         if env_ids is None:
             env_ids = torch.arange(self.num_envs, device=self.device)
         n = len(env_ids)
-        alo, ahi = self.cfg.activity_range
-        self._activity[env_ids] = torch.rand(n, 1, device=self.device) * (ahi - alo) + alo
+        a_lo, a_hi = self.cfg.activity_range
+        self._activity[env_ids] = torch.rand(n, 1, device=self.device) * (a_hi - a_lo) + a_lo
         slo, shi = self.cfg.speed_range
         self._speed[env_ids] = torch.rand(n, 1, device=self.device) * (shi - slo) + slo
         # episode starts at the nominal pose (matches the robot's reset state)

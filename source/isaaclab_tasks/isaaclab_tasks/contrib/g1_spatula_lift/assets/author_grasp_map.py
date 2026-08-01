@@ -37,25 +37,35 @@ from isaaclab.app import add_launcher_args
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--search", action="store_true", help="grid-search caged poses over 64 envs instead of authoring")
-parser.add_argument("--joints", default=None, help="authoring: 7 comma-separated right-arm targets [rad] "
-                    "(sh_pitch,sh_roll,sh_yaw,elbow,wr_roll,wr_pitch,wr_yaw)")
+parser.add_argument(
+    "--joints",
+    default=None,
+    help="authoring: 7 comma-separated right-arm targets [rad] (sh_pitch,sh_roll,sh_yaw,elbow,wr_roll,wr_pitch,wr_yaw)",
+)
 parser.add_argument("--curl", type=float, default=0.55, help="index/middle flexion fraction of the joint limit")
 parser.add_argument("--thumb-curl", type=float, default=0.35, help="thumb flexion fraction of the joint limit")
-parser.add_argument("--sweep-curls", action="store_true", help="diagnostic: sweep curl fractions at --joints and print geometry")
-parser.add_argument("--view", default=None, help="diagnostic: ';'-separated 7-value arm poses — teleport each, print geometry, save a frame")
+parser.add_argument(
+    "--sweep-curls", action="store_true", help="diagnostic: sweep curl fractions at --joints and print geometry"
+)
+parser.add_argument(
+    "--view",
+    default=None,
+    help="diagnostic: ';'-separated 7-value arm poses — teleport each, print geometry, save a frame",
+)
 parser.add_argument("--out", default=None, help="output path (default: ../grasp_map.pt next to the env cfg)")
 parser.add_argument("--frames-dir", default=None, help="save rendered PNG frames of key moments here (debug)")
 add_launcher_args(parser)
 args_cli = parser.parse_args()
 
-import gymnasium as gym
 import itertools
+
+import gymnasium as gym
 import torch
 
-import isaaclab_tasks  # noqa: F401
 from isaaclab.app import launch_simulation
 from isaaclab.managers import SceneEntityCfg
 
+import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.contrib.g1_spatula_lift.g1_spatula_lift_env_cfg import (
     FINGERTIP_BODY_NAMES,
     HANDLE_GRASP_OFFSET_B,
@@ -112,7 +122,7 @@ SEARCH_WRIST_ROLL = -1.87
 SEARCH_WRIST_PITCH = 0.30
 
 
-def main():
+def main():  # noqa: C901
     num_envs = SEARCH_ENVS if args_cli.search else 1
     env_cfg = parse_env_cfg(TASK, device="cuda:0", num_envs=num_envs)
     # Newton preset must be applied BEFORE launch_simulation (kitless scan) and
@@ -180,17 +190,13 @@ def main():
             tip_d, tip_y = _handle_segment_geometry(
                 uenv, HANDLE_SEGMENT_P0_B, HANDLE_SEGMENT_P1_B, tips_cfg, spatula_cfg
             )
-            palm_d, _ = _handle_segment_geometry(
-                uenv, HANDLE_SEGMENT_P0_B, HANDLE_SEGMENT_P1_B, palm_cfg, spatula_cfg
-            )
+            palm_d, _ = _handle_segment_geometry(uenv, HANDLE_SEGMENT_P0_B, HANDLE_SEGMENT_P1_B, palm_cfg, spatula_cfg)
             palm_d = palm_d[:, 0]
             near = tip_d < CAGE_RADIUS
             # cage = thumb near-side / index-or-middle far-side straddle
             # (matches the calibrated _grasp definition), handle under the
             # palm; the squeeze that closes the last cm is the policy's move
-            opp = (near[:, ii] & (tip_y[:, ti] * tip_y[:, ii] < 0)) | (
-                near[:, mi] & (tip_y[:, ti] * tip_y[:, mi] < 0)
-            )
+            opp = (near[:, ii] & (tip_y[:, ti] * tip_y[:, ii] < 0)) | (near[:, mi] & (tip_y[:, ti] * tip_y[:, mi] < 0))
             caged = opp & (tip_d[:, ti] < CAGE_THUMB_RADIUS) & (palm_d < CAGE_PALM_RADIUS)
             gp = _handle_grasp_point_w(uenv, HANDLE_GRASP_OFFSET_B, spatula_cfg)
             palm_pos = robot.data.body_pos_w.torch[:, palm_cfg.body_ids, :][:, 0]
@@ -221,8 +227,10 @@ def main():
                 w = (root_pos + quat_apply(root_quat, torch.tensor([pt], device=device))[0] - origin).tolist()
                 print(f"[grasp_map] {label} {tag}: env pos {[round(v, 4) for v in w]}")
             print(
-                f"[grasp_map] {label} palm: seg-dist {palm_d[0].item():.4f} m, palm->grasp {palm_grasp[0].item():.4f} m,"
-                f" env pos {[round(v, 4) for v in palm_pos]}, spatula disp {disp[0].item():.4f} m, caged={bool(caged[0].item())}"
+                f"[grasp_map] {label} palm: seg-dist {palm_d[0].item():.4f} m,"
+                f" palm->grasp {palm_grasp[0].item():.4f} m,"
+                f" env pos {[round(v, 4) for v in palm_pos]},"
+                f" spatula disp {disp[0].item():.4f} m, caged={bool(caged[0].item())}"
             )
 
         def save_frame(tag):
@@ -268,12 +276,25 @@ def main():
                     f_col = ii if tip_d[row, ii] < tip_d[row, mi] else mi
                     opposed = (tip_y[row, ti] * tip_y[row, f_col] < 0).item()
                     score = (
-                        tip_d[row, f_col].item() + tip_d[row, ti].item() + (0.0 if opposed else 0.5)
-                        + max(0.0, palm_grasp[row].item() - 0.10) + (0.0 if ok else 10.0)
+                        tip_d[row, f_col].item()
+                        + tip_d[row, ti].item()
+                        + (0.0 if opposed else 0.5)
+                        + max(0.0, palm_grasp[row].item() - 0.10)
+                        + (0.0 if ok else 10.0)
                     )
-                    results.append((bool(caged[row].item()) and ok, score, cand,
-                                    tip_d[row, ti].item(), tip_y[row, ti].item(), tip_d[row, f_col].item(),
-                                    tip_y[row, f_col].item(), palm_grasp[row].item(), disp[row].item()))
+                    results.append(
+                        (
+                            bool(caged[row].item()) and ok,
+                            score,
+                            cand,
+                            tip_d[row, ti].item(),
+                            tip_y[row, ti].item(),
+                            tip_d[row, f_col].item(),
+                            tip_y[row, f_col].item(),
+                            palm_grasp[row].item(),
+                            disp[row].item(),
+                        )
+                    )
                 done = min(start + SEARCH_ENVS, len(cands))
                 n_caged = sum(1 for r in results if r[0])
                 print(f"[grasp_map] {done}/{len(cands)} searched, {n_caged} caged so far")
@@ -292,7 +313,10 @@ def main():
         if args_cli.view:
             arm_names = [robot.joint_names.index(n) for n in RIGHT_ARM_JOINTS]
             lims = robot.data.joint_pos_limits.torch[0]
-            print(f"[grasp_map] right-arm limits: { {n: [round(v, 3) for v in lims[j].tolist()] for n, j in zip(RIGHT_ARM_JOINTS, arm_names)} }")
+            print(
+                "[grasp_map] right-arm limits:"
+                f" { {n: [round(v, 3) for v in lims[j].tolist()] for n, j in zip(RIGHT_ARM_JOINTS, arm_names)} }"
+            )
             for k, cand in enumerate(args_cli.view.split(";")):
                 arm = [float(v) for v in cand.split(",")]
                 env.reset()
@@ -322,7 +346,7 @@ def main():
         if args_cli.sweep_curls:
             hand_names = [robot.joint_names[i] for i in finger_ids]
             print(f"[grasp_map] hand joints: {hand_names}")
-            print(f"[grasp_map] hand limits: {[ [round(v, 3) for v in limits[i].tolist()] for i in finger_ids ]}")
+            print(f"[grasp_map] hand limits: {[[round(v, 3) for v in limits[i].tolist()] for i in finger_ids]}")
             t0 = robot.joint_names.index("right_hand_thumb_0_joint")
             t1 = robot.joint_names.index("right_hand_thumb_1_joint")
             t2 = robot.joint_names.index("right_hand_thumb_2_joint")
@@ -392,7 +416,10 @@ def main():
         still_caged = bool(caged[0].item())
         print_env0_state("[validate]")
         ok = disp < MAX_OBJECT_DISPLACEMENT and still_caged
-        print(f"[grasp_map] validate pre_grasp_caged: displacement {disp:.4f} m, caged={still_caged} -> {'OK' if ok else 'FAILED'}")
+        print(
+            f"[grasp_map] validate pre_grasp_caged: displacement {disp:.4f} m,"
+            f" caged={still_caged} -> {'OK' if ok else 'FAILED'}"
+        )
         save_frame("02_validated" if ok else "02_validate_failed")
         if not ok:
             raise RuntimeError("stage pre_grasp_caged failed validation — re-tune and re-author")

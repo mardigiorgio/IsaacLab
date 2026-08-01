@@ -42,14 +42,27 @@ import os
 
 import numpy as np
 import trimesh
-from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics
 
-SPATULA_GLTF = os.path.expanduser(
-    "~/Documents/code/newton-adaptive/scripts/assets/lbm/spatulas/assets/thimma_wood_natural_flat_spatula.gltf"
-)
-SPATULA_VTK = os.path.expanduser(
-    "~/Documents/code/newton-adaptive/scripts/assets/lbm/spatulas/assets/thimma_wood_flat_spatula_low.vtk"
-)
+from pxr import Gf, Usd, UsdGeom, UsdPhysics
+
+# the newton-adaptive checkout lives under ~/Documents/code on some machines
+# and ~/Documents/research on others
+_LBM_SPATULA_DIRS = [
+    os.path.expanduser(f"~/Documents/{d}/newton-adaptive/scripts/assets/lbm/spatulas/assets")
+    for d in ("code", "research")
+]
+
+
+def _lbm_asset(filename: str) -> str:
+    for asset_dir in _LBM_SPATULA_DIRS:
+        path = os.path.join(asset_dir, filename)
+        if os.path.exists(path):
+            return path
+    raise FileNotFoundError(f"{filename} not found in any of: {_LBM_SPATULA_DIRS}")
+
+
+SPATULA_GLTF = _lbm_asset("thimma_wood_natural_flat_spatula.gltf")
+SPATULA_VTK = _lbm_asset("thimma_wood_flat_spatula_low.vtk")
 # from thimma_wood_natural_flat_spatula.sdf
 SPATULA_MASS = 0.0664  # [kg]
 SPATULA_COM = (0.065326, 2.3357e-05, 0.010802)  # [m], body frame
@@ -89,7 +102,9 @@ def _split_plane_x(verts: np.ndarray) -> float:
     for i in range(widest, len(widths)):
         if widths[i] < HANDLE_MAX_WIDTH:
             split = float(edges[i])
-            print(f"[convert_assets] width scan: max {widths.max():.3f} m at x={edges[widest]:.3f}, split at {split:.3f}")
+            print(
+                f"[convert_assets] width scan: max {widths.max():.3f} m at x={edges[widest]:.3f}, split at {split:.3f}"
+            )
             return split
     raise RuntimeError("no handle section found in width scan")
 
@@ -196,8 +211,10 @@ def main():
     grasp_sel = (v[:, 0] >= 0.195) & (v[:, 0] <= 0.205)
     if grasp_sel.any():
         zs = v[grasp_sel, 2]
-        print(f"[convert_assets] handle section at x=0.20: z in [{zs.min():.4f}, {zs.max():.4f}]"
-              f" center {0.5 * (zs.min() + zs.max()):.4f}")
+        print(
+            f"[convert_assets] handle section at x=0.20: z in [{zs.min():.4f}, {zs.max():.4f}]"
+            f" center {0.5 * (zs.min() + zs.max()):.4f}"
+        )
 
     os.makedirs(OUT_DIR, exist_ok=True)
     stage = Usd.Stage.CreateNew(OUT_PATH)

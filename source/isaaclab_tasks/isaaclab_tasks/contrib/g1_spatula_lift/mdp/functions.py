@@ -5,7 +5,7 @@
 
 """Task-specific observation, event, termination, and reward functions.
 
-Minimal pick-up set (g1_pick_cube pattern): reach the handle, close the
+Minimal pick-up set: reach the handle, close the
 fingers near it, lift. The no-blade rule lives in the terminations, not the
 rewards. Every reward is ``nan_to_num``: rewards are computed before resets,
 so a solver-diverged state must not leak NaN into the rollout.
@@ -208,20 +208,26 @@ def fingers_closed_near_handle(
     fingers_cfg: SceneEntityCfg = SceneEntityCfg("robot", joint_names=["right_hand_.*_joint"]),
     object_cfg: SceneEntityCfg = SceneEntityCfg("spatula"),
 ) -> torch.Tensor:
-    """Mean finger flexion gated to when the palm is within reach of the grasp point (g1_pick_cube pattern).
+    """Mean finger flexion, gated to the palm within reach of the grasp point
+    AND graded by the palm pointing at it.
 
     Flexion is measured against each joint's larger-|limit| bound, so it is
-    sign-correct for the TriHand thumb.
+    sign-correct for the TriHand thumb. The aim grade is the clamped-positive
+    ``palm_aim`` dot product, multiplicative: closure only pays while the palm
+    faces the handle, so knuckle-first or back-of-hand closure earns nothing.
     """
     robot = env.scene[palm_cfg.name]
     palm = robot.data.body_pos_w.torch[:, palm_cfg.body_ids, :].squeeze(1)
     gp = _handle_grasp_point_w(env, grasp_offset_b, object_cfg)
     near = torch.linalg.vector_norm(palm - gp, dim=-1) < distance_threshold
+    palm_quat = robot.data.body_quat_w.torch[:, palm_cfg.body_ids, :].squeeze(1)
+    palm_normal = quat_apply(palm_quat, torch.tensor((0.0, 0.0, -1.0), device=env.device).expand(env.num_envs, 3))
+    aim = (palm_normal * torch.nn.functional.normalize(gp - palm, dim=-1)).sum(dim=-1).clamp(0.0, 1.0)
     joint_pos = robot.data.joint_pos.torch[:, fingers_cfg.joint_ids]
     limits = robot.data.joint_pos_limits.torch[:, fingers_cfg.joint_ids, :]
     closed_mag = limits.abs().max(dim=-1).values.clamp(min=1.0e-6)
     flexion = (joint_pos.abs() / closed_mag).clamp(max=1.0).mean(dim=1)
-    return (flexion * near.float()).nan_to_num(0.0)
+    return (flexion * near.float() * aim).nan_to_num(0.0)
 
 
 def _force_grasp(env: ManagerBasedRLEnv, threshold: float) -> torch.Tensor:
@@ -303,7 +309,9 @@ def grasp_handle(
     object_cfg: SceneEntityCfg = SceneEntityCfg("spatula"),
 ) -> torch.Tensor:
     """1.0 while the privileged power grasp holds (see :func:`_grasp`)."""
-    return _grasp(env, handle_p0_b, handle_p1_b, palm_radius, thumb_radius, contact_radius, palm_cfg, fingertips_cfg, object_cfg).float()
+    return _grasp(
+        env, handle_p0_b, handle_p1_b, palm_radius, thumb_radius, contact_radius, palm_cfg, fingertips_cfg, object_cfg
+    ).float()
 
 
 def blade_pointed_inward(
@@ -330,7 +338,9 @@ def blade_pointed_inward(
     blade_w = quat_apply(obj.data.root_quat_w.torch, blade_b)
     inward = torch.tensor(inward_dir_w, device=env.device).expand(env.num_envs, 3)
     aim = (blade_w * inward).sum(dim=-1).clamp(0.0, 1.0)
-    grasp = _grasp(env, handle_p0_b, handle_p1_b, palm_radius, thumb_radius, contact_radius, palm_cfg, fingertips_cfg, object_cfg)
+    grasp = _grasp(
+        env, handle_p0_b, handle_p1_b, palm_radius, thumb_radius, contact_radius, palm_cfg, fingertips_cfg, object_cfg
+    )
     return (aim * grasp.float()).nan_to_num(0.0)
 
 
@@ -386,9 +396,7 @@ def object_lifted_above_while_grasped(
     return ((z > minimum_height) & _force_grasp(env, force_threshold)).nan_to_num(False)
 
 
-def blade_contact(
-    env: ManagerBasedRLEnv, threshold: float, sensor_name: str = "hand_blade_contact"
-) -> torch.Tensor:
+def blade_contact(env: ManagerBasedRLEnv, threshold: float, sensor_name: str = "hand_blade_contact") -> torch.Tensor:
     """True when any right-hand link presses the BLADE above ``threshold`` [N].
 
     The task is pick-it-up-BY-THE-HANDLE — grabbing or pushing the blade ends
@@ -489,7 +497,18 @@ def reset_from_grasp_map(
     """
     key = os.path.abspath(map_path)
     if key not in _GRASP_MAP_CACHE:
-        _GRASP_MAP_CACHE[key] = torch.load(key, weights_only=True) if os.path.exists(key) else None
+        if os.path.exists(key):
+            try:
+                _GRASP_MAP_CACHE[key] = torch.load(key, weights_only=True)
+            except Exception as err:
+                # e.g. an unsmudged git-lfs pointer file — same contract as a
+                # missing map: warn once, nominal resets only
+                _GRASP_MAP_CACHE[key] = None
+                if key not in _GRASP_MAP_WARNED:
+                    _GRASP_MAP_WARNED.add(key)
+                    print(f"[g1_spatula_lift] grasp map at {key} failed to load ({err}); resets are nominal-only")
+        else:
+            _GRASP_MAP_CACHE[key] = None
     grasp_map = _GRASP_MAP_CACHE[key]
     if grasp_map is None:
         if key not in _GRASP_MAP_WARNED:
