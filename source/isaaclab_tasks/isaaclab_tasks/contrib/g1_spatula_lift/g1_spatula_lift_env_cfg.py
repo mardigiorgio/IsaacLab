@@ -140,7 +140,7 @@ REST_SPATULA_Z = SPATULA_SPAWN_POS[2]
 """Spatula root height at rest, env frame [m]. Lifting is measured from here."""
 
 LIFT_SUCCESS_Z = LAB_TABLE_HEIGHT + 0.20
-"""Success: spatula root above this height [m] (~15 cm of lift)."""
+"""Success: spatula root above this height [m] (~19 cm of lift from rest)."""
 
 FORCE_GRASP_THRESHOLD = 0.5
 """Fingertip-on-handle contact force [N] that counts as pressing (ManiSkill
@@ -293,11 +293,87 @@ class ActionsCfg:
 
 @configclass
 class ObservationsCfg:
-    """Observation specifications for the MDP."""
+    """Observation specifications for the MDP.
+
+    Teacher-student layout: ``policy`` is the TEACHER set — deployable
+    proprioception/object state PLUS privileged sim-only signals (contact
+    forces, cage geometry, object dynamics, task phase). ``student`` is the
+    deployable subset the eventual distilled policy is allowed to see; it is
+    computed every step but unused by PPO, so distillation can read both
+    groups from the same rollouts.
+    """
 
     @configclass
     class PolicyCfg(ObsGroup):
-        """Observations for policy group with state values."""
+        """TEACHER observations: deployable set + privileged sim-only state."""
+
+        # --- deployable (mirrored in StudentCfg) ---
+        joint_pos = ObsTerm(
+            func=mdp.joint_pos_rel,
+            params={"asset_cfg": SceneEntityCfg("robot", joint_names=ACTUATED_JOINT_NAMES)},
+        )
+        joint_vel = ObsTerm(
+            func=mdp.joint_vel_rel,
+            params={"asset_cfg": SceneEntityCfg("robot", joint_names=ACTUATED_JOINT_NAMES)},
+        )
+        spatula_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
+        spatula_orientation = ObsTerm(func=mdp.object_orientation_in_robot_root_frame)
+        palm_to_handle = ObsTerm(
+            func=mdp.palm_to_handle_vector,
+            params={
+                "grasp_offset_b": HANDLE_GRASP_OFFSET_B,
+                "robot_cfg": SceneEntityCfg("robot", body_names=["right_hand_palm_link"]),
+            },
+        )
+        actions = ObsTerm(func=mdp.last_action)
+
+        # --- privileged (teacher-only, stripped at distillation) ---
+        # the exact forces the grasp reward and lift/success gates threshold on
+        digit_forces = ObsTerm(func=mdp.digit_handle_forces)
+        blade_force = ObsTerm(func=mdp.blade_contact_force)
+        # straddle state: per-tip distance to the handle line + which face
+        fingertip_cage = ObsTerm(
+            func=mdp.fingertip_cage_geometry,
+            params={
+                "handle_p0_b": HANDLE_SEGMENT_P0_B,
+                "handle_p1_b": HANDLE_SEGMENT_P1_B,
+                "fingertips_cfg": SceneEntityCfg("robot", body_names=FINGERTIP_BODY_NAMES),
+            },
+        )
+        spatula_velocity = ObsTerm(func=mdp.object_velocity_in_robot_root_frame)
+        handle_frame = ObsTerm(
+            func=mdp.handle_frame_in_robot_root_frame,
+            params={
+                "grasp_offset_b": HANDLE_GRASP_OFFSET_B,
+                "handle_p0_b": HANDLE_SEGMENT_P0_B,
+                "handle_p1_b": HANDLE_SEGMENT_P1_B,
+            },
+        )
+        palm_aim = ObsTerm(
+            func=mdp.palm_aim_obs,
+            params={
+                "grasp_offset_b": HANDLE_GRASP_OFFSET_B,
+                "palm_cfg": SceneEntityCfg("robot", body_names=["right_hand_palm_link"]),
+            },
+        )
+        lift_progress = ObsTerm(
+            func=mdp.lift_progress_obs,
+            params={"rest_height": REST_SPATULA_Z, "target_height": LIFT_SUCCESS_Z},
+        )
+        time_left = ObsTerm(func=mdp.time_remaining)
+
+        def __post_init__(self):
+            self.enable_corruption = False
+            self.concatenate_terms = True
+
+    @configclass
+    class StudentCfg(ObsGroup):
+        """Deployable observations for the distilled student (unused by PPO).
+
+        Proprioception + object pose (a tracker/estimator provides it on the
+        real system) + last action. Corruption stays off here — noise models
+        belong to the distillation run, not the teacher rollouts.
+        """
 
         joint_pos = ObsTerm(
             func=mdp.joint_pos_rel,
@@ -323,6 +399,7 @@ class ObservationsCfg:
             self.concatenate_terms = True
 
     policy: PolicyCfg = PolicyCfg()
+    student: StudentCfg = StudentCfg()
 
 
 @configclass

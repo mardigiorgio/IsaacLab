@@ -121,6 +121,108 @@ def _sensor_peak_force(env: ManagerBasedRLEnv, sensor_name: str) -> torch.Tensor
 ##
 
 
+def digit_handle_forces(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """PRIVILEGED per-digit handle contact force [N], shape [num_envs, 3].
+
+    Thumb/index/middle peak filtered force on the handle prim — the exact
+    quantities the grasp reward, lift gate, and success gate threshold on.
+    Sim-only (the real TriHand has no fingertip force sensing): teacher obs,
+    stripped at distillation.
+    """
+    return torch.stack(
+        [
+            _sensor_peak_force(env, "thumb_handle_contact"),
+            _sensor_peak_force(env, "index_handle_contact"),
+            _sensor_peak_force(env, "middle_handle_contact"),
+        ],
+        dim=1,
+    )
+
+
+def blade_contact_force(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """PRIVILEGED hand-on-blade contact force [N], shape [num_envs, 1] — feel
+    the forbidden contact before the termination threshold trips."""
+    return _sensor_peak_force(env, "hand_blade_contact").unsqueeze(-1)
+
+
+def fingertip_cage_geometry(
+    env: ManagerBasedRLEnv,
+    handle_p0_b: tuple[float, float, float],
+    handle_p1_b: tuple[float, float, float],
+    fingertips_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=["right_hand_.*_link"]),
+    object_cfg: SceneEntityCfg = SceneEntityCfg("spatula"),
+) -> torch.Tensor:
+    """PRIVILEGED straddle geometry, shape [num_envs, 6]: each fingertip's
+    distance to the handle centerline segment [m] and its handle-local-y side
+    [m] (sign = which face of the handle the tip is on — the cage state the
+    privileged grasp gates use). Columns follow the resolved asset body order.
+    """
+    dist, y = _handle_segment_geometry(env, handle_p0_b, handle_p1_b, fingertips_cfg, object_cfg)
+    return torch.cat([dist, y], dim=1).nan_to_num(0.0)
+
+
+def object_velocity_in_robot_root_frame(
+    env: ManagerBasedRLEnv,
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    object_cfg: SceneEntityCfg = SceneEntityCfg("spatula"),
+) -> torch.Tensor:
+    """Spatula linear + angular velocity in the robot root frame, shape
+    [num_envs, 6] — slip and tumble dynamics for reactive grip corrections."""
+    robot = env.scene[robot_cfg.name]
+    obj = env.scene[object_cfg.name]
+    quat = robot.data.root_quat_w.torch
+    lin = quat_apply_inverse(quat, obj.data.root_lin_vel_w.torch)
+    ang = quat_apply_inverse(quat, obj.data.root_ang_vel_w.torch)
+    return torch.cat([lin, ang], dim=1).nan_to_num(0.0)
+
+
+def handle_frame_in_robot_root_frame(
+    env: ManagerBasedRLEnv,
+    grasp_offset_b: tuple[float, float, float],
+    handle_p0_b: tuple[float, float, float],
+    handle_p1_b: tuple[float, float, float],
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    object_cfg: SceneEntityCfg = SceneEntityCfg("spatula"),
+) -> torch.Tensor:
+    """Handle grasp point + handle axis unit vector in the robot root frame,
+    shape [num_envs, 6] — the pinch target line, without requiring the policy
+    to re-derive it from the spatula root pose."""
+    robot = env.scene[robot_cfg.name]
+    obj = env.scene[object_cfg.name]
+    gp_w = _handle_grasp_point_w(env, grasp_offset_b, object_cfg)
+    axis_b = torch.tensor(handle_p1_b, device=env.device) - torch.tensor(handle_p0_b, device=env.device)
+    axis_w = quat_apply(
+        obj.data.root_quat_w.torch, torch.nn.functional.normalize(axis_b, dim=0).expand(env.num_envs, 3)
+    )
+    gp_r, _ = subtract_frame_transforms(robot.data.root_pos_w.torch, robot.data.root_quat_w.torch, gp_w)
+    axis_r = quat_apply_inverse(robot.data.root_quat_w.torch, axis_w)
+    return torch.cat([gp_r, axis_r], dim=1).nan_to_num(0.0)
+
+
+def palm_aim_obs(
+    env: ManagerBasedRLEnv,
+    grasp_offset_b: tuple[float, float, float],
+    palm_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=["right_hand_palm_link"]),
+    object_cfg: SceneEntityCfg = SceneEntityCfg("spatula"),
+) -> torch.Tensor:
+    """The signed palm-aim cosine as an observation, shape [num_envs, 1]."""
+    return palm_aim(env, grasp_offset_b, palm_cfg, object_cfg).unsqueeze(-1)
+
+
+def lift_progress_obs(env: ManagerBasedRLEnv, rest_height: float, target_height: float) -> torch.Tensor:
+    """Task phase: spatula height progress from rest toward the success
+    height, clamped to [0, 1], shape [num_envs, 1]."""
+    z = env.scene["spatula"].data.root_pos_w.torch[:, 2] - env.scene.env_origins[:, 2]
+    frac = (z - rest_height) / (target_height - rest_height)
+    return frac.clamp(0.0, 1.0).unsqueeze(-1).nan_to_num(0.0)
+
+
+def time_remaining(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Fraction of the episode remaining, shape [num_envs, 1] — finite-horizon
+    value estimation with a terminal bonus needs to see the clock."""
+    return (1.0 - env.episode_length_buf.float() / env.max_episode_length).unsqueeze(-1)
+
+
 def object_position_in_robot_root_frame(
     env: ManagerBasedRLEnv,
     robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),

@@ -41,7 +41,10 @@ class G1SpatulaLiftPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         num_mini_batches=4,
         learning_rate=1.0e-3,
         schedule="adaptive",
-        gamma=0.99,
+        # 0.995 at 60 Hz control = ~3.3 s credit horizon: the full
+        # reach-close-lift takes ~1.5 s and ends on a terminal bonus, so the
+        # 0.99 default's 1.7 s horizon under-credits the approach steps
+        gamma=0.995,
         lam=0.95,
         desired_kl=0.01,
         max_grad_norm=1.0,
