@@ -74,6 +74,10 @@ ARM_JOINTS = (
     "right_wrist_yaw_joint",
 )
 READY = (-0.60, -0.15, -0.10, 0.70, 0.30, -0.20, -0.30)
+# vertical-curl grip for the approach (the frame-verified caging grip):
+# wrist roll -1.87 = knuckles up, fingers hooking straight DOWN — tips
+# descend vertically astride the handle instead of plowing it forward
+VC_BASE = (-0.60, -0.15, -0.10, 0.70, -1.87, 0.30, 0.70)
 # descend: fold the elbow and drop the shoulder so the finger aperture
 # reaches handle height, wrist pitching to keep the claw level (tuned for
 # the 0.85 gantry mount — the forearm now clears the table edge)
@@ -137,7 +141,9 @@ def main():
         def print_geometry(tag):
             dist, y = _handle_segment_geometry(uenv, HANDLE_SEGMENT_P0_B, HANDLE_SEGMENT_P1_B, tips_cfg, SceneEntityCfg("spatula"))
             parts = [f"{n.split('_')[2]}: d={dist[0, i]:.3f} y={y[0, i]:+.3f}" for i, n in enumerate(tip_names)]
-            print(f"[scripted_pick] {tag} tips->segment: " + "  ".join(parts))
+            spos = spatula.data.root_pos_w.torch[0] - uenv.scene.env_origins[0]
+            print(f"[scripted_pick] {tag} tips->segment: " + "  ".join(parts)
+                  + f"  | spatula xy=({spos[0]:+.3f},{spos[1]:+.3f})")
             fj = {robot.joint_names[i]: robot.data.joint_pos.torch[0, i].item() for i in finger_ids}
             tgts = {n: finger_targets[n] for n in fj}
             print(f"[scripted_pick] {tag} fingers actual/target: " + "  ".join(f"{n.split('right_hand_')[1]}: {v:+.2f}/{tgts[n]:+.2f}" for n, v in fj.items()))
@@ -172,7 +178,7 @@ def main():
 
         palm_idx = robot.body_names.index("right_hand_palm_link")
 
-        def servo_palm(target, hold_fingers, steps, phase, arm_base):
+        def servo_palm(target, hold_fingers, steps, phase, arm_base, cap=1.0):
             """Closed-loop palm-position servo: diagonal gains on measured error.
 
             Signs calibrated from probe data: elbow fold moves the palm down
@@ -194,27 +200,38 @@ def main():
                             a += -e[2] / 0.02  # too high -> fold more
                         elif name == "right_shoulder_pitch_joint":
                             a += -e[1] / 0.04  # short of the handle -> swing forward
-                        elif name == "right_shoulder_yaw_joint":
-                            a += -e[0] / 0.06
+                        # x is uncontrolled on purpose: the handle spans
+                        # ~16 cm along x, so the pinch only needs y and z
                         action[0, slot] = max(-1.0, min(1.0, a))
                     for name, slot in finger_slots.items():
                         jid = robot.joint_names.index(name)
                         err = hold_fingers.get(name, 0.0) - robot.data.joint_pos.torch[0, jid].item()
-                        action[0, slot] = max(-1.0, min(1.0, err / 0.2))
+                        action[0, slot] = max(-cap, min(cap, err / 0.2))
+                    action.clamp_(-cap, cap)
                     env.step(action)
                     snap(phase)
 
-        env.reset()
         open_hand = {n: 0.0 for n in finger_targets}
+        half_curl = {n: 0.5 * v for n, v in finger_targets.items()}
+        env.reset()
         drive(READY, open_hand, 30, "settle")
         save_frame("ready")
-        # hover the palm so the open aperture brackets the handle: grasp point
-        # +4.5 cm up, 1 cm back (tips land ahead of the palm)
-        grasp_xyz = (0.248, -0.187, 0.890)
-        servo_palm(grasp_xyz, open_hand, 90, "descend", READY)
+        # 1) stage BEHIND and above the handle (transit cannot graze it)
+        # 1a) rise in place first — the ready tips already sit at handle
+        # height, so any forward motion at this altitude plows the spatula
+        servo_palm((0.248, -0.240, 0.950), open_hand, 40, "descend", READY)
+        # 1b) advance at altitude to directly above the handle
+        servo_palm((0.248, -0.205, 0.950), open_hand, 40, "descend", READY)
+        # 2+3) close DURING the drop: the palm bottoms out ~0.87 (table), so
+        # the tips can only bracket the handle if the aperture closes as it
+        # descends — stepped interleave, pads meet the faces at the bottom
+        q1 = {n: 0.3 * v for n, v in finger_targets.items()}
+        q2 = {n: 0.6 * v for n, v in finger_targets.items()}
+        servo_palm((0.248, -0.205, 0.920), q1, 60, "descend", READY, cap=0.25)
+        servo_palm((0.248, -0.205, 0.895), q2, 60, "descend", READY, cap=0.15)
         save_frame("descend")
         print_geometry("descend")
-        servo_palm(grasp_xyz, finger_targets, 50, "close", READY)
+        servo_palm((0.248, -0.205, 0.876), finger_targets, 100, "close", READY, cap=0.12)
         save_frame("close")
         print_geometry("close")
         drive(LIFT, finger_targets, 80, "lift")
