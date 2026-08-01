@@ -111,12 +111,13 @@ TOE_STANDOFF = 0.02
 ROBOT_STAND_POS = (0.0, -(LAB_TABLE_WIDTH / 2 + G1_TOE_REACH + TOE_STANDOFF), 0.75)
 """Fixed-base pelvis position [m]: standing at the long table edge, facing the table (+Y)."""
 
-PELVIS_TO_SPATULA_Y = 0.3058
-"""Pelvis -> spatula-spawn Y offset [m], carried over from the 61 cm-table
-bake: the ready-pose hand-over-handle alignment is authored relative to the
-pelvis, so the spawn must track ROBOT_STAND_POS, not the table center."""
+PELVIS_TO_SPATULA_Y = 0.366
+"""Pelvis -> spatula-spawn Y offset [m]: the ready-pose hand-over-handle
+alignment is authored relative to the pelvis, so the spawn must track
+ROBOT_STAND_POS, not the table center. 0.366 puts the spatula ~20 cm inside
+the table's near edge (user call: deeper than the original 0.3058 bake)."""
 
-SPATULA_REST_TABLE_OFFSET = 0.0125
+SPATULA_REST_TABLE_OFFSET = 0.0134
 """Settled spatula root height above the tabletop [m] (probe ``--mode settle``,
 83 cm table, 1 mm Newton contact margin)."""
 
@@ -130,7 +131,7 @@ threading the pronated vertical-curl hand's thumb/finger aperture. Derived
 from LAB_TABLE_HEIGHT and ROBOT_STAND_POS so a table remeasure cannot strand
 the spawn inside (or off) the tabletop; only the offsets are probe-baked."""
 
-SPATULA_SPAWN_QUAT = (0.0107, 0.1013, 0.0036, 0.9948)
+SPATULA_SPAWN_QUAT = (-0.0002, 0.1011, 0.0025, 0.9949)
 """Spawn orientation (x, y, z, w) — THIS FORK'S CONVENTION, not wxyz: the
 probe-baked at-rest attitude (slight pitch; the flat handle hovers a few mm
 above the tabletop)."""
