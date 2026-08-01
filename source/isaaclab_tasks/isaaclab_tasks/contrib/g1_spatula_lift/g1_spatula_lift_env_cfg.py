@@ -418,10 +418,21 @@ class RewardsCfg:
         },
         weight=2.0,
     )
-    # finishing must beat loitering near the goal
-    success_bonus = RewTerm(func=mdp.is_terminated_term, params={"term_keys": "success"}, weight=50.0)
-    blade_penalty = RewTerm(func=mdp.is_terminated_term, params={"term_keys": "blade_contact"}, weight=-5.0)
-    dropped_penalty = RewTerm(func=mdp.is_terminated_term, params={"term_keys": "spatula_dropped"}, weight=-5.0)
+    # ONE-SHOT terms are dt-scaled like everything else (reward = w * value
+    # * dt, dt = 1/60), so weights here are ~60x their effective payout.
+    # finishing must beat loitering: crossing the success height forfeits the
+    # remaining flow income (<= ~4.7/s, worth <= ~6 discounted at gamma 0.99),
+    # so the bonus must pay more than that AFTER dt scaling: 500/60 = +8.3.
+    # The old 50 paid +0.83 — holding just under the threshold strictly
+    # dominated finishing
+    success_bonus = RewTerm(func=mdp.is_terminated_term, params={"term_keys": "success"}, weight=500.0)
+    # -60/60 = -1.0: the no-blade rule needs teeth even early in training,
+    # when the forfeited-income cost of the termination is still near zero
+    blade_penalty = RewTerm(func=mdp.is_terminated_term, params={"term_keys": "blade_contact"}, weight=-60.0)
+    # -30/60 = -0.5: milder than the blade rule ON PURPOSE — knock-offs are
+    # exploration accidents next to the grasp, and pricing them like the
+    # safety rule teaches keep-the-hand-away before closure can be discovered
+    dropped_penalty = RewTerm(func=mdp.is_terminated_term, params={"term_keys": "spatula_dropped"}, weight=-30.0)
     action_l2 = RewTerm(func=mdp.action_l2_clamped, weight=-0.005)
     action_rate_l2 = RewTerm(func=mdp.action_rate_l2_clamped, weight=-0.005)
 
