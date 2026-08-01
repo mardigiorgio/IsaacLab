@@ -240,12 +240,17 @@ class G1SpatulaLiftSceneCfg(InteractiveSceneCfg):
                 solver_velocity_iteration_count=0,
                 max_depenetration_velocity=0.5,
             ),
-            # soften spatula contacts on BOTH backends: Newton maps the bound
-            # material's compliantContact stiffness/damping to per-shape ke/kd
-            # -> solref (0.04 s, 1.0), twice the 20 ms default timeconst;
-            # PhysX gets spring contacts (66 g on 625 N/m rests ~1 mm deep)
-            compliant_contact_stiffness=625.0,
-            compliant_contact_damping=50.0,
+            # CONTACT-STIFFNESS CURRICULUM (staged across resumed runs): the
+            # stage-1 softness (ke 625/kd 50, solref 0.04 s) let the policy
+            # discover the pick via a penetration weld (~300 N pinch on a
+            # 0.65 N object, autopsy-measured); each stage stiffens so the
+            # weld stops working and the grasp must become force-realistic.
+            #   stage 1: 625 / 50     (0.04 s)  <- discovery, run jvf7cph4
+            #   stage 2: 2500 / 100   (0.02 s)  <- CURRENT
+            #   stage 3: 62500 / 500  (4 ms)
+            #   stage 4: 1e6 / 2000   (1 ms, the stack/locomotion setting)
+            compliant_contact_stiffness=2500.0,
+            compliant_contact_damping=100.0,
             physics_material_prim_path=["collisions_blade/mesh", "collisions_handle/mesh"],
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=SPATULA_SPAWN_POS, rot=SPATULA_SPAWN_QUAT),
