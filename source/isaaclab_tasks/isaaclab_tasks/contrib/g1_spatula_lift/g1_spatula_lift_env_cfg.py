@@ -184,13 +184,18 @@ DEFAULT_ARM_JOINT_POS = {
     # close the claw horizontally -> lever up
     # raised for the 83 cm table (the 73 cm-table pose put the forearm inside
     # the taller slab at reset): more shoulder lift, straighter elbow, roll
-    # tucked in; wrist unchanged to keep the pronated palm-down claw
+    # tucked in. Wrist pitch is retuned WITH the flatter forearm: negative
+    # pitch is EXTENSION (hand tips back), and the old -0.90 only read as a
+    # claw because the folded elbow pointed the forearm steeply down — on the
+    # raised arm it faced the palm at the ceiling (frame-verified). -0.20
+    # restores palm straight down over the handle: palm arrow world-z -0.98,
+    # palm->grasp 0.074 m, fingers level pointing across the handle
     "right_shoulder_pitch_joint": -0.60,
     "right_shoulder_roll_joint": -0.15,
     "right_shoulder_yaw_joint": -0.10,
     "right_elbow_joint": 0.70,
     "right_wrist_roll_joint": 0.30,
-    "right_wrist_pitch_joint": -0.90,
+    "right_wrist_pitch_joint": -0.20,
     "right_wrist_yaw_joint": -0.30,
 }
 """Default arm pose [rad]: left down by the side, right poised over the handle."""
