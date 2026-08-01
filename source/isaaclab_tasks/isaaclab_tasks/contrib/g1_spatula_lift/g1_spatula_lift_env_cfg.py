@@ -111,8 +111,13 @@ G1_TOE_REACH = 0.142
 TOE_STANDOFF = 0.02
 """Gap between the toe tips and the table-edge plane [m]."""
 
-ROBOT_STAND_POS = (0.0, -(LAB_TABLE_WIDTH / 2 + G1_TOE_REACH + TOE_STANDOFF), 0.75)
-"""Fixed-base pelvis position [m]: standing at the long table edge, facing the table (+Y)."""
+ROBOT_STAND_POS = (0.0, -(LAB_TABLE_WIDTH / 2 + G1_TOE_REACH + TOE_STANDOFF), 0.85)
+"""Fixed-base pelvis position [m] at the long table edge, facing +Y. The real
+rig is GANTRY-mounted (user), so the base height is a free parameter: 0.85
+gives the shoulder ~30 cm of clearance over the 83 cm tabletop — at the
+standing 0.75 the forearm fouls the table edge before the fingers reach the
+handle (324 searched poses all stalled on that contact). A standing policy
+driving legs + waist comes later; this stage is fixed-base."""
 
 PELVIS_TO_SPATULA_Y = 0.366
 """Pelvis -> spatula-spawn Y offset [m]: the ready-pose hand-over-handle

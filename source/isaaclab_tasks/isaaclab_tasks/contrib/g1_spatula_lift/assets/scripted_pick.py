@@ -75,10 +75,11 @@ ARM_JOINTS = (
 )
 READY = (-0.60, -0.15, -0.10, 0.70, 0.30, -0.20, -0.30)
 # descend: fold the elbow and drop the shoulder so the finger aperture
-# reaches handle height, wrist pitching to keep the claw level
-DESCEND = (-0.52, -0.15, -0.10, 0.92, 0.30, -0.38, -0.30)
+# reaches handle height, wrist pitching to keep the claw level (tuned for
+# the 0.85 gantry mount — the forearm now clears the table edge)
+DESCEND = (-0.59, -0.15, -0.10, 1.00, 0.30, -0.30, -0.30)
 # lift: unfold the elbow and raise the shoulder, wrist compensating
-LIFT = (-1.05, -0.15, -0.10, 0.20, 0.30, 0.15, -0.30)
+LIFT = (-0.85, -0.15, -0.10, 0.75, 0.30, -0.15, -0.30)
 
 
 def main():
@@ -169,14 +170,51 @@ def main():
                     env.step(action)
                     snap(phase)
 
+        palm_idx = robot.body_names.index("right_hand_palm_link")
+
+        def servo_palm(target, hold_fingers, steps, phase, arm_base):
+            """Closed-loop palm-position servo: diagonal gains on measured error.
+
+            Signs calibrated from probe data: elbow fold moves the palm down
+            and back; more-negative shoulder pitch moves it forward and up.
+            The wrist targets stay at the arm_base values (claw attitude).
+            """
+            action = torch.zeros((1, uenv.action_space.shape[1]), device=uenv.device)
+            tgt = torch.tensor(target, device=uenv.device)
+            with torch.inference_mode():
+                for _ in range(steps):
+                    palm = robot.data.body_pos_w.torch[0, palm_idx] - uenv.scene.env_origins[0]
+                    e = (tgt - palm).tolist()  # (ex, ey, ez)
+                    # arm joints toward base pose, plus servo corrections
+                    for name, slot in arm_slots.items():
+                        jid = robot.joint_names.index(name)
+                        base_err = arm_base[ARM_JOINTS.index(name)] - robot.data.joint_pos.torch[0, jid].item()
+                        a = base_err / 0.1
+                        if name == "right_elbow_joint":
+                            a += -e[2] / 0.02  # too high -> fold more
+                        elif name == "right_shoulder_pitch_joint":
+                            a += -e[1] / 0.04  # short of the handle -> swing forward
+                        elif name == "right_shoulder_yaw_joint":
+                            a += -e[0] / 0.06
+                        action[0, slot] = max(-1.0, min(1.0, a))
+                    for name, slot in finger_slots.items():
+                        jid = robot.joint_names.index(name)
+                        err = hold_fingers.get(name, 0.0) - robot.data.joint_pos.torch[0, jid].item()
+                        action[0, slot] = max(-1.0, min(1.0, err / 0.2))
+                    env.step(action)
+                    snap(phase)
+
         env.reset()
         open_hand = {n: 0.0 for n in finger_targets}
         drive(READY, open_hand, 30, "settle")
         save_frame("ready")
-        drive(DESCEND, open_hand, 40, "descend")
+        # hover the palm so the open aperture brackets the handle: grasp point
+        # +4.5 cm up, 1 cm back (tips land ahead of the palm)
+        grasp_xyz = (0.248, -0.187, 0.890)
+        servo_palm(grasp_xyz, open_hand, 90, "descend", READY)
         save_frame("descend")
         print_geometry("descend")
-        drive(DESCEND, finger_targets, 40, "close")
+        servo_palm(grasp_xyz, finger_targets, 50, "close", READY)
         save_frame("close")
         print_geometry("close")
         drive(LIFT, finger_targets, 80, "lift")
