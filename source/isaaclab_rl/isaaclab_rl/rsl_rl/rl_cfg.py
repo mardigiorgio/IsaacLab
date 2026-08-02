@@ -57,6 +57,13 @@ class RslRlMLPModelCfg:
         std_type: Literal["scalar", "log"] = "scalar"
         """The parameterization type of the output distribution's standard deviation. Default is scalar."""
 
+        std_range: tuple[float, float] = (1.0e-6, 1.0e6)
+        """Clamp range (min, max) for the learned standard deviation. Default matches rsl_rl.
+
+        The floor guarantees a minimum exploration amplitude for the whole run: per-dimension
+        stds cannot collapse below it even when the optimizer would otherwise drive them to
+        zero (e.g. action dimensions whose only sampled gradient is a penalty)."""
+
     @configclass
     class HeteroscedasticGaussianDistributionCfg(GaussianDistributionCfg):
         """Configuration for the heteroscedastic Gaussian output distribution."""

@@ -543,10 +543,13 @@ class RewardsCfg:
         params={"carry_point": CARRY_POINT, "std": 0.15, "contact_threshold": CONTACT_GATE_N},
         weight=10.0,
     )
-    # start near-zero; the curriculum ramps these 10x at 15k steps, after
-    # competence (the proven ordering — never author fear from step 0)
-    action_l2 = RewTerm(func=mdp.action_l2_clamped, weight=-0.005)
-    action_rate_l2 = RewTerm(func=mdp.action_rate_l2_clamped, weight=-0.005)
+    # start at franka-scale ~zero: pre-contact these penalties are the ONLY
+    # gradient finger dimensions ever sample (zero income, guaranteed tax),
+    # which measurably drove finger actions and noise to zero in run
+    # 2026-08-01_18-03-39. The 15k-step curriculum brings real penalties in
+    # after competence (the proven ordering — never author fear from step 0)
+    action_l2 = RewTerm(func=mdp.action_l2_clamped, weight=-0.0001)
+    action_rate_l2 = RewTerm(func=mdp.action_rate_l2_clamped, weight=-0.0001)
     # -6/60 = -0.1 once: the no-blade rule's real cost is losing the income
     # stream; the explicit penalty is a tiebreaker, not a wall
     blade_penalty = RewTerm(func=mdp.is_terminated_term, params={"term_keys": "blade_contact"}, weight=-6.0)

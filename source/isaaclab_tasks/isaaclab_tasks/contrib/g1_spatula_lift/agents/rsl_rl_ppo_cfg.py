@@ -22,10 +22,13 @@ class G1SpatulaLiftPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         hidden_dims=[512, 256, 128],
         activation="elu",
         obs_normalization=True,
-        # 0.5: full-std relative-action exploration on 15 joints flails hard
-        # enough to tip the free-standing base and knock the spatula away
-        # before any task signal is collected
-        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=0.5),
+        # init 0.5 with a 0.12 FLOOR: run 2026-08-01_18-03-39 measured the
+        # per-dim stds collapsing to ~0.075 the moment reach converged
+        # (step ~670), killing finger exploration for the rest of training —
+        # pre-contact, finger noise only ever samples penalties, so PPO
+        # rationally drives it to zero. The floor guarantees exploration
+        # amplitude for the whole run; reach tolerance absorbs the jitter
+        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=0.5, std_range=(0.12, 1.0)),
     )
     critic = RslRlMLPModelCfg(
         hidden_dims=[512, 256, 128],
