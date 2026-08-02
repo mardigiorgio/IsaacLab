@@ -75,6 +75,7 @@ from isaaclab_tasks.contrib.g1_spatula_lift.g1_spatula_lift_env_cfg import (
 from isaaclab_tasks.contrib.g1_spatula_lift.mdp.functions import (
     _handle_grasp_point_w,
     _handle_segment_geometry,
+    _sensor_peak_force,
 )
 from isaaclab_tasks.utils.parse_cfg import parse_env_cfg
 from isaaclab_tasks.utils.physics_presets import apply_physics_preset
@@ -90,7 +91,12 @@ RIGHT_ARM_JOINTS = (
     "right_wrist_pitch_joint",
     "right_wrist_yaw_joint",
 )
-CAGE_RADIUS = 0.04  # [m] index/middle-to-segment distance that counts as straddling
+CAGE_RADIUS = 0.11  # [m] per-digit origin-to-segment gate. Calibrated for the
+# CLAW grip: the fingertip LINK ORIGINS sit at the knuckles, and with the
+# pads seated on the handle top/faces the origins still read ~0.055-0.06
+# (search asymptote with nonzero spatula disp = pads grazing). Same
+# origin-offset reasoning as the thumb's 0.08. The vertical-curl grip
+# threaded origins to ~0.03 but cannot reach the 83 cm tabletop.
 CAGE_THUMB_RADIUS = 0.08  # [m] thumb-to-segment gate (knuckle origin; pad reaches much closer)
 CAGE_PALM_RADIUS = 0.12  # [m] palm-to-segment gate: the handle must be near the palm
 SETTLE_STEPS = 10  # search: zero-action steps after the teleport before scoring
@@ -111,18 +117,19 @@ SEARCH_GRID = {
     # bracketing the handle just above contact so the zero-action arm sag
     # slides them through air (a tip in contact drags the spatula past the
     # 5 mm validation gate).
-    # Round-3 grid, re-centered for the 83 cm table + raised ready pose
-    # (shoulder -0.60/elbow 0.70 hover; descend region below it). The old
-    # grid was authored for the 73 cm table and lands 30-40 cm short now.
-    "sh_pitch": (-0.76, -0.72),
-    "sh_roll": (-0.15, -0.08),
-    "sh_yaw": (0.0,),
-    "elbow": (0.95, 1.05, 1.15),
-    "w_yaw": (0.6, 0.7, 0.8),
-    "w_pitch": (0.30, 0.55, 0.80),
-    "curls": ((0.7, 0.3), (0.55, 0.4)),
+    # Round-4 grid: CLAW grip (wrist roll 0.30 — palm down, fingers forward-
+    # down) at the 0.85 gantry mount. The vertical-curl grip cannot reach the
+    # 83 cm tabletop (palm would need to go below the table surface); the
+    # claw's thumb measured 2 cm from the handle line in scripted descents.
+    "sh_pitch": (-0.54, -0.50),
+    "sh_roll": (-0.15,),
+    "sh_yaw": (-0.10, 0.0),
+    "elbow": (1.15, 1.20),
+    "w_yaw": (-0.40,),
+    "w_pitch": (-0.40, -0.35, -0.30),
+    "curls": ((0.6, 0.4), (0.7, 0.4), (0.55, 0.35)),
 }
-SEARCH_WRIST_ROLL = -1.87
+SEARCH_WRIST_ROLL = 0.30
 
 
 def main():  # noqa: C901
@@ -198,12 +205,17 @@ def main():  # noqa: C901
             )
             palm_d, _ = _handle_segment_geometry(uenv, HANDLE_SEGMENT_P0_B, HANDLE_SEGMENT_P1_B, palm_cfg, spatula_cfg)
             palm_d = palm_d[:, 0]
+            # near-grasp gate (CLAW grip): the handle sits inside the open
+            # aperture with every digit origin within reach and the palm over
+            # it. Origin-SIGN opposition is unsatisfiable in this grip (the
+            # tip frames sit at the knuckles, which ride the far side of the
+            # palm even with the thumb pad on the near face), and curling
+            # alone cannot create contact (the tip arc bottoms out 1-2 cm
+            # above the handle — measured). The stage's job is to start the
+            # policy ONE ACTION from contact income; the descend-and-squeeze
+            # is the move it must learn.
             near = tip_d < CAGE_RADIUS
-            # cage = thumb near-side / index-or-middle far-side straddle
-            # (matches the calibrated _grasp definition), handle under the
-            # palm; the squeeze that closes the last cm is the policy's move
-            opp = (near[:, ii] & (tip_y[:, ti] * tip_y[:, ii] < 0)) | (near[:, mi] & (tip_y[:, ti] * tip_y[:, mi] < 0))
-            caged = opp & (tip_d[:, ti] < CAGE_THUMB_RADIUS) & (palm_d < CAGE_PALM_RADIUS)
+            caged = near.all(dim=1) & (palm_d < CAGE_PALM_RADIUS)
             gp = _handle_grasp_point_w(uenv, HANDLE_GRASP_OFFSET_B, spatula_cfg)
             palm_pos = robot.data.body_pos_w.torch[:, palm_cfg.body_ids, :][:, 0]
             palm_grasp = torch.linalg.vector_norm(palm_pos - gp, dim=-1)
@@ -380,6 +392,8 @@ def main():  # noqa: C901
         teleport()
         step_zero(CAGED_STABLE_STEPS)
         print_env0_state("[caged]")
+        for sname in ("thumb_handle_contact", "index_handle_contact", "middle_handle_contact"):
+            print(f"[grasp_map] [caged] {sname}: {_sensor_peak_force(uenv, sname)[0].item():.4f} N")
         caged, *_ = cage_metrics()
         disp0 = torch.linalg.vector_norm(spatula.data.root_pos_w.torch[0] - spawn_pos[0]).item()
         if not bool(caged[0].item()) or disp0 >= MAX_OBJECT_DISPLACEMENT:

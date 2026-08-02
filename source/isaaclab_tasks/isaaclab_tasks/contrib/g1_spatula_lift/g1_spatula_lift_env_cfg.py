@@ -99,11 +99,13 @@ GRASP_MAP_PATH = os.path.join(os.path.dirname(__file__), "grasp_map.pt")
 """Curated reset stages authored by ``assets/author_grasp_map.py`` (missing
 file → nominal resets only)."""
 
-GRASP_MAP_STAGE_PROBS = (1.0, 0.0)
+GRASP_MAP_STAGE_PROBS = (0.5, 0.5)
 """Reset mixture: index 0 = nominal ready-pose start, index 1 = the caged
-stage. Caged starts DISABLED (user call): starting in contact with the 66 g
-spatula under exploration noise batters it airborne every episode. The map
-stays authored/validated — flip to (0.6, 0.4) to re-enable."""
+near-grasp stage (handle inside the open claw aperture, pads 1-2 cm off,
+spatula untouched — one action from contact income). ENABLED at 50/50: the
+pre-grasp curriculum the exemplars call the highest-ROI lever. The old
+batter-the-spatula concern was authored under soft contacts and a stage that
+STARTED in contact; this stage is contact-free by design."""
 
 G1_TOE_REACH = 0.142
 """Forward extent of the G1 toe tips from the pelvis origin [m]."""
@@ -119,11 +121,12 @@ standing 0.75 the forearm fouls the table edge before the fingers reach the
 handle (324 searched poses all stalled on that contact). A standing policy
 driving legs + waist comes later; this stage is fixed-base."""
 
-PELVIS_TO_SPATULA_Y = 0.366
+PELVIS_TO_SPATULA_Y = 0.340
 """Pelvis -> spatula-spawn Y offset [m]: the ready-pose hand-over-handle
 alignment is authored relative to the pelvis, so the spawn must track
-ROBOT_STAND_POS, not the table center. 0.366 puts the spatula ~20 cm inside
-the table's near edge (user call: deeper than the original 0.3058 bake)."""
+ROBOT_STAND_POS, not the table center. 0.340 puts the spatula ~18 cm inside
+the near edge — pulled 2.6 cm closer (user call): the hover tips kept landing
+forward of the handle, i.e. the arm was overreaching."""
 
 SPATULA_REST_TABLE_OFFSET = 0.0134
 """Settled spatula root height above the tabletop [m] (probe ``--mode settle``,
