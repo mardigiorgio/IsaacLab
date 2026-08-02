@@ -265,3 +265,54 @@ def _update_distribution_cfg(model_cfg, rsl_rl_mlp_model_cfg_cls):
         del model_cfg.noise_std_type
     if hasattr(model_cfg, "state_dependent_std"):
         del model_cfg.state_dependent_std
+
+
+def filter_unsupported_rsl_rl_kwargs(agent_cfg_dict: dict) -> dict:
+    """Drop model/distribution kwargs the INSTALLED rsl_rl does not accept.
+
+    Different rsl_rl lineages expose different constructor parameters (e.g.
+    ``std_range`` on the distribution, ``stochastic`` on the model — each
+    exists in some builds and not others). Instead of crashing at runner
+    construction, filter each network's kwargs against the resolved class
+    signatures and WARN about every dropped key: a dropped key can silently
+    disable a feature (e.g. the exploration std floor), so the warning prints
+    the installed class's accepted parameters for diagnosis.
+    """
+    import inspect
+
+    def _resolve(class_name: str):
+        for mod_name in ("rsl_rl.modules", "rsl_rl.models"):
+            try:
+                mod = __import__(mod_name, fromlist=[class_name])
+            except ImportError:
+                continue
+            cls = getattr(mod, class_name, None)
+            if cls is not None:
+                return cls
+        return None
+
+    def _filter(target: dict, cls, keep_extra: set[str], label: str):
+        accepted = set(inspect.signature(cls.__init__).parameters) - {"self"}
+        accepted |= keep_extra
+        for key in [k for k in target if k not in accepted]:
+            print(
+                f"[isaaclab_rl] installed rsl_rl {cls.__name__} does not accept '{key}' -> DROPPING it"
+                f" ({label}). Accepted params: {sorted(accepted - keep_extra)}."
+                f" If '{key}' carries a needed feature (e.g. std_range = exploration std floor),"
+                " align the rsl_rl version in this environment."
+            )
+            del target[key]
+
+    for net in ("actor", "critic", "student", "teacher"):
+        model = agent_cfg_dict.get(net)
+        if not isinstance(model, dict):
+            continue
+        model_cls = _resolve(model.get("class_name", "MLPModel"))
+        if model_cls is not None:
+            _filter(model, model_cls, {"class_name"}, f"{net} model")
+        dist = model.get("distribution_cfg")
+        if isinstance(dist, dict):
+            dist_cls = _resolve(dist.get("class_name", "GaussianDistribution"))
+            if dist_cls is not None:
+                _filter(dist, dist_cls, {"class_name"}, f"{net} distribution")
+    return agent_cfg_dict

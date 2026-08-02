@@ -11,6 +11,7 @@ __all__ = [
     "export_policy_as_jit",
     "export_policy_as_onnx",
     "handle_deprecated_rsl_rl_cfg",
+    "filter_unsupported_rsl_rl_kwargs",
     "RslRlBaseRunnerCfg",
     "RslRlCNNModelCfg",
     "RslRlMLPModelCfg",
@@ -43,5 +44,5 @@ from .rl_cfg import (
 )
 from .rnd_cfg import RslRlRndCfg
 from .symmetry_cfg import RslRlSymmetryCfg
-from .utils import handle_deprecated_rsl_rl_cfg
+from .utils import filter_unsupported_rsl_rl_kwargs, handle_deprecated_rsl_rl_cfg
 from .vecenv_wrapper import RslRlVecEnvWrapper

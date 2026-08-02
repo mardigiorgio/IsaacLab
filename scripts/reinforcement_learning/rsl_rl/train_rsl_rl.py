@@ -128,7 +128,7 @@ def run(argv: list[str]) -> None:
     from isaaclab.app import launch_simulation
     from isaaclab.envs import DirectMARLEnvCfg
 
-    from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper, handle_deprecated_rsl_rl_cfg
+    from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper, filter_unsupported_rsl_rl_kwargs, handle_deprecated_rsl_rl_cfg
 
     from isaaclab_tasks.utils import get_checkpoint_path, resolve_task_config
 
@@ -206,9 +206,13 @@ def run(argv: list[str]) -> None:
         env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
 
         if agent_cfg.class_name == "OnPolicyRunner":
-            runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device)
+            runner = OnPolicyRunner(
+                env, filter_unsupported_rsl_rl_kwargs(agent_cfg.to_dict()), log_dir=log_dir, device=agent_cfg.device
+            )
         elif agent_cfg.class_name == "DistillationRunner":
-            runner = DistillationRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device)
+            runner = DistillationRunner(
+                env, filter_unsupported_rsl_rl_kwargs(agent_cfg.to_dict()), log_dir=log_dir, device=agent_cfg.device
+            )
         else:
             raise ValueError(f"Unsupported runner class: {agent_cfg.class_name}")
 
