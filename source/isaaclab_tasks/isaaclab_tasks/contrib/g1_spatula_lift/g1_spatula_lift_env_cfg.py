@@ -99,13 +99,12 @@ GRASP_MAP_PATH = os.path.join(os.path.dirname(__file__), "grasp_map.pt")
 """Curated reset stages authored by ``assets/author_grasp_map.py`` (missing
 file → nominal resets only)."""
 
-GRASP_MAP_STAGE_PROBS = (0.5, 0.5)
+GRASP_MAP_STAGE_PROBS = (1.0, 0.0)
 """Reset mixture: index 0 = nominal ready-pose start, index 1 = the caged
-near-grasp stage (handle inside the open claw aperture, pads 1-2 cm off,
-spatula untouched — one action from contact income). ENABLED at 50/50: the
-pre-grasp curriculum the exemplars call the highest-ROI lever. The old
-batter-the-spatula concern was authored under soft contacts and a stage that
-STARTED in contact; this stage is contact-free by design."""
+near-grasp stage. Caged starts OFF (user call: the videos show reach is
+already learned; the missing skill is closing the fingers, addressed by the
+scheduled closure bootstrap in RewardsCfg/CurriculumCfg instead). The stage
+stays authored/validated — flip to (0.5, 0.5) to re-enable."""
 
 G1_TOE_REACH = 0.142
 """Forward extent of the G1 toe tips from the pelvis origin [m]."""
@@ -546,6 +545,22 @@ class RewardsCfg:
         params={"carry_point": CARRY_POINT, "std": 0.15, "contact_threshold": CONTACT_GATE_N},
         weight=10.0,
     )
+    # closure BOOTSTRAP (franka-reach-style curriculum: a scheduled weight,
+    # not a permanent term): finger flexion pays only with the palm within
+    # reach of the handle AND aiming at it. The videos show reach is learned
+    # and fingers never close — this pays for exactly the missing move, and
+    # the curriculum zeroes it at ~iteration 800 before it can become the
+    # next farm (its removal deadline IS the anti-farm mechanism)
+    closure = RewTerm(
+        func=mdp.fingers_closed_near_handle,
+        params={
+            "distance_threshold": PALM_GRASP_RADIUS,
+            "grasp_offset_b": HANDLE_GRASP_OFFSET_B,
+            "palm_cfg": SceneEntityCfg("robot", body_names=["right_hand_palm_link"]),
+            "fingers_cfg": SceneEntityCfg("robot", joint_names=["right_hand_.*_joint"]),
+        },
+        weight=0.5,
+    )
     # start near-zero; the curriculum ramps these 10x at 15k steps, after
     # competence (the proven ordering — never author fear from step 0)
     action_l2 = RewTerm(func=mdp.action_l2_clamped, weight=-0.005)
@@ -611,6 +626,12 @@ class CurriculumCfg:
     action_l2 = CurrTerm(
         func=mdp.modify_reward_weight,
         params={"term_name": "action_l2", "weight": -0.05, "num_steps": 15000},
+    )
+    # the closure scaffold comes DOWN once closing is learned (~iter 800 at
+    # 24 steps/env/iter) — same mechanism the core reach/lift tasks use
+    closure_off = CurrTerm(
+        func=mdp.modify_reward_weight,
+        params={"term_name": "closure", "weight": 0.0, "num_steps": 20000},
     )
 
 
