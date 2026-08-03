@@ -345,8 +345,8 @@ def _opposed_handle_contact(env: ManagerBasedRLEnv, threshold: float) -> torch.T
 def fingers_to_handle(
     env: ManagerBasedRLEnv,
     std: float,
-    contact_threshold: float,
     grasp_offset_b: tuple[float, float, float],
+    contact_threshold: float | None = None,
     bodies_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=["right_hand_palm_link"]),
     object_cfg: SceneEntityCfg = SceneEntityCfg("spatula"),
 ) -> torch.Tensor:
@@ -357,13 +357,102 @@ def fingers_to_handle(
 
     ``std`` is wide (0.4 m in the proven recipe) ON PURPOSE: the kernel keeps
     gradient across the whole workspace — no absorbing far region.
+    ``contact_threshold`` of ``None`` drops the contact bonus entirely and
+    returns the bare reach kernel — the claw-grasp recipe, where the opposed
+    thumb/finger force signature a pinch produces may never appear.
     """
     robot = env.scene[bodies_cfg.name]
     bodies = robot.data.body_pos_w.torch[:, bodies_cfg.body_ids, :]
     gp = _handle_grasp_point_w(env, grasp_offset_b, object_cfg).unsqueeze(1)
     worst = torch.linalg.vector_norm(bodies - gp, dim=-1).max(dim=1).values
+    reach = 1.0 - torch.tanh(worst / std)
+    if contact_threshold is None:
+        return reach.nan_to_num(0.0)
     bonus = _opposed_handle_contact(env, contact_threshold).float().clamp(0.1, 1.0)
-    return ((1.0 - torch.tanh(worst / std)) * bonus).nan_to_num(0.0)
+    return (reach * bonus).nan_to_num(0.0)
+
+
+def object_lifted(
+    env: ManagerBasedRLEnv,
+    rest_height: float,
+    minimal_offset: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("spatula"),
+) -> torch.Tensor:
+    """Binary lift indicator, shape [num_envs]: 1.0 while the object root is above rest.
+
+    The Franka-lift height gate with NO contact gate (the published lift
+    recipe): income for the object being off the table, whatever is holding it
+    there. The no-catapult job belongs to the ``spatula_dropped`` termination
+    and to the fact that a flung object stops accruing carry-point income
+    within a few frames.
+
+    Args:
+        env: The RL environment instance.
+        rest_height: Object root height at rest in the env frame [m].
+        minimal_offset: Rise above ``rest_height`` that counts as lifted [m].
+        object_cfg: Entity config for the lifted object.
+    """
+    obj = env.scene[object_cfg.name]
+    z = obj.data.root_pos_w.torch[:, 2] - env.scene.env_origins[:, 2]
+    return (z > (rest_height + minimal_offset)).float().nan_to_num(0.0)
+
+
+def track_carry_point(
+    env: ManagerBasedRLEnv,
+    carry_point: tuple[float, float, float],
+    stds: tuple[float, ...],
+    weights: tuple[float, ...],
+    rest_height: float,
+    minimal_offset: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("spatula"),
+) -> torch.Tensor:
+    """Multi-scale carry-point tracking income, shape [num_envs].
+
+    ``1(z > rest + offset) * sum_k w_k [1 - tanh(d_goal / sigma_k)]`` where
+    ``d_goal`` [m] is the object root to ``carry_point`` in the env frame. Two
+    kernels — one coarse, one fine — give gradient from across the workspace
+    while still rewarding the last centimetre. Gated on height only, never on
+    contact.
+
+    Args:
+        env: The RL environment instance.
+        carry_point: Target position in the env frame [m].
+        stds: Kernel widths [m], one per scale.
+        weights: Per-kernel weights, same length as ``stds``.
+        rest_height: Object root height at rest in the env frame [m].
+        minimal_offset: Rise above ``rest_height`` that enables the income [m].
+        object_cfg: Entity config for the tracked object.
+
+    Raises:
+        ValueError: If ``stds`` and ``weights`` differ in length.
+    """
+    if len(stds) != len(weights):
+        raise ValueError(f"stds and weights must be the same length, got {len(stds)} and {len(weights)}")
+    obj = env.scene[object_cfg.name]
+    pos = obj.data.root_pos_w.torch - env.scene.env_origins
+    target = torch.tensor(carry_point, device=env.device).expand(env.num_envs, 3)
+    dist = torch.linalg.vector_norm(pos - target, dim=-1)
+    lifted = pos[:, 2] > (rest_height + minimal_offset)
+    income = torch.zeros_like(dist)
+    for std, weight in zip(stds, weights):
+        income = income + weight * (1.0 - torch.tanh(dist / std))
+    return (income * lifted.float()).nan_to_num(0.0)
+
+
+def joint_vel_l2_clamped(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+    """Penalize joint velocities with an L2-squared kernel, clamped for solver-divergence safety.
+
+    Mirrors :func:`action_l2_clamped`. ``isaaclab.envs.mdp.joint_vel_l2`` is
+    unclamped; one diverged env would poison the whole batch, which this
+    module's NaN/clamp invariant exists to prevent.
+
+    Args:
+        env: The RL environment instance.
+        asset_cfg: Entity config selecting the penalized joints.
+    """
+    asset = env.scene[asset_cfg.name]
+    joint_vel = asset.data.joint_vel.torch[:, asset_cfg.joint_ids]
+    return torch.sum(torch.square(joint_vel), dim=1).clamp(-1000, 1000).nan_to_num(0.0)
 
 
 def handle_contact_count(env: ManagerBasedRLEnv, threshold: float) -> torch.Tensor:

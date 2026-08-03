@@ -96,3 +96,60 @@ def test_reach_obs_and_rewards_use_right_hand_bodies(physics_preset_name):
         reach_cfg = env.unwrapped.reward_manager.get_term_cfg("fingers_to_handle")
         body_ids = reach_cfg.params["bodies_cfg"].body_ids
         assert isinstance(body_ids, list) and len(body_ids) == 4, f"reach bodies_cfg resolved body_ids = {body_ids}"
+
+
+@pytest.mark.parametrize("physics_preset_name", ["newton_mjwarp"], ids=["newton_mjwarp"])
+def test_new_reward_functions_are_finite_and_ungated(physics_preset_name):
+    """The three new reward terms compute finite [num_envs] tensors with no contact gate.
+
+    At rest the spatula is on the table, so lift/track must read exactly 0.0;
+    reach must be strictly positive despite zero contact force, which is the
+    whole point of making the gate optional.
+    """
+    from isaaclab.managers import SceneEntityCfg
+
+    from isaaclab_tasks.contrib.g1_spatula_lift import mdp
+    from isaaclab_tasks.contrib.g1_spatula_lift.g1_spatula_lift_env_cfg import (
+        ACTUATED_JOINT_NAMES,
+        CARRY_POINT,
+        FINGERTIP_BODY_NAMES,
+        HANDLE_GRASP_OFFSET_B,
+        REST_SPATULA_Z,
+    )
+
+    with _settled_env(physics_preset_name, num_envs=2, steps=30) as env:
+        uenv = env.unwrapped
+
+        lifted = mdp.object_lifted(uenv, rest_height=REST_SPATULA_Z, minimal_offset=0.03)
+        assert lifted.shape == (2,), f"object_lifted shape {lifted.shape}"
+        assert torch.isfinite(lifted).all()
+        assert torch.all(lifted == 0.0), f"resting spatula reads lifted: {lifted.tolist()}"
+
+        track = mdp.track_carry_point(
+            uenv,
+            carry_point=CARRY_POINT,
+            stds=(0.30, 0.05),
+            weights=(0.5, 0.5),
+            rest_height=REST_SPATULA_Z,
+            minimal_offset=0.03,
+        )
+        assert track.shape == (2,) and torch.isfinite(track).all()
+        assert torch.all(track == 0.0), f"resting spatula earns track income: {track.tolist()}"
+
+        vel_cfg = SceneEntityCfg("robot", joint_names=ACTUATED_JOINT_NAMES)
+        vel_cfg.resolve(uenv.scene)
+        jv = mdp.joint_vel_l2_clamped(uenv, asset_cfg=vel_cfg)
+        assert jv.shape == (2,) and torch.isfinite(jv).all()
+        assert torch.all(jv >= 0.0) and torch.all(jv <= 1000.0)
+
+        bodies_cfg = SceneEntityCfg("robot", body_names=["right_hand_palm_link", *FINGERTIP_BODY_NAMES])
+        bodies_cfg.resolve(uenv.scene)
+        reach = mdp.fingers_to_handle(
+            uenv,
+            std=0.4,
+            contact_threshold=None,
+            grasp_offset_b=HANDLE_GRASP_OFFSET_B,
+            bodies_cfg=bodies_cfg,
+        )
+        assert reach.shape == (2,) and torch.isfinite(reach).all()
+        assert torch.all(reach > 0.0), f"ungated reach paid nothing without contact: {reach.tolist()}"

@@ -11,6 +11,9 @@ __all__ = [
     "digit_handle_forces",
     "blade_contact_force",
     "fingers_to_handle",
+    "object_lifted",
+    "track_carry_point",
+    "joint_vel_l2_clamped",
     "handle_contact_count",
     "lifted_with_handle_contact",
     "hold_at_carry_point",
@@ -49,6 +52,7 @@ from .functions import (
     fingertip_cage_geometry,
     handle_contact_count,
     hold_at_carry_point,
+    joint_vel_l2_clamped,
     lifted_with_handle_contact,
     handle_frame_in_robot_root_frame,
     lift_progress_obs,
@@ -61,6 +65,7 @@ from .functions import (
     palm_aim,
     pinch_center_reaching,
     hold_joints_at_default,
+    object_lifted,
     object_lifted_above,
     object_lifted_above_while_grasped,
     object_orientation_in_robot_root_frame,
@@ -70,6 +75,7 @@ from .functions import (
     palm_to_handle_vector,
     reset_from_grasp_map,
     spatula_lift_progress,
+    track_carry_point,
     robot_or_object_state_invalid,
 )
 from isaaclab.envs.mdp import *
