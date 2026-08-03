@@ -52,9 +52,10 @@ ACTUATED_JOINT_NAMES = [
 """Observed joints: right arm + right TriHand fingers (14 dims). The waist is
 FROZEN (held at defaults like the legs): the waist-enabled variant let the
 policy drape the torso/elbow onto the tabletop instead of reaching.
-The ARM is actuated in task space (``arm_ik``), the fingers in joint space;
-the waist, left arm and legs are inert, held at their defaults by the
-``hold_inert_joints`` event."""
+Arm AND fingers are actuated in JOINT space via
+``RelativeJointPositionActionCfg`` (see :class:`ActionsCfg`) — bounded joint
+deltas, not task-space IK. The waist, left arm and legs are inert, held at
+their defaults by the ``hold_inert_joints`` event."""
 
 SPATULA_USD_PATH = os.path.join(os.path.dirname(__file__), "assets", "usd", "thimma_wood_natural_flat_spatula.usd")
 """Converted LBM spatula (see ``assets/convert_assets.py``): body frame = the
@@ -191,7 +192,7 @@ DEFAULT_ARM_JOINT_POS = {
     # close the claw horizontally -> lever up
     # raised for the 83 cm table (the 73 cm-table pose put the forearm inside
     # the taller slab at reset): more shoulder lift, straighter elbow, roll
-    # tucked in. Wrist pitch is retuned WITH the flatter forearm: negative
+    # tucked in. Wrist pitch is re-tuned WITH the flatter forearm: negative
     # pitch is EXTENSION (hand tips back), and the old -0.90 only read as a
     # claw because the folded elbow pointed the forearm steeply down — on the
     # raised arm it faced the palm at the ceiling (frame-verified). -0.20
@@ -497,59 +498,60 @@ class EventCfg:
 
 @configclass
 class RewardsCfg:
-    """Stripped to the proven lift recipe (core-lift + dexsuite invariants).
+    """The published lift recipe, UNGATED (claw-grasp rebuild).
 
-    Continuous flow only — no terminal bonus, no closure/aim/posture shaping
-    to farm. The ladder is steep in the right direction: reach breadcrumb 1,
-    touch bootstrap 1, lifted 5, hold-at-carry-point 10. Nothing pays without
-    either touching the handle or holding it in the air, and the wide reach
-    kernel keeps gradient across the whole workspace (no absorbing far pose).
+    Every prior version gated reach/lift/track on ``_opposed_handle_contact``
+    — thumb force AND an opposing digit's force, which is a PINCH signature.
+    The intended grip is a claw: fingertips go down to the tabletop on either
+    side of the handle and rake it into the hand, with the table as the
+    opposing surface. That grip may never produce the pinch signature, so
+    gating on it made every task term unpayable. Fingertip-on-table contact is
+    explicitly legal here: it is the grasp mechanism. Handle preference is kept
+    by pointing reach and track at the handle grasp point, not by contact
+    plumbing.
     """
 
-    # breadcrumb: worst of palm+tips to the grasp point, std 0.4 (gradient
-    # everywhere), x0.1 floor without the contact gate / x1.0 with it
-    fingers_to_handle = RewTerm(
+    # breadcrumb: worst of palm + tips to the grasp point, std 0.4 so there is
+    # gradient across the whole workspace and no absorbing far pose
+    reach = RewTerm(
         func=mdp.fingers_to_handle,
         params={
             "std": 0.4,
-            "contact_threshold": CONTACT_GATE_N,
             "grasp_offset_b": HANDLE_GRASP_OFFSET_B,
             "bodies_cfg": SceneEntityCfg("robot", body_names=["right_hand_palm_link", *FINGERTIP_BODY_NAMES]),
         },
         weight=1.0,
     )
-    # ungated bootstrap: any digit touching the handle pays a third
-    contact_count = RewTerm(
-        func=mdp.handle_contact_count,
-        params={"threshold": CONTACT_COUNT_N},
-        weight=1.0,
-    )
-    # the Franka-lift height gate, contact-gated against the catapult:
-    # 5/60 = 0.083/step for every step the spatula is held off the table
-    lifted = RewTerm(
-        func=mdp.lifted_with_handle_contact,
-        params={
-            "rest_height": REST_SPATULA_Z,
-            "minimal_offset": 0.03,
-            "contact_threshold": CONTACT_GATE_N,
-        },
+    # pure height indicator: 5/60 = 0.083/step for every step off the table
+    lift = RewTerm(
+        func=mdp.object_lifted,
+        params={"rest_height": REST_SPATULA_Z, "minimal_offset": 0.03},
         weight=5.0,
     )
-    # THE task income: grasped at the carry point = best-paying state in the
-    # MDP, every step, to timeout. A fling pays only for its airborne-and-
-    # grasped-near-target frames, i.e. nothing
-    hold_at_point = RewTerm(
-        func=mdp.hold_at_carry_point,
-        params={"carry_point": CARRY_POINT, "std": 0.15, "contact_threshold": CONTACT_GATE_N},
+    # THE task income: coarse + fine kernels on distance to the carry point,
+    # paid every step to timeout. There is no success termination to game
+    track = RewTerm(
+        func=mdp.track_carry_point,
+        params={
+            "carry_point": CARRY_POINT,
+            "stds": (0.30, 0.05),
+            "weights": (0.5, 0.5),
+            "rest_height": REST_SPATULA_Z,
+            "minimal_offset": 0.03,
+        },
         weight=10.0,
     )
     # start at franka-scale ~zero: pre-contact these penalties are the ONLY
     # gradient finger dimensions ever sample (zero income, guaranteed tax),
     # which measurably drove finger actions and noise to zero in run
-    # 2026-08-01_18-03-39. The 15k-step curriculum brings real penalties in
-    # after competence (the proven ordering — never author fear from step 0)
-    action_l2 = RewTerm(func=mdp.action_l2_clamped, weight=-0.0001)
+    # 2026-08-01_18-03-39. The curriculum brings real penalties in after
+    # competence — never author fear from step 0
     action_rate_l2 = RewTerm(func=mdp.action_rate_l2_clamped, weight=-0.0001)
+    joint_vel_l2 = RewTerm(
+        func=mdp.joint_vel_l2_clamped,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=ACTUATED_JOINT_NAMES)},
+        weight=-0.0001,
+    )
     # -6/60 = -0.1 once: the no-blade rule's real cost is losing the income
     # stream; the explicit penalty is a tiebreaker, not a wall
     blade_penalty = RewTerm(func=mdp.is_terminated_term, params={"term_keys": "blade_contact"}, weight=-6.0)
@@ -601,16 +603,23 @@ class TerminationsCfg:
 
 @configclass
 class CurriculumCfg:
-    """Penalty ramp AFTER competence (the core-lift pattern: regularization
-    is curricula'd, task rewards never are)."""
+    """Penalty ramp AFTER competence (the core-lift pattern: regularization is
+    curricula'd, task rewards never are).
+
+    ``modify_reward_weight`` is a one-shot STEP, not a ramp, and ``num_steps``
+    counts ``common_step_counter`` — control steps, not iterations. At
+    ``num_steps_per_env=24`` the old 15000 landed at iteration 625, which is
+    42% of the new 1500-iteration budget. 6000 puts it at iteration 250, right
+    at the first decision point.
+    """
 
     action_rate = CurrTerm(
         func=mdp.modify_reward_weight,
-        params={"term_name": "action_rate_l2", "weight": -0.05, "num_steps": 15000},
+        params={"term_name": "action_rate_l2", "weight": -0.05, "num_steps": 6000},
     )
-    action_l2 = CurrTerm(
+    joint_vel = CurrTerm(
         func=mdp.modify_reward_weight,
-        params={"term_name": "action_l2", "weight": -0.05, "num_steps": 15000},
+        params={"term_name": "joint_vel_l2", "weight": -0.02, "num_steps": 6000},
     )
 
 

@@ -93,7 +93,7 @@ def test_reach_obs_and_rewards_use_right_hand_bodies(physics_preset_name):
         obs_manager = env.unwrapped.observation_manager
         dims = dict(zip(obs_manager.active_terms["policy"], obs_manager.group_obs_term_dim["policy"]))
         assert dims["palm_to_handle"] == (3,), f"palm_to_handle obs dim = {dims['palm_to_handle']}, expected (3,)"
-        reach_cfg = env.unwrapped.reward_manager.get_term_cfg("fingers_to_handle")
+        reach_cfg = env.unwrapped.reward_manager.get_term_cfg("reach")
         body_ids = reach_cfg.params["bodies_cfg"].body_ids
         assert isinstance(body_ids, list) and len(body_ids) == 4, f"reach bodies_cfg resolved body_ids = {body_ids}"
 
@@ -153,3 +153,35 @@ def test_new_reward_functions_are_finite_and_ungated(physics_preset_name):
         )
         assert reach.shape == (2,) and torch.isfinite(reach).all()
         assert torch.all(reach > 0.0), f"ungated reach paid nothing without contact: {reach.tolist()}"
+
+
+@pytest.mark.parametrize("physics_preset_name", ["newton_mjwarp"], ids=["newton_mjwarp"])
+def test_reward_and_curriculum_terms_agree(physics_preset_name):
+    """Every curriculum term names a live reward term, and no task term is contact-gated.
+
+    modify_reward_weight resolves term_name in __init__, so a stale name is a
+    hard failure at env construction rather than a silent no-op. This pins that
+    contract, and pins that the claw recipe's task terms take no contact
+    threshold.
+    """
+    with _settled_env(physics_preset_name, steps=5) as env:
+        uenv = env.unwrapped
+        reward_terms = set(uenv.reward_manager.active_terms)
+        assert {"reach", "lift", "track"} <= reward_terms, f"missing task terms: {reward_terms}"
+        assert "contact_count" not in reward_terms, "the ungated touch bootstrap was not removed"
+        assert "action_l2" not in reward_terms, "action_l2 was not replaced by joint_vel_l2"
+
+        # CurriculumManager exposes no get_term_cfg: names come off the manager
+        # (proving the term registered), params off the public env cfg.
+        curriculum_terms = set(uenv.curriculum_manager.active_terms)
+        for name in ("action_rate", "joint_vel"):
+            assert name in curriculum_terms, f"curriculum term '{name}' is not active: {curriculum_terms}"
+            params = getattr(uenv.cfg.curriculum, name).params
+            assert params["term_name"] in reward_terms, (
+                f"curriculum '{name}' targets '{params['term_name']}', not a live reward term"
+            )
+            assert params["num_steps"] == 6000, f"curriculum '{name}' num_steps = {params['num_steps']}"
+
+        for name in ("reach", "lift", "track"):
+            params = uenv.reward_manager.get_term_cfg(name).params
+            assert params.get("contact_threshold") is None, f"'{name}' is still contact-gated"
