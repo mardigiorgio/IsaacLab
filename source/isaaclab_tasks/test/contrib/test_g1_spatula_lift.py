@@ -185,3 +185,27 @@ def test_reward_and_curriculum_terms_agree(physics_preset_name):
         for name in ("reach", "lift", "track"):
             params = uenv.reward_manager.get_term_cfg(name).params
             assert params.get("contact_threshold") is None, f"'{name}' is still contact-gated"
+
+
+def test_ppo_cfg_caps_policy_std():
+    """The std CAP is the fix for the blade spiral; entropy bonus is off.
+
+    Run 2026-08-01 ballooned std to 0.98 inside std_range=(0.12, 1.0), the arm
+    dove at the object and 94% of episodes died on blade contact. rsl_rl 5.4.1
+    clamps std_param to std_range on every update, so the cap is enforced by
+    the library. init_std must sit strictly below the cap or the policy starts
+    pinned to it. This test needs no simulator.
+    """
+    from isaaclab_tasks.contrib.g1_spatula_lift.agents.rsl_rl_ppo_cfg import G1SpatulaLiftPPORunnerCfg
+
+    cfg = G1SpatulaLiftPPORunnerCfg()
+    lo, hi = cfg.actor.distribution_cfg.std_range
+    assert (lo, hi) == (0.15, 0.5), f"std_range = {(lo, hi)}"
+    assert lo < cfg.actor.distribution_cfg.init_std < hi, (
+        f"init_std {cfg.actor.distribution_cfg.init_std} is not strictly inside {(lo, hi)}"
+    )
+    assert cfg.algorithm.entropy_coef == 0.0
+    assert cfg.algorithm.learning_rate == 1.0e-4
+    assert cfg.algorithm.schedule == "adaptive"
+    assert cfg.algorithm.gamma == 0.98
+    assert cfg.max_iterations == 1500
