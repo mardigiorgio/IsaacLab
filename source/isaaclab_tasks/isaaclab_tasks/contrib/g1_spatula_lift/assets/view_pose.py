@@ -18,7 +18,11 @@ import argparse
 from isaaclab.app import add_launcher_args
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--pose", required=True, help="path to a {'stages': [...]} file")
+parser.add_argument(
+    "--pose",
+    required=True,
+    help="path to a {'stages': [...]} file, or 'default' to inspect the env's own reset pose",
+)
 parser.add_argument("--frames-dir", default=None, help="write rendered PNGs here")
 parser.add_argument("--settle-steps", type=int, default=6)
 parser.add_argument("--camera", default="three_quarter", help="which framing to render")
@@ -69,6 +73,9 @@ CAMERAS = {
     "across_handle": ((0.16, -0.62, 0.95), (0.16, -0.14, 0.86)),
     # three-quarter view, matching how the hardware photo was taken
     "three_quarter": ((0.55, -0.60, 1.05), (0.14, -0.16, 0.86)),
+    # tight on the digits: the straddle is a ~6 cm feature, easy to lose in a
+    # wide shot
+    "closeup": ((0.36, -0.33, 0.94), (0.20, -0.17, 0.855)),
 }
 
 
@@ -84,7 +91,8 @@ def main():
     env_cfg.rewards.blade_penalty = None
     env_cfg.episode_length_s = 120.0
 
-    stage = torch.load(args_cli.pose, weights_only=True)["stages"][0]
+    use_default = args_cli.pose == "default"
+    stage = None if use_default else torch.load(args_cli.pose, weights_only=True)["stages"][0]
     render = args_cli.frames_dir is not None
     if render:
         # kitless runs expose no viewport_camera_controller; the framing must be
@@ -102,17 +110,41 @@ def main():
         device = uenv.device
         env.reset()
 
-        joint_pos = stage["joint_pos"].to(device).unsqueeze(0)
+        zero = torch.zeros((1, uenv.action_space.shape[1]), device=device)
         with torch.inference_mode():
-            robot.write_joint_state_to_sim(
-                joint_pos, torch.zeros_like(joint_pos), env_ids=torch.tensor([0], device=device)
-            )
-            zero = torch.zeros((1, uenv.action_space.shape[1]), device=device)
+            if not use_default:
+                joint_pos = stage["joint_pos"].to(device).unsqueeze(0)
+                robot.write_joint_state_to_sim(
+                    joint_pos, torch.zeros_like(joint_pos), env_ids=torch.tensor([0], device=device)
+                )
+                # ALSO place the object. Earlier this was omitted, so every
+                # render showed the spatula at the cfg's default spawn no matter
+                # what the stage said — the object looked "not moved at all".
+                if "object_pos" in stage:
+                    pos = stage["object_pos"].to(device).unsqueeze(0) + uenv.scene.env_origins[:1]
+                    quat = stage["object_quat"].to(device).unsqueeze(0)
+                    spatula.write_root_pose_to_sim_index(
+                        root_pose=torch.cat([pos, quat], dim=-1), env_ids=torch.tensor([0], device=device)
+                    )
+                    spatula.write_root_velocity_to_sim_index(
+                        root_velocity=torch.zeros((1, 6), device=device),
+                        env_ids=torch.tensor([0], device=device),
+                    )
+            # '--pose default': no teleport at all, so what is measured and
+            # rendered is exactly what a training reset produces.
+            # HOLD the pose with PD targets while settling. A zero action sets
+            # target = current joint pos, which does NOT hold the arm — it sags
+            # under gravity, and measuring after N steps measures a FALL, not
+            # the commanded pose.
+            hold = robot.data.joint_pos.torch.clone()
+            all_ids = torch.arange(robot.num_joints, device=device)
             for _ in range(args_cli.settle_steps):
+                robot.set_joint_position_target_index(target=hold, joint_ids=all_ids)
                 env.step(zero)
 
         names = list(robot.joint_names)
-        print(f"[view] stage '{stage['name']}' arm joints [rad]:")
+        label = "ENV DEFAULT RESET POSE" if use_default else f"stage '{stage['name']}'"
+        print(f"[view] {label} arm joints [rad]:")
         for n in ARM_JOINTS:
             print(f"[view]   {n:<30s} {robot.data.joint_pos.torch[0, names.index(n)].item():+.3f}")
         print("[view] hand joints [rad]:")
@@ -146,14 +178,20 @@ def main():
 
             # render the OPEN cage and, when the stage carries one, the CLOSED
             # grasp — they are different poses and only the pair shows the rake
-            poses = [("open", stage["joint_pos"])]
-            if "joint_pos_closed" in stage:
-                poses.append(("closed", stage["joint_pos_closed"]))
+            if use_default:
+                poses = [("default", robot.data.joint_pos.torch[0].detach().cpu().clone())]
+            else:
+                poses = [("open", stage["joint_pos"])]
+                if "joint_pos_closed" in stage:
+                    poses.append(("closed", stage["joint_pos_closed"]))
             for tag, jp_cpu in poses:
                 jp = jp_cpu.to(device).unsqueeze(0)
                 with torch.inference_mode():
                     robot.write_joint_state_to_sim(jp, torch.zeros_like(jp), env_ids=torch.tensor([0], device=device))
+                    hold2 = jp.clone()
+                    all_ids2 = torch.arange(robot.num_joints, device=device)
                     for _ in range(args_cli.settle_steps):
+                        robot.set_joint_position_target_index(target=hold2, joint_ids=all_ids2)
                         env.step(zero)
                 frame = env.render()
                 if frame is None:

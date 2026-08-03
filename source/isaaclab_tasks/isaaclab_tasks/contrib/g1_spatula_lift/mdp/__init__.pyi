@@ -39,6 +39,7 @@ __all__ = [
     "robot_or_object_state_invalid",
     "hold_joints_at_default",
     "reset_from_grasp_map",
+    "reset_to_joint_pose",
 ]
 
 from .functions import (
@@ -74,6 +75,7 @@ from .functions import (
     palm_to_handle_distance_reward,
     palm_to_handle_vector,
     reset_from_grasp_map,
+    reset_to_joint_pose,
     spatula_lift_progress,
     track_carry_point,
     robot_or_object_state_invalid,

@@ -27,13 +27,27 @@ TASK="IsaacContrib-Lift-Spatula-G1-v0"
 MODE="train"
 PLAY_CKPT=""
 PASS_ARGS=()
+WANT_VIDEO=0
+HAS_INTERVAL=0
+HAS_LENGTH=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --check) MODE="check"; shift ;;
         --play)  MODE="play"; PLAY_CKPT="${2:-}"; shift 2 ;;
+        --video) WANT_VIDEO=1; PASS_ARGS+=("$1"); shift ;;
+        --video_interval|--video_interval=*) HAS_INTERVAL=1; PASS_ARGS+=("$1"); shift ;;
+        --video_length|--video_length=*)     HAS_LENGTH=1;   PASS_ARGS+=("$1"); shift ;;
         *)       PASS_ARGS+=("$1"); shift ;;
     esac
 done
+
+# --video alone records ONE clip at step 0 and the next at step 2000, which at
+# 24 steps/env is iteration 83 — long enough that it reads as "no video".
+# Default to every 480 steps (20 iterations) unless the caller says otherwise.
+if [[ "${WANT_VIDEO}" == "1" ]]; then
+    [[ "${HAS_INTERVAL}" == "1" ]] || PASS_ARGS+=(--video_interval 480)
+    [[ "${HAS_LENGTH}"   == "1" ]] || PASS_ARGS+=(--video_length 200)
+fi
 
 cd "${REPO_ROOT}"
 
@@ -65,6 +79,10 @@ case "${MODE}" in
         echo "[run_spatula] === training ${TASK} ==="
         echo "[run_spatula] watch for the staircase: reach -> lift -> track."
         echo "[run_spatula] decide at ~200 and ~400 iterations; no single termination should dominate."
+        if [[ "${WANT_VIDEO}" == "1" ]]; then
+            echo "[run_spatula] videos -> logs/rsl_rl/g1_spatula_lift/<timestamp>/videos/train/rl-video-step-N.mp4"
+            echo "[run_spatula] (also uploaded to W&B project g1-spatula-lift)"
+        fi
         # NOTE: `-p scripts/.../train_rsl_rl.py` looks right but is NOT — that
         # module has no __main__ guard, so it exits 0 having done nothing.
         # `isaaclab.sh train` is the supported entrypoint.

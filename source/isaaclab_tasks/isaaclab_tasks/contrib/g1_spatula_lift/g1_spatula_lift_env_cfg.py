@@ -130,15 +130,13 @@ SPATULA_REST_TABLE_OFFSET = 0.0134
 """Settled spatula root height above the tabletop [m] (probe ``--mode settle``,
 83 cm table, 1 mm Newton contact margin)."""
 
-SPATULA_SPAWN_POS = (
-    0.0958,
-    ROBOT_STAND_POS[1] + PELVIS_TO_SPATULA_Y,
-    LAB_TABLE_HEIGHT + SPATULA_REST_TABLE_OFFSET,
-)
-"""Spatula spawn, env frame [m]: flat on the tabletop, handle along +X
-threading the pronated vertical-curl hand's thumb/finger aperture. Derived
-from LAB_TABLE_HEIGHT and ROBOT_STAND_POS so a table remeasure cannot strand
-the spawn inside (or off) the tabletop; only the offsets are probe-baked."""
+SPATULA_SPAWN_POS = (0.03975, -0.15013, 0.84157)
+"""Spatula spawn, env frame [m]. AUTHORED IN THE GUI (user): the handle sits
+between the digits of :data:`PREGRASP_JOINT_POS` — thumb on one side,
+index+middle on the other, spatula in the middle. Absolute rather than derived
+from ROBOT_STAND_POS because it was placed against the posed hand, so it must
+move only if that pose does. Tabletop is LAB_TABLE_HEIGHT (0.83); the root sits
+SPATULA_REST_TABLE_OFFSET above it."""
 
 SPATULA_SPAWN_QUAT = (-0.0002, 0.1011, 0.0025, 0.9949)
 """Spawn orientation (x, y, z, w) — THIS FORK'S CONVENTION, not wxyz: the
@@ -197,36 +195,52 @@ DEFAULT_ARM_JOINT_POS = {
     # claw because the folded elbow pointed the forearm steeply down — on the
     # raised arm it faced the palm at the ceiling (frame-verified). -0.20
     # restores palm straight down over the handle: palm arrow world-z -0.98,
-    # palm->grasp 0.074 m, fingers level pointing across the handle
-    # right arm: the VERIFIED CLAW CAGE, from assets/straddle_search.py.
-    # Wrist roll is the axis that decides this task and every earlier pose had
-    # it wrong: the old hover used +0.30 and author_grasp_map hard-codes -1.87,
-    # while every pose that actually cages the handle sits near -1.05..-1.20.
-    # Measured at this pose (tips vs the handle centerline, local-y):
-    #   thumb_2  -0.0362 m   index_1  +0.0573 m   middle_1  +0.0245 m
-    # i.e. thumb on one side, index AND middle on the other — the hardware
-    # grasp (user-replicated on a pen: digits down on the table straddling the
-    # object, then close and rake it in). Tips sit 1.2-3.1 cm above the
-    # tabletop, so the hand starts around the handle without touching it.
-    "right_shoulder_pitch_joint": -0.638,
-    "right_shoulder_roll_joint": -0.145,
-    "right_shoulder_yaw_joint": -0.099,
-    "right_elbow_joint": 1.103,
-    "right_wrist_roll_joint": -1.200,
-    "right_wrist_pitch_joint": 0.500,
-    "right_wrist_yaw_joint": -0.200,
-    # thumb ABDUCTED into opposition and its two flexion joints open, so the
-    # policy's job is to close them. Index/middle stay at 0 (open) — they have
-    # no abduction DOF, so their curl is the whole closing motion on that side
-    # thumb_1/thumb_2 sit ON their lower limits in the searched pose
-    # ([-1.047, 0.724] and [-1.745, 0.0]); nudged just inside, because a
-    # default exactly at (or a rounding step past) a bound fails validation
-    "right_hand_thumb_0_joint": 0.628,
-    "right_hand_thumb_1_joint": -1.040,
-    "right_hand_thumb_2_joint": -1.740,
+    # palm->grasp 0.074 m, fingers level pointing across the handle.
+    # This is the REACH-START half of the reset mixture: the hand hovers clear
+    # of the spatula and the policy has to bring it down itself. The other half
+    # starts already in PREGRASP_JOINT_POS (see EventCfg.reset_pregrasp).
+    "right_shoulder_pitch_joint": -0.60,
+    "right_shoulder_roll_joint": -0.15,
+    "right_shoulder_yaw_joint": -0.10,
+    "right_elbow_joint": 0.70,
+    "right_wrist_roll_joint": 0.30,
+    "right_wrist_pitch_joint": -0.20,
+    "right_wrist_yaw_joint": -0.30,
 }
-"""Default pose [rad]: left arm down by the side, right hand in the verified
-claw cage around the handle (``assets/straddle_search.py``)."""
+"""Default pose [rad]: left arm down by the side, right hand hovering over the
+handle with the fingers open (no right-hand entries = zeros = open)."""
+
+PREGRASP_JOINT_POS = {
+    # AUTHORED IN THE GUI (user), read back out of the saved stage: fingers
+    # curled down onto the tabletop with the spatula BETWEEN the digits —
+    # thumb one side, index+middle the other. This is the claw an instant
+    # before it closes, so an env starting here only has to learn close+lift.
+    # Kept as a plain dict, NOT a grasp_map .pt: *.pt is routed through git-lfs
+    # in this repo and arrives unsmudged on some machines, which would silently
+    # disable the stage.
+    "right_shoulder_pitch_joint": -0.6842,
+    "right_shoulder_roll_joint": -0.1416,
+    "right_shoulder_yaw_joint": -0.2182,
+    "right_elbow_joint": 1.0332,
+    "right_wrist_roll_joint": -1.5429,
+    "right_wrist_pitch_joint": 0.1047,
+    "right_wrist_yaw_joint": -0.0646,
+    "right_hand_index_0_joint": 0.0017,
+    "right_hand_index_1_joint": 1.2793,
+    "right_hand_middle_0_joint": 0.0017,
+    "right_hand_middle_1_joint": 1.3160,
+    "right_hand_thumb_0_joint": -0.0314,
+    # authored at +0.9617, above this joint's +0.724 upper limit; the event
+    # clamps into limits rather than failing, so it lands at the bound
+    "right_hand_thumb_1_joint": 0.9617,
+    "right_hand_thumb_2_joint": -1.4661,
+}
+"""Pregrasp pose [rad] for half the resets (see :data:`PREGRASP_RESET_PROB`)."""
+
+PREGRASP_RESET_PROB = 0.5
+"""Share of resets that start in :data:`PREGRASP_JOINT_POS`. The rest start at
+the hover so the reach is still learned and the pregrasp is not the only state
+the policy ever sees."""
 
 _TABLE = lab_table_cfgs("{ENV_REGEX_NS}/LabTable")
 
@@ -483,15 +497,11 @@ class EventCfg:
         func=mdp.reset_joints_by_offset,
         mode="reset",
         params={
-            # +-0.06 rad, scaled DOWN for the claw-cage ready pose. The old
-            # +-0.15 was sized for a hover 7 cm clear of the handle; from the
-            # cage the fingertips sit 1.2-3.3 cm off the object, and 0.15 rad
-            # at the elbow is ~4.5 cm of fingertip travel, so the jitter drove
-            # the digits into the handle and displaced the spatula >5 cm at
-            # reset (caught by test_spatula_settles_on_tabletop). Diversity
-            # still matters — if this proves too narrow, the better answer is a
-            # reset MIXTURE (hover start + cage start) rather than more jitter
-            "position_range": (-0.06, 0.06),
+            # back to +-0.15 now that the default pose is the HOVER again: the
+            # hand starts ~7 cm clear of the spatula, so this jitter cannot
+            # drive the digits into it. Envs drawn into the pregrasp are
+            # teleported after this event, so they are unaffected either way
+            "position_range": (-0.15, 0.15),
             "velocity_range": (0.0, 0.0),
             "asset_cfg": SceneEntityCfg(
                 "robot",
@@ -513,14 +523,15 @@ class EventCfg:
             "asset_cfg": SceneEntityCfg("spatula"),
         },
     )
-    # caged starts: teleport a sampled share of resets into the authored
-    # fingers-around-the-handle pose. Declared LAST so the teleport survives
-    # the default resets above (event terms run in declaration order); no-op
-    # until grasp_map.pt is authored
-    reset_grasp_map = EventTerm(
-        func=mdp.reset_from_grasp_map,
+    # THE RESET MIXTURE: half the envs start in the authored pregrasp (digits
+    # already around the spatula, so only close+lift is left to learn), half at
+    # the hover so the reach is still learned. Declared LAST so the teleport
+    # survives the default resets and the jitter above (event terms run in
+    # declaration order).
+    reset_pregrasp = EventTerm(
+        func=mdp.reset_to_joint_pose,
         mode="reset",
-        params={"map_path": GRASP_MAP_PATH, "stage_probs": GRASP_MAP_STAGE_PROBS},
+        params={"joint_pose": PREGRASP_JOINT_POS, "probability": PREGRASP_RESET_PROB},
     )
 
 

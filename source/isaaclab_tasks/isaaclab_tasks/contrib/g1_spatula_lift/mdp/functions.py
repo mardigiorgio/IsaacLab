@@ -796,3 +796,49 @@ def reset_from_grasp_map(
         # preceding reset_all event, and a SECOND free-body root write in the
         # same reset (after the joint teleport) can eject the object. Stages
         # reposition the ROBOT only.
+
+
+def reset_to_joint_pose(
+    env: ManagerBasedRLEnv,
+    env_ids: torch.Tensor,
+    joint_pose: dict[str, float],
+    probability: float,
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> None:
+    """Teleport a sampled share of resetting envs into a named joint pose.
+
+    The reset MIXTURE: with ``probability`` 0.5 half the environments start in
+    the authored pregrasp (digits already around the handle, so the policy only
+    has to learn the close and the lift) and half start at the nominal ready
+    pose (so the reach is still learned and the pregrasp is not the only state
+    the policy ever sees).
+
+    Values are clamped into each joint's limits, so an authored pose slightly
+    outside a bound is admitted rather than rejected at env construction.
+
+    Unlike :func:`reset_from_grasp_map` this takes the pose inline instead of
+    loading a ``.pt``: ``*.pt`` is routed through git-lfs in this repo and
+    arrives unsmudged on some machines, which silently disables the stage.
+
+    Args:
+        env: The RL environment instance.
+        env_ids: Environments being reset.
+        joint_pose: Joint name to position [rad]. Names not on the robot are ignored.
+        probability: Share of resetting envs teleported into the pose, in [0, 1].
+        robot_cfg: Entity config for the robot.
+    """
+    if len(env_ids) == 0 or probability <= 0.0:
+        return
+    robot = env.scene[robot_cfg.name]
+    picked = env_ids[torch.rand(len(env_ids), device=env.device) < probability]
+    if len(picked) == 0:
+        return
+    joint_pos = robot.data.default_joint_pos.torch[picked].clone()
+    limits = robot.data.joint_pos_limits.torch[0]
+    for name, value in joint_pose.items():
+        if name not in robot.joint_names:
+            continue
+        idx = robot.joint_names.index(name)
+        lo, hi = limits[idx, 0].item(), limits[idx, 1].item()
+        joint_pos[:, idx] = min(max(value, lo), hi)
+    robot.write_joint_state_to_sim(joint_pos, torch.zeros_like(joint_pos), env_ids=picked)
