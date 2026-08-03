@@ -489,40 +489,16 @@ class EventCfg:
             )
         },
     )
-    # reset diversity (the exemplar invariant we were missing): with a single
-    # deterministic start, PPO converges onto the first local optimum of the
-    # pre-contact gradient and nothing ever perturbs it out. Franka lift
-    # jitters the cube +-10/25 cm; dexsuite randomizes all joints +-0.5 rad
-    randomize_right_arm = EventTerm(
-        func=mdp.reset_joints_by_offset,
-        mode="reset",
-        params={
-            # back to +-0.15 now that the default pose is the HOVER again: the
-            # hand starts ~7 cm clear of the spatula, so this jitter cannot
-            # drive the digits into it. Envs drawn into the pregrasp are
-            # teleported after this event, so they are unaffected either way
-            "position_range": (-0.15, 0.15),
-            "velocity_range": (0.0, 0.0),
-            "asset_cfg": SceneEntityCfg(
-                "robot",
-                joint_names=[
-                    "right_shoulder_.*_joint",
-                    "right_elbow_joint",
-                    "right_wrist_.*_joint",
-                    "right_hand_.*_joint",
-                ],
-            ),
-        },
-    )
-    randomize_spatula_pose = EventTerm(
-        func=mdp.reset_root_state_uniform,
-        mode="reset",
-        params={
-            "pose_range": {"x": (-0.05, 0.05), "y": (-0.03, 0.03), "yaw": (-0.15, 0.15)},
-            "velocity_range": {},
-            "asset_cfg": SceneEntityCfg("spatula"),
-        },
-    )
+    # BOTH reset randomizations are OFF (user call): make this the easiest
+    # possible training first, then add difficulty once something works. The
+    # spatula jitter was the harmful one — it moved the object up to 5 cm in x
+    # and 3 cm in y, including on pregrasp resets, so half the envs started with
+    # the hand posed for a spatula that was no longer there.
+    # Reset diversity now comes from the pregrasp/hover MIXTURE below rather
+    # than from noise. Re-enable by restoring these two terms:
+    #   randomize_right_arm    reset_joints_by_offset, position_range (-0.15, 0.15)
+    #   randomize_spatula_pose reset_root_state_uniform, x (-0.05, 0.05),
+    #                          y (-0.03, 0.03), yaw (-0.15, 0.15)
     # THE RESET MIXTURE: half the envs start in the authored pregrasp (digits
     # already around the spatula, so only close+lift is left to learn), half at
     # the hover so the reach is still learned. Declared LAST so the teleport
