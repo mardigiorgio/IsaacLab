@@ -198,15 +198,35 @@ DEFAULT_ARM_JOINT_POS = {
     # raised arm it faced the palm at the ceiling (frame-verified). -0.20
     # restores palm straight down over the handle: palm arrow world-z -0.98,
     # palm->grasp 0.074 m, fingers level pointing across the handle
-    "right_shoulder_pitch_joint": -0.60,
-    "right_shoulder_roll_joint": -0.15,
-    "right_shoulder_yaw_joint": -0.10,
-    "right_elbow_joint": 0.70,
-    "right_wrist_roll_joint": 0.30,
-    "right_wrist_pitch_joint": -0.20,
-    "right_wrist_yaw_joint": -0.30,
+    # right arm: the VERIFIED CLAW CAGE, from assets/straddle_search.py.
+    # Wrist roll is the axis that decides this task and every earlier pose had
+    # it wrong: the old hover used +0.30 and author_grasp_map hard-codes -1.87,
+    # while every pose that actually cages the handle sits near -1.05..-1.20.
+    # Measured at this pose (tips vs the handle centerline, local-y):
+    #   thumb_2  -0.0362 m   index_1  +0.0573 m   middle_1  +0.0245 m
+    # i.e. thumb on one side, index AND middle on the other — the hardware
+    # grasp (user-replicated on a pen: digits down on the table straddling the
+    # object, then close and rake it in). Tips sit 1.2-3.1 cm above the
+    # tabletop, so the hand starts around the handle without touching it.
+    "right_shoulder_pitch_joint": -0.638,
+    "right_shoulder_roll_joint": -0.145,
+    "right_shoulder_yaw_joint": -0.099,
+    "right_elbow_joint": 1.103,
+    "right_wrist_roll_joint": -1.200,
+    "right_wrist_pitch_joint": 0.500,
+    "right_wrist_yaw_joint": -0.200,
+    # thumb ABDUCTED into opposition and its two flexion joints open, so the
+    # policy's job is to close them. Index/middle stay at 0 (open) — they have
+    # no abduction DOF, so their curl is the whole closing motion on that side
+    # thumb_1/thumb_2 sit ON their lower limits in the searched pose
+    # ([-1.047, 0.724] and [-1.745, 0.0]); nudged just inside, because a
+    # default exactly at (or a rounding step past) a bound fails validation
+    "right_hand_thumb_0_joint": 0.628,
+    "right_hand_thumb_1_joint": -1.040,
+    "right_hand_thumb_2_joint": -1.740,
 }
-"""Default arm pose [rad]: left down by the side, right poised over the handle."""
+"""Default pose [rad]: left arm down by the side, right hand in the verified
+claw cage around the handle (``assets/straddle_search.py``)."""
 
 _TABLE = lab_table_cfgs("{ENV_REGEX_NS}/LabTable")
 
@@ -463,7 +483,15 @@ class EventCfg:
         func=mdp.reset_joints_by_offset,
         mode="reset",
         params={
-            "position_range": (-0.15, 0.15),
+            # +-0.06 rad, scaled DOWN for the claw-cage ready pose. The old
+            # +-0.15 was sized for a hover 7 cm clear of the handle; from the
+            # cage the fingertips sit 1.2-3.3 cm off the object, and 0.15 rad
+            # at the elbow is ~4.5 cm of fingertip travel, so the jitter drove
+            # the digits into the handle and displaced the spatula >5 cm at
+            # reset (caught by test_spatula_settles_on_tabletop). Diversity
+            # still matters — if this proves too narrow, the better answer is a
+            # reset MIXTURE (hover start + cage start) rather than more jitter
+            "position_range": (-0.06, 0.06),
             "velocity_range": (0.0, 0.0),
             "asset_cfg": SceneEntityCfg(
                 "robot",

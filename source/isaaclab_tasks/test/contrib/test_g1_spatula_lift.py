@@ -78,7 +78,12 @@ def test_spatula_settles_on_tabletop(physics_preset_name):
         assert torch.all(pos[:, 2] > LAB_TABLE_HEIGHT - 0.01), f"spatula below tabletop: z = {pos[:, 2].tolist()}"
         assert torch.all(pos[:, 2] < LAB_TABLE_HEIGHT + 0.08), f"spatula not settled: z = {pos[:, 2].tolist()}"
         xy_drift = torch.linalg.vector_norm(pos[:, :2] - torch.tensor(SPATULA_SPAWN_POS[:2], device=pos.device), dim=1)
-        assert torch.all(xy_drift < 0.05), f"spatula drifted in xy: {xy_drift.tolist()}"
+        # measured from the NOMINAL spawn, but randomize_spatula_pose offsets it
+        # by up to +-0.05 in x and +-0.03 in y => 0.058 m before the spatula has
+        # moved at all. The old 0.05 bound was below that floor, which is why
+        # this assert was intermittently failing on an undisturbed spatula.
+        # 0.08 = the 0.058 randomization envelope plus settle slop.
+        assert torch.all(xy_drift < 0.08), f"spatula drifted in xy: {xy_drift.tolist()}"
 
 
 @pytest.mark.parametrize("physics_preset_name", [None, "newton_mjwarp"], ids=["physx", "newton_mjwarp"])
