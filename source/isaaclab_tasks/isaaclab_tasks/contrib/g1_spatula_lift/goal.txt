@@ -1,42 +1,48 @@
-The goal of this training env is to train the G1 to pick up the spatula by the handle with its right hand. The G1 stands fixed base at the table with its left arm
-down by its side and its right hand over the table. Touching the blade ends the episode. Lifting the spatula off the table ends the episode successfully.
+The goal of this training env is to train the G1 to pick up the spatula by the handle with its right hand. The G1 stands
+fixed base at the 83 cm lab table, left arm down by its side, right hand over the table. There is NO success
+termination: the task income is the carry-point flow, paid every step to the 5 s timeout.
 
-Reward Terms (cfg = g1_spatula_lift_env_cfg.py RewardsCfg, fn = mdp/functions.py) — ManiSkill
-UnitreeG1PlaceAppleInBowl recipe adapted to the spatula (see class docstring):
-    reaching        1 - tanh(5 d): pinch center (thumb/index tip midpoint)   cfg L367  mdp.pinch_center_reaching fn L243
-                    to the handle grasp point — never anchor reach on the
-                    palm/wrist link (the policy plants the wrist on it)
-    grasp           3-FINGER CLAW, per-digit credit (1/3 per digit           cfg L379  mdp.grasp_force_reward fn L262
-                    pressing >= 0.5 N, whole-digit sensors): dense bridge
-                    to the full claw; lift/success REQUIRE all three
-    lifting         height progress from rest, GATED on finger contact —     cfg L385  mdp.spatula_lift_progress fn L312
-                    pays from the first press-tilt (probe-verified)
-    success_bonus   one-time bonus when the pick succeeds                    cfg L395  mdp.is_terminated_term
-    blade_penalty   one-time penalty for the blade termination               cfg L396  mdp.is_terminated_term
-    dropped_penalty one-time penalty for losing the spatula                  cfg L397  mdp.is_terminated_term
-    action_l2       small smoothness penalty                                 cfg L398  mdp.action_l2_clamped fn L174
-    action_rate_l2  small smoothness penalty                                 cfg L399  mdp.action_rate_l2_clamped fn L179
+The intended grip is a CLAW, not a pinch. Fingertips descend to the tabletop on either side of the handle (index+middle
+one side, thumb the other), close horizontally, and rake the handle into the hand. The table is the opposing surface.
+Fingertip-on-table contact is legal and expected — it is the grasp mechanism. Handle cross-section, measured off the
+collision mesh: 17.5 mm wide / 5.8 mm thick at x=0.12, 24.7 mm / 6.7 mm at x=0.18. The TriHand's flat two-pad pinch
+floor is ~15 mm, so a claw closing across the WIDTH is in range where a pinch across the thickness is not.
 
-Scene: the spatula lies flat on the table (natural). The intended pick is a
-LEVER: fingers brace against the tabletop and close the claw so the handle
-scoops up into the grip (hand-table contact is legal and expected — only
-blade contact terminates). Active-press probing verified thumb+finger force
-closure on the flat handle (228 N / 296 N simultaneous). Actions are tightly
-bounded joint deltas (waist+arm <= 0.2, fingers <= 0.5 rad/step) with firm
-hand PD — the ManiSkill pick recipe. Waist frozen.
+Reward Terms (cfg = g1_spatula_lift_env_cfg.py RewardsCfg, fn = mdp/functions.py) — the published lift recipe,
+UNGATED. Every earlier version multiplied these through _opposed_handle_contact (thumb force AND an opposing digit's
+force), a PINCH signature the claw may never produce, which made every task term unpayable:
+    reach           1 - tanh(worst(palm, 3 tips)->grasp point / 0.4), no contact gate   mdp.fingers_to_handle
+    lift            1 while the spatula root is 3 cm above rest — pure height           mdp.object_lifted
+    track           height-gated coarse+fine kernels on distance to the carry point     mdp.track_carry_point
+    action_rate_l2  smoothness penalty, -1e-4 -> -0.05 at step 6000                     mdp.action_rate_l2_clamped
+    joint_vel_l2    velocity penalty, -1e-4 -> -0.02 at step 6000                       mdp.joint_vel_l2_clamped
+    blade_penalty   one-time penalty for the blade termination                          mdp.is_terminated_term
 
-Reset Events (cfg = g1_spatula_lift_env_cfg.py EventCfg):
-    reset_grasp_map caged-start machinery, currently DISABLED via            cfg L355  mdp.reset_from_grasp_map fn L444
-                    GRASP_MAP_STAGE_PROBS = (1.0, 0.0); grasp_map.pt stays
-                    authored (assets/author_grasp_map.py)
+Termination Conditions (cfg = TerminationsCfg, fn = mdp/functions.py):
+    Hand contact with blade    blade_contact    mdp.blade_contact
+    Spatula lost               spatula_dropped  mdp.object_out_of_bound (off the table or out of reach)
+    Physics blow-up            robot_exploded   mdp.robot_or_object_state_invalid (joint vel over 2x limit)
+    Timeout                    time_out         (5 s episode)
 
-Termination Conditions (cfg = g1_spatula_lift_env_cfg.py TerminationsCfg, fn = mdp/functions.py):
-    Picked up (success)       success          cfg L411  mdp.object_lifted_above_while_grasped fn L347
-                                                         (spatula 15+ cm up WHILE a finger presses it — catapults pay nothing)
-    Hand contact with blade   blade_contact    cfg L420  mdp.blade_contact fn L364 (blade force over 1 N)
-    Spatula lost              spatula_dropped  cfg L426  mdp.object_out_of_bound fn L375 (off the table or out of reach)
-    Physics blow-up           robot_exploded   cfg L440  mdp.robot_or_object_state_invalid fn L390 (joint vel over 2x limit)
-    Timeout                   time_out         cfg L406  (3 s episode)
+Tooling:
+    assets/scripted_pick.py  single-env existence proof with force/release gates.
+                             MEASURED 2026-08-02, currently lift=FAIL force=FAIL: at the
+                             close phase all three fingertips sit 8-13 cm from the handle
+                             centerline and ALL on the same local-y side (index +0.088,
+                             middle +0.081, thumb +0.031) — no straddle at all, and the
+                             spatula never moves. The approach geometry, not the finger
+                             joints, is what puts the hand in the wrong place.
+    assets/author_grasp_map.py  caged-start authoring. NOTE its thumb parameterization is 1-D
+                                (one frac for all three thumb joints, flex_bound[jid] * frac):
+                                a ray through 3-D thumb space anchored at zero, which cannot
+                                express an opposition pose. Its zero-straddle search results
+                                are an artifact of that parameterization, not evidence that
+                                no claw grasp exists.
+
+    A batched claw-grasp search (one candidate per env, thumb joints swept independently)
+    is in development on branch wip/grasp-lab-driver. It is NOT on develop: its scripted
+    arm driver saturates the relative-position action and diverges during the approach
+    phase, and its pass gate accepted the resulting non-finite states as successes.
 
 Best Practices:
 
@@ -47,7 +53,8 @@ Best Practices:
     - Match episode length to task duration. A 2 second task does not need a 20 second
       episode; short episodes turn over experience faster.
     - Enforce "never do X" with a termination, not by gating every reward on not-X.
-      One rule beats reward plumbing.
+      One rule beats reward plumbing. Corollary: make sure the gate you chose is a
+      signature the intended solution actually produces.
     - Every reward channel needs a dense path to its first nonzero signal. A term gated on
       contact/success is flat 0 until the policy stumbles into it - bridge the gap with
       dense shaping (reach, close-fingers-near, progress) or a curriculum that makes the
@@ -57,12 +64,14 @@ Best Practices:
     - Price terminations consistently: a controllable early exit must cost more than the
       worst case of living out the episode, and pricing one exit cheaper than another just
       reroutes the exploit through it.
-    - A success termination's bonus must exceed the dense income it cuts off, or the
-      policy learns to hover just short of success and farm shaping forever.
     - Income that can be collected without progress (pay-for-holding, pay-for-being-near)
       is farmable through reset cycles. Prefer penalties (doing nothing = 0) over income.
     - Watch the per-term reward and termination breakdowns from iteration 1. Flat-zero
       channels and a single dominant termination are diagnoses, not noise.
+    - Search before you train. A scripted existence proof over thousands of parallel envs
+      costs ~2 minutes; discovering the same thing from a reward curve costs six hours.
+    - Verify a search can represent the answer before running it. A parameterization that
+      cannot express the target pose returns zero hits and reads like a negative result.
     - Verify geometry with printed positions AND rendered frames before training, then
       bake the measured values into the config. Assumptions about frames, joint
       conventions, and rest poses are usually wrong.
