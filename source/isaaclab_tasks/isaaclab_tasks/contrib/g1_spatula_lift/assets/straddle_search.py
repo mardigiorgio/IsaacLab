@@ -141,9 +141,13 @@ def main():
     cands = build_candidates()
     env_cfg = parse_env_cfg(TASK, device="cuda:0", num_envs=args_cli.num_envs)
     env_cfg = apply_physics_preset(env_cfg, TASK, "newton_mjwarp")
-    env_cfg.events.reset_grasp_map = None
-    env_cfg.events.randomize_right_arm = None
-    env_cfg.events.randomize_spatula_pose = None
+    # Every candidate is teleported onto the same scene, so the scene must not
+    # vary: a pregrasp reset drops the claw around the spatula and can nudge it
+    # before the teleport, which the displacement gates then score.
+    # `reset_pregrasp` is the only randomizing term EventCfg still has --
+    # `reset_grasp_map` / `randomize_*` were removed from the task, and assigning
+    # them here only created new attributes nobody read.
+    env_cfg.events.reset_pregrasp = None
     env_cfg.terminations.blade_contact = None
     env_cfg.terminations.spatula_dropped = None
     env_cfg.terminations.robot_exploded = None
@@ -195,7 +199,6 @@ def main():
         for start in range(0, len(cands), args_cli.num_envs):
             batch = cands[start : start + args_cli.num_envs]
             n = len(batch)
-            ids = torch.arange(n, device=device)
             env.reset()
 
             def build(closed: bool):

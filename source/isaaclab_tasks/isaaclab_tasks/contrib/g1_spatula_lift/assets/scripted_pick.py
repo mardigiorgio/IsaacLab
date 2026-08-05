@@ -38,20 +38,17 @@ args_cli = parser.parse_args()
 import gymnasium as gym
 import torch
 
-import isaaclab_tasks  # noqa: F401
 from isaaclab.app import launch_simulation
-
-from isaaclab_tasks.contrib.g1_spatula_lift.g1_spatula_lift_env_cfg import (
-    CONTACT_GATE_N,
-    LIFT_SUCCESS_Z,
-    REST_SPATULA_Z,
-)
 from isaaclab.managers import SceneEntityCfg
 
+import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.contrib.g1_spatula_lift.g1_spatula_lift_env_cfg import (
+    CONTACT_GATE_N,
     FINGERTIP_BODY_NAMES,
     HANDLE_SEGMENT_P0_B,
     HANDLE_SEGMENT_P1_B,
+    LIFT_SUCCESS_Z,
+    REST_SPATULA_Z,
 )
 from isaaclab_tasks.contrib.g1_spatula_lift.mdp.functions import (
     _handle_segment_geometry,
@@ -91,10 +88,12 @@ def main():
     env_cfg = apply_physics_preset(env_cfg, TASK, "newton_mjwarp")
     if args_cli.adaptive:
         env_cfg.sim.physics.solver_cfg.adaptive = True
-    # deterministic nominal start
-    env_cfg.events.reset_grasp_map = None
-    env_cfg.events.randomize_right_arm = None
-    env_cfg.events.randomize_spatula_pose = None
+    # Deterministic nominal start: the gates below are read off ONE reset, so a
+    # random start pose makes every verdict a coin flip.
+    # `reset_pregrasp` is the only randomizing term EventCfg still has --
+    # `reset_grasp_map` / `randomize_*` were removed from the task, and assigning
+    # them here only created new attributes nobody read.
+    env_cfg.events.reset_pregrasp = None
     env_cfg.episode_length_s = 60.0
     env_cfg.viewer.eye = (0.9, -0.85, 1.15)
     env_cfg.viewer.lookat = (0.2, -0.18, 0.88)
@@ -139,14 +138,22 @@ def main():
         tip_names = [robot.body_names[i] for i in tips_cfg.body_ids]
 
         def print_geometry(tag):
-            dist, y = _handle_segment_geometry(uenv, HANDLE_SEGMENT_P0_B, HANDLE_SEGMENT_P1_B, tips_cfg, SceneEntityCfg("spatula"))
+            dist, y = _handle_segment_geometry(
+                uenv, HANDLE_SEGMENT_P0_B, HANDLE_SEGMENT_P1_B, tips_cfg, SceneEntityCfg("spatula")
+            )
             parts = [f"{n.split('_')[2]}: d={dist[0, i]:.3f} y={y[0, i]:+.3f}" for i, n in enumerate(tip_names)]
             spos = spatula.data.root_pos_w.torch[0] - uenv.scene.env_origins[0]
-            print(f"[scripted_pick] {tag} tips->segment: " + "  ".join(parts)
-                  + f"  | spatula xy=({spos[0]:+.3f},{spos[1]:+.3f})")
+            print(
+                f"[scripted_pick] {tag} tips->segment: "
+                + "  ".join(parts)
+                + f"  | spatula xy=({spos[0]:+.3f},{spos[1]:+.3f})"
+            )
             fj = {robot.joint_names[i]: robot.data.joint_pos.torch[0, i].item() for i in finger_ids}
             tgts = {n: finger_targets[n] for n in fj}
-            print(f"[scripted_pick] {tag} fingers actual/target: " + "  ".join(f"{n.split('right_hand_')[1]}: {v:+.2f}/{tgts[n]:+.2f}" for n, v in fj.items()))
+            print(
+                f"[scripted_pick] {tag} fingers actual/target: "
+                + "  ".join(f"{n.split('right_hand_')[1]}: {v:+.2f}/{tgts[n]:+.2f}" for n, v in fj.items())
+            )
 
         def save_frame(tag):
             if not args_cli.frames_dir:
@@ -212,7 +219,6 @@ def main():
                     snap(phase)
 
         open_hand = {n: 0.0 for n in finger_targets}
-        half_curl = {n: 0.5 * v for n, v in finger_targets.items()}
         env.reset()
         drive(READY, open_hand, 30, "settle")
         save_frame("ready")
@@ -261,14 +267,24 @@ def main():
         print(f"[scripted_pick] spatula weight = {SPATULA_WEIGHT_N:.3f} N; force gate = {10 * SPATULA_WEIGHT_N:.2f} N")
         for d in ("thumb", "index", "middle"):
             f = hold_forces[d]
-            print(f"[scripted_pick] hold {d:6s} force [N]: mean {f.mean():.2f}  p95 {f.quantile(0.95):.2f}  max {f.max():.2f}")
+            print(
+                f"[scripted_pick] hold {d:6s} force [N]: mean {f.mean():.2f}"
+                f"  p95 {f.quantile(0.95):.2f}  max {f.max():.2f}"
+            )
         print(f"[scripted_pick] hold contact-gate fraction: {sum(hold_contact) / max(len(hold_contact), 1):.2f}")
-        print(f"[scripted_pick] palm rise {palm_rise:+.3f} m, spatula rise {spat_rise:+.3f} m (carry target {LIFT_SUCCESS_Z - REST_SPATULA_Z:+.3f})")
+        print(
+            f"[scripted_pick] palm rise {palm_rise:+.3f} m, spatula rise {spat_rise:+.3f} m"
+            f" (carry target {LIFT_SUCCESS_Z - REST_SPATULA_Z:+.3f})"
+        )
         print(f"[scripted_pick] release speed in first 50 ms: {rel_speed:.3f} m/s (gate < 0.5)")
         lifted_ok = spat_rise > 0.10 and sum(hold_contact) / max(len(hold_contact), 1) > 0.8
         force_ok = peak_force <= 10 * SPATULA_WEIGHT_N
         release_ok = rel_speed < 0.5
-        print(f"[scripted_pick] GATES: lift={'PASS' if lifted_ok else 'FAIL'}  force={'PASS' if force_ok else 'FAIL'}  release={'PASS' if release_ok else 'FAIL'}")
+        print(
+            f"[scripted_pick] GATES: lift={'PASS' if lifted_ok else 'FAIL'}"
+            f"  force={'PASS' if force_ok else 'FAIL'}"
+            f"  release={'PASS' if release_ok else 'FAIL'}"
+        )
         env.close()
 
 

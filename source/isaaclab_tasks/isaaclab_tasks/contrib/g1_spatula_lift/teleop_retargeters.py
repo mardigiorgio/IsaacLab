@@ -49,12 +49,32 @@ OPEN_POSE = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
 """Digits straight — the hand can be flown around without fouling the table."""
 
 PREGRASP_POSE = (-0.5265, -0.5245, -0.8727, 1.1309, 1.2593, 1.0978, 1.2207)
-"""The REAL caged pregrasp, read straight out of ``grasp_map.pt`` stage
-``pre_grasp_caged`` — the active reset map, which is what the RL env actually
-resets into. Do NOT source this from ``PREGRASP_JOINT_POS``: that dict has the
-index/middle knuckles at 0.0017 rad (dead straight) where the reset map has them
-at 1.13/1.10 rad (bent around the handle), so a pose built from the dict leaves
-the first finger joint visibly inert."""
+"""The caged pregrasp [rad], read out of ``grasp_map.pt`` stage ``pre_grasp_caged``
+and REORDERED into TriHand output order.
+
+Do not re-derive this with a ``[36:43]`` slice. The map stores the articulation's
+own joint order, whose right-hand block runs index, middle, THEN thumb::
+
+    grasp_map.pt[36:43] = 1.1309  1.2593  1.0978  1.2207  -0.5265  -0.5245  -0.8727
+                          index_0 index_1 mid_0   mid_1   thumb_0  thumb_1  thumb_2
+
+while :data:`HAND_JOINT_NAMES` puts the thumb FIRST, so the constant below is
+articulation entries ``40, 41, 42, 36, 37, 38, 39`` -- the same seven values
+rotated. Sliced instead of rotated, the thumb targets land on the index and
+middle joints in VR -- the same articulation-vs-TriHand ordering hazard
+:func:`build_spatula_teleop_pipeline` documents for the action slots.
+
+This is a TELEOP pose, not the env's reset pose. The RL env resets from
+``EventCfg.reset_pregrasp`` -> ``mdp.reset_to_joint_pose``, which takes
+``PREGRASP_JOINT_POS`` inline for half the resets (``PREGRASP_RESET_PROB``) and
+leaves the rest at the hover. ``grasp_map.pt`` is authored and validated but no
+event term loads it: ``GRASP_MAP_PATH``, ``GRASP_MAP_STAGE_PROBS`` and
+``mdp.reset_from_grasp_map`` are currently unreferenced.
+
+Sourced from the map rather than from ``PREGRASP_JOINT_POS`` on purpose: the dict
+has the index/middle knuckles at 0.0017 rad (dead straight) where the map has
+them at 1.13/1.10 rad (bent around the handle), so a hand pose built from the
+dict leaves the first finger joint visibly inert in the headset."""
 
 LEFT_IDLE_POSE = (0.0, 0.0, 0.0, 0.35, 0.55, 0.35, 0.55)
 """Left hand parking pose — digits softly curled so they do not stick out into

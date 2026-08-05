@@ -47,9 +47,10 @@ TASK = "IsaacContrib-Lift-Spatula-G1-v0"
 def main():
     env_cfg = parse_env_cfg(TASK, device="cuda:0", num_envs=1)
     env_cfg = apply_physics_preset(env_cfg, TASK, "newton_mjwarp")
-    env_cfg.events.reset_grasp_map = None
-    env_cfg.events.randomize_right_arm = None
-    env_cfg.events.randomize_spatula_pose = None
+    # deterministic hold: `reset_pregrasp` is the only randomizing term EventCfg
+    # still has (`reset_grasp_map` / `randomize_*` were removed from the task, and
+    # assigning them here only created new attributes nobody read)
+    env_cfg.events.reset_pregrasp = None
     env_cfg.terminations.blade_contact = None
     env_cfg.terminations.spatula_dropped = None
     env_cfg.terminations.robot_exploded = None

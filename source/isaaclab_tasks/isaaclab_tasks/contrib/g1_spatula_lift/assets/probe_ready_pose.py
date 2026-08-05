@@ -220,17 +220,22 @@ def main():
     # Newton preset must be re-applied BEFORE launch_simulation so the scan
     # picks the kitless backend
     env_cfg = apply_physics_preset(env_cfg, TASK, "newton_mjwarp")
-    # probes measure the NOMINAL reset — no curated grasp-map stage, no
-    # reset randomization
-    env_cfg.events.reset_grasp_map = None
-    env_cfg.events.randomize_right_arm = None
-    env_cfg.events.randomize_spatula_pose = None
+    # Probes measure the NOMINAL reset, so the pregrasp teleport is off.
+    # `reset_pregrasp` is the only randomizing term EventCfg still has --
+    # `reset_grasp_map` / `randomize_*` were removed from the task, and assigning
+    # them here only created new attributes nobody read.
+    env_cfg.events.reset_pregrasp = None
     if args_cli.mode in ("names", "labels"):
         # these modes exist to DISCOVER the link names / model labels the
-        # blade-contact sensor assumes, so strip the sensor and its dependents
+        # blade-contact sensor assumes, so strip the sensor and its dependents.
+        # ALL of them: the observation term is the one that is easy to miss, and
+        # missing it made both modes die on `KeyError: 'hand_blade_contact'` from
+        # inside the observation manager -- before printing a single name, which
+        # is the whole reason these modes exist.
         env_cfg.scene.hand_blade_contact = None
         env_cfg.terminations.blade_contact = None
         env_cfg.rewards.blade_penalty = None
+        env_cfg.observations.policy.blade_force = None
     with launch_simulation(env_cfg, args_cli):
         env = gym.make(TASK, cfg=env_cfg)
         try:

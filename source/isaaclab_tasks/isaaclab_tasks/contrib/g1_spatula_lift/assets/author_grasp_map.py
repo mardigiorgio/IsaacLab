@@ -5,8 +5,9 @@
 
 """Author ``grasp_map.pt`` for the G1 spatula-lift task (g1_dish_rack pattern).
 
-Two modes, both kit-less on the Newton preset (the grasp-map event is removed
-so resets are nominal):
+Two modes, both kit-less on the Newton preset (the pregrasp reset term is
+disabled so resets are nominal; there is no grasp-map event to remove -- nothing
+in ``EventCfg`` loads ``grasp_map.pt``):
 
 * ``--search`` — batch-teleport a grid of right-arm poses + finger curls over
   64 envs, settle a few zero-action steps, and rank candidates by the
@@ -19,10 +20,11 @@ so resets are nominal):
   straddle intact (relative joint-position actions hold a teleported pose —
   the property that makes stage teleports sound).
 
-The stage snapshot holds the full joint state; the object pose is recorded
-for provenance but never written back on reset (see
-``mdp.reset_from_grasp_map``). Touch/straddle gates use the privileged
-handle-segment geometry from ``mdp.functions`` (no contact sensors).
+The stage snapshot holds the full joint state; the object pose is recorded for
+provenance only. ``mdp.reset_from_grasp_map``, which would have written it back,
+is dead code -- no ``EventCfg`` term references it, so nothing currently consumes
+the map at reset. Touch/straddle gates use the privileged handle-segment geometry
+from ``mdp.functions`` (no contact sensors).
 
 Run::
 
@@ -131,11 +133,12 @@ def main():  # noqa: C901
     # Newton preset must be applied BEFORE launch_simulation (kitless scan) and
     # before any other mutation (apply_physics_preset discards later edits)
     env_cfg = apply_physics_preset(env_cfg, TASK, "newton_mjwarp")
-    # author from nominal resets even if a previous map exists — and without
-    # the reset randomization (stage snapshots must be deterministic)
-    env_cfg.events.reset_grasp_map = None
-    env_cfg.events.randomize_right_arm = None
-    env_cfg.events.randomize_spatula_pose = None
+    # Author from nominal resets: stage snapshots must be deterministic, and
+    # `reset_pregrasp` teleports half the envs into the claw. It is the ONLY
+    # randomizing term EventCfg still has -- `reset_grasp_map`,
+    # `randomize_right_arm` and `randomize_spatula_pose` were removed from the
+    # task, and assigning them here only created new attributes nobody read.
+    env_cfg.events.reset_pregrasp = None
     # the scripted teleport/settle/validate sequence outlives the 3 s training
     # episode — stretch it so no timeout reset fires mid-authoring
     env_cfg.episode_length_s = 60.0

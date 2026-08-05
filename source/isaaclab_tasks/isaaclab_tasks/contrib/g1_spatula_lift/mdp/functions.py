@@ -903,6 +903,9 @@ def reset_from_grasp_map(
 
     Missing map file → the term is a no-op (nominal resets only), so training
     runs before the map is authored.
+
+    Currently unreferenced by any ``EventCfg``; the active reset mixture is
+    :func:`reset_to_joint_pose` with ``PREGRASP_JOINT_POS``.
     """
     key = os.path.abspath(map_path)
     if key not in _GRASP_MAP_CACHE:

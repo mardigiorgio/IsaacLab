@@ -29,7 +29,10 @@ parser.add_argument("--camera", default="three_quarter", help="which framing to 
 parser.add_argument(
     "--sweep-close",
     action="store_true",
-    help="sweep index/middle curl and thumb flexion from the loaded pose and report whether the tips converge on the handle",
+    help=(
+        "sweep index/middle curl and thumb flexion from the loaded pose and report whether the tips converge on the"
+        " handle"
+    ),
 )
 add_launcher_args(parser)
 args_cli = parser.parse_args()
@@ -82,9 +85,12 @@ CAMERAS = {
 def main():
     env_cfg = parse_env_cfg(TASK, device="cuda:0", num_envs=1)
     env_cfg = apply_physics_preset(env_cfg, TASK, "newton_mjwarp")
-    env_cfg.events.reset_grasp_map = None
-    env_cfg.events.randomize_right_arm = None
-    env_cfg.events.randomize_spatula_pose = None
+    # Deterministic: what is measured and rendered must be the pose that was
+    # asked for, not a coin flip the printout has no way to label.
+    # `reset_pregrasp` is the only randomizing term EventCfg still has --
+    # `reset_grasp_map` / `randomize_*` were removed from the task, and assigning
+    # them here only created new attributes nobody read.
+    env_cfg.events.reset_pregrasp = None
     env_cfg.terminations.blade_contact = None
     env_cfg.terminations.spatula_dropped = None
     env_cfg.terminations.robot_exploded = None
@@ -131,7 +137,8 @@ def main():
                         env_ids=torch.tensor([0], device=device),
                     )
             # '--pose default': no teleport at all, so what is measured and
-            # rendered is exactly what a training reset produces.
+            # rendered is exactly what a training reset produces -- the HOVER
+            # half of the mixture, since `reset_pregrasp` is disabled above.
             # HOLD the pose with PD targets while settling. A zero action sets
             # target = current joint pos, which does NOT hold the arm — it sags
             # under gravity, and measuring after N steps measures a FALL, not
