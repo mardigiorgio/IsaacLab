@@ -25,6 +25,7 @@ Run::
     ./isaaclab.sh -p .../assets/pose_lab.py --visualizer newton # neutral hover, Newton side panel
     ./isaaclab.sh -p .../assets/pose_lab.py --pose dict         # PREGRASP_JOINT_POS claw
     ./isaaclab.sh -p .../assets/pose_lab.py --pose map          # grasp_map.pt claw (authored on the OLD table)
+    ./isaaclab.sh -p .../assets/pose_lab.py --pose saved.pt     # reload a stage file written by --save
     ./isaaclab.sh -p .../assets/pose_lab.py --selftest          # drive every control surface, non-zero on failure
     ./isaaclab.sh -p .../assets/pose_lab.py --max_target_speed 0  # snap targets (pre-limiter behaviour)
 
@@ -39,10 +40,22 @@ instead of reading a stale file.
 """
 
 import argparse
+
+# imgui_bundle must load BEFORE the simulation stack. Its native module binds
+# GLFW symbols against whichever ``libglfw.so.3`` is already in the process,
+# and on a Wayland session the sim stack drags in a Wayland-only GLFW build
+# that lacks ``glfwGetX11Window`` -- the import then fails inside the Newton
+# viewer, which silently disables its whole ImGui layer (scene renders, no
+# side panel). Importing here loads imgui_bundle's own X11-capable GLFW first.
+import contextlib
 import dataclasses
 import math
+import os
 import sys
 from collections.abc import Callable
+
+with contextlib.suppress(ImportError):
+    import imgui_bundle  # noqa: F401
 
 from isaaclab.app import add_launcher_args
 
@@ -261,10 +274,10 @@ parser = argparse.ArgumentParser()
 parser.add_argument(
     "--pose",
     default="hover",
-    choices=["hover", "default", "dict", "map"],
     help=(
         "starting pose: 'hover' (env default, fingers open; alias 'default'), "
-        "'dict' (PREGRASP_JOINT_POS claw), or 'map' (grasp_map.pt stage 'pre_grasp_caged')"
+        "'dict' (PREGRASP_JOINT_POS claw), 'map' (grasp_map.pt stage 'pre_grasp_caged'), "
+        "or a path to a stage file written by --save"
     ),
 )
 parser.add_argument("--save", default=None, help="write the final pose here as a {'stages': [...]} file")
@@ -293,6 +306,17 @@ args_cli, _ = parser.parse_known_args()
 # MAX_TARGET_SPEED = nan, which makes the per-frame allowance nan and turns
 # EVERY editable PD target non-finite on the first frame: the rate limiter would
 # poison the very simulation it exists to protect.
+# A path is validated at parse time for the same reason as --max_target_speed
+# below: a typo'd file must cost a one-line error, not a simulation launch that
+# dies at the torch.load an interactive session later.
+if args_cli.pose not in ("hover", "default", "dict", "map"):
+    if not args_cli.pose.endswith(".pt"):
+        parser.error(
+            f"--pose must be 'hover', 'default', 'dict', 'map', or a path to a --save stage file (*.pt),"
+            f" not {args_cli.pose!r}"
+        )
+    if not os.path.isfile(args_cli.pose):
+        parser.error(f"--pose stage file not found: {args_cli.pose!r}")
 if not math.isfinite(args_cli.max_target_speed) or args_cli.max_target_speed < 0:
     parser.error(
         f"--max_target_speed must be a finite value >= 0 (0 disables the limit), not {args_cli.max_target_speed}"
@@ -1066,17 +1090,23 @@ def main():  # noqa: C901
         # ---- starting pose -------------------------------------------------
         q = robot.data.default_joint_pos.torch[:1].clone()
         here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        if args_cli.pose == "map":
-            gm = torch.load(os.path.join(here, "grasp_map.pt"), weights_only=True)
+        if args_cli.pose == "map" or args_cli.pose.endswith(".pt"):
+            map_path = os.path.join(here, "grasp_map.pt") if args_cli.pose == "map" else args_cli.pose
+            gm = torch.load(map_path, weights_only=True)
             stage = gm["stages"][0]
             gmq = stage["joint_pos"].to(dev)
             obj_z = float(stage["object_pos"][2])
-            print("[pose_lab] START POSE: grasp_map.pt stage 'pre_grasp_caged' (CURLED claw)")
-            print(
-                f"[pose_lab] WARNING: grasp_map.pt is STALE -- its object z is {obj_z:.4f} m,"
-                f" {100 * (LAB_TABLE_HEIGHT - obj_z):.1f} cm below the current tabletop"
-                f" (LAB_TABLE_HEIGHT {LAB_TABLE_HEIGHT:.2f} m). Only the right arm + hand are applied."
-            )
+            print(f"[pose_lab] START POSE: {os.path.basename(map_path)} stage {stage['name']!r}")
+            # Staleness is a MEASUREMENT, not a property of the branch: a stage
+            # saved on today's table reloads without noise, while one authored
+            # before a geometry change (the old grasp_map.pt sits a full table
+            # revision below the current top) still announces itself.
+            if obj_z < LAB_TABLE_HEIGHT - 0.02:
+                print(
+                    f"[pose_lab] WARNING: {os.path.basename(map_path)} is STALE -- its object z is {obj_z:.4f} m,"
+                    f" {100 * (LAB_TABLE_HEIGHT - obj_z):.1f} cm below the current tabletop"
+                    f" (LAB_TABLE_HEIGHT {LAB_TABLE_HEIGHT:.2f} m). Only the right arm + hand are applied."
+                )
             # right arm + hand ONLY: the map's other joints are a stale
             # pre-fixed-base crouch, and writing all 43 would also stomp the
             # PD targets that `hold_inert_joints` just set to the defaults.
@@ -1284,6 +1314,17 @@ def main():  # noqa: C901
                     panel["reason"] = (
                         f"{type(viz).__name__} has no ImGui layer (headless viewer: no DISPLAY, or"
                         " NewtonVisualizerCfg.headless); use the pose file below"
+                    )
+                    continue
+                if not getattr(viewer.gui, "is_available", True):
+                    # The gui OBJECT existing is not enough: ViewerGui marks
+                    # itself unavailable when the imgui_bundle import fails
+                    # inside it (measured: a Wayland-only GLFW loaded by the
+                    # sim stack leaves ``glfwGetX11Window`` unresolved), and
+                    # then registration "succeeds" into a UI that never draws.
+                    panel["reason"] = (
+                        f"{type(viz).__name__}'s ImGui layer failed to initialize (see the"
+                        " 'imgui_bundle UI unavailable' warning above); use the pose file below"
                     )
                     continue
                 viewer.register_ui_callback(_panel, position="side")
