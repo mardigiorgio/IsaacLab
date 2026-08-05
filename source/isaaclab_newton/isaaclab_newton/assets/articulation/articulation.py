@@ -1283,7 +1283,7 @@ class Articulation(BaseArticulation):
         """
         if getattr(self, "_velocity_limit_clamp_active", False):
             wp.launch(
-                shared_kernels.write_2d_data_to_buffer_with_indices,
+                shared_kernels.write_2d_data_to_buffer_with_indices_kernel(env_ids, joint_ids),
                 dim=(env_ids.shape[0], joint_ids.shape[0]),
                 inputs=[
                     position,
