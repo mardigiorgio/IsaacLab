@@ -230,8 +230,10 @@ def run(argv: list[str]) -> BenchmarkResult:
             runner_types = {"OnPolicyRunner": OnPolicyRunner, "DistillationRunner": DistillationRunner}
             if agent_cfg.class_name not in runner_types:
                 raise ValueError(f"Unsupported runner class: {agent_cfg.class_name}")
+            from isaaclab_rl.rsl_rl import filter_unsupported_rsl_rl_kwargs
+
             runner = runner_types[agent_cfg.class_name](
-                env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device
+                env, filter_unsupported_rsl_rl_kwargs(agent_cfg.to_dict()), log_dir=log_dir, device=agent_cfg.device
             )
             _disable_code_state_capture(runner)
             if resume_path is not None:
