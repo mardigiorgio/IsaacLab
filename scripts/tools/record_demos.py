@@ -31,6 +31,14 @@ optional arguments:
 
 """Launch Isaac Sim Simulator first."""
 
+# MUST precede Kit: the camera/replicator experience this script enables by default loads
+# Isaac Sim's extscache omni.warp.core (warp 1.13), whose warp/_src/fem/cache.py does
+# `from warp._src.utils import warn` — removed in the site-packages warp (1.14+). Binding
+# warp.fem to the site-packages copy here means newton's later `import warp.fem`
+# (solver_implicit_mpm) hits the module cache instead of loading the 1.13 copy and dying
+# on the missing symbol. Same guard as g1_spatula_lift/assets/pose_fingers.py.
+import warp.fem  # noqa: F401  isort: skip
+
 # Standard library imports
 import argparse
 import contextlib
