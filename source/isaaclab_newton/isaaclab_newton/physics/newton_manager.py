@@ -1168,7 +1168,15 @@ class NewtonManager(PhysicsManager):
         # Newton builds without ``ModelBuilder.BvhConfig`` (older than the pinned
         # commit) fall back to their built-in BVH constructors; the cfg's
         # ``bvh_constructor_*`` preferences only apply when the API exists.
-        if hasattr(ModelBuilder, "BvhConfig"):
+        if not hasattr(ModelBuilder, "BvhConfig"):
+            if isinstance(cfg, NewtonCfg) and any(
+                v is not None for v in (cfg.bvh_constructor_geometry, cfg.bvh_constructor_gaussian, cfg.bvh_constructor_scene)
+            ):
+                logger.warning(
+                    "NewtonCfg.bvh_constructor_* is set but this Newton build predates ModelBuilder.BvhConfig;"
+                    " the preference is ignored and Newton's built-in BVH constructors are used."
+                )
+        else:
             builder.default_bvh_cfg = ModelBuilder.BvhConfig(
                 mesh_constructor=cfg.bvh_constructor_geometry if isinstance(cfg, NewtonCfg) else None,
                 gaussian_constructor=cfg.bvh_constructor_gaussian if isinstance(cfg, NewtonCfg) else None,
