@@ -1053,7 +1053,7 @@ including disabling runtime perturbations used for training.
     * - Isaac-Ant
       - Manager Based
       - **rl_games** (PPO), **rsl_rl** (PPO), **skrl** (PPO), **sb3** (PPO)
-      - **physics=** ``isaacsim_physx``, ``newton_kamino``, ``newton_mjwarp``
+      - **physics=** ``isaacsim_physx``, ``newton_kamino``, ``newton_mjwarp``, ``ovphysx``
     * - Isaac-Ant-Direct
       - Direct
       - **rl_games** (PPO), **rsl_rl** (PPO), **skrl** (PPO)
@@ -1085,7 +1085,7 @@ including disabling runtime perturbations used for training.
     * - Isaac-Humanoid
       - Manager Based
       - **rl_games** (PPO), **rsl_rl** (PPO), **skrl** (PPO), **sb3** (PPO)
-      - **physics=** ``isaacsim_physx``, ``newton_mjwarp``
+      - **physics=** ``isaacsim_physx``, ``newton_mjwarp``, ``ovphysx``
     * - Isaac-Humanoid-Direct
       - Direct
       - **rl_games** (PPO), **rsl_rl** (PPO), **skrl** (PPO)
@@ -1144,7 +1144,8 @@ including disabling runtime perturbations used for training.
     * - Isaac-Reach-Franka-OSC
       - Manager Based
       - **rsl_rl** (PPO)
-      - **physics=** ``isaacsim_physx``, ``newton_kamino``, ``newton_mjwarp``, ``ovphysx``
+      - | **physics=** ``isaacsim_physx``, ``newton_kamino``, ``newton_mjwarp``, ``ovphysx``
+          | **presets=** ``diffik_abs``
     * - Isaac-Reach-UR10
       - Manager Based
       - **rl_games** (PPO), **rsl_rl** (PPO), **skrl** (PPO)
@@ -1195,6 +1196,10 @@ including disabling runtime perturbations used for training.
       - Direct
       - **rl_games** (PPO), **rsl_rl** (PPO), **skrl** (PPO, IPPO, MAPPO)
       - **physics=** ``isaacsim_physx``, ``newton_mjwarp``, ``ovphysx``
+    * - Isaac-Stand-G1-DR-v1
+      - Manager Based
+      - **rsl_rl** (PPO)
+      -
     * - Isaac-Velocity-Flat-AnymalD
       - Manager Based
       - **rsl_rl** (PPO, DISTILLATION, DISTILLATION_RECURRENT, RECURRENT), **skrl** (PPO)
@@ -1203,10 +1208,26 @@ including disabling runtime perturbations used for training.
       - Manager Based
       - **rsl_rl** (PPO), **skrl** (PPO)
       - **physics=** ``isaacsim_physx``, ``newton_kamino``, ``newton_mjwarp``, ``ovphysx``
+    * - Isaac-Velocity-Flat-G1-DR-v1
+      - Manager Based
+      - **rsl_rl** (PPO)
+      -
+    * - Isaac-Velocity-Flat-G1-Play-v1
+      - Manager Based
+      - **rsl_rl** (PPO), **skrl** (PPO)
+      - **physics=** ``newton_mjwarp``
+    * - Isaac-Velocity-Flat-G1-Soft-v1
+      - Manager Based
+      - **rsl_rl** (PPO)
+      - **physics=** ``newton_mjwarp``
     * - Isaac-Velocity-Flat-G1-v0
       - Manager Based
       - **rsl_rl** (PPO), **skrl** (PPO)
       - **physics=** ``isaacsim_physx``, ``newton_kamino``, ``newton_mjwarp``, ``ovphysx``
+    * - Isaac-Velocity-Flat-G1-v1
+      - Manager Based
+      - **rsl_rl** (PPO), **skrl** (PPO)
+      - **physics=** ``newton_mjwarp``
     * - Isaac-Velocity-Flat-H1
       - Manager Based
       - **rsl_rl** (PPO), **skrl** (PPO)
@@ -1360,6 +1381,10 @@ including disabling runtime perturbations used for training.
       - Manager Based
       - **rl_games** (PPO), **rsl_rl** (PPO)
       -
+    * - IsaacContrib-Lift-Spatula-G1-v0
+      - Manager Based
+      - **rsl_rl** (PPO)
+      - **physics=** ``newton_mjwarp``
     * - IsaacContrib-Navigation-3DObstacles-ARL-Robot-1
       - Manager Based
       - **rl_games** (PPO), **rsl_rl** (PPO), **skrl** (PPO)
@@ -1420,6 +1445,10 @@ including disabling runtime perturbations used for training.
       - Manager Based
       - **rl_games** (PPO), **rsl_rl** (PPO)
       -
+    * - IsaacContrib-Spatula-Pickup-G1-Teleop-Abs
+      - Manager Based
+      -
+      - **physics=** ``newton_mjwarp``
     * - IsaacContrib-Stack-Cube-Bin-Franka-IK-Rel-Mimic
       - Manager Based
       -
