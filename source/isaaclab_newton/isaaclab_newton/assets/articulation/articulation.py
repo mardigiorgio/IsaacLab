@@ -415,7 +415,9 @@ class Articulation(BaseArticulation):
                     ],
                     device=self.device,
                 )
-            elif env_ids == slice(None):
+            elif env_ids is None:
+                # ``slice(None)`` was normalized to ``None`` at the top of this method,
+                # so ``None`` is the sole all-envs spelling by the time we get here.
                 self._prev_commanded_joint_pos_target.assign(self.data.joint_pos.warp)
             else:
                 idx = env_ids if isinstance(env_ids, torch.Tensor) else torch.as_tensor(env_ids, device=self.device)
