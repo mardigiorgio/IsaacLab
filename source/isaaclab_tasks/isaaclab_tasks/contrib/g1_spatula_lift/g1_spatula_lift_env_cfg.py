@@ -138,17 +138,20 @@ SPATULA_REST_TABLE_OFFSET = 0.0134
 """Settled spatula root height above the tabletop [m] (probe ``--mode settle``,
 83 cm table, 1 mm Newton contact margin)."""
 
-SPATULA_SPAWN_POS = (0.03975, -0.15013, 0.84157)
-"""Spatula spawn, env frame [m]. AUTHORED IN THE GUI (user): the handle sits
-between the digits of :data:`PREGRASP_JOINT_POS` — thumb on one side,
-index+middle on the other, spatula in the middle. Absolute rather than derived
-from ROBOT_STAND_POS because it was placed against the posed hand, so it must
-move only if that pose does. Tabletop is LAB_TABLE_HEIGHT (0.83); the root sits
-SPATULA_REST_TABLE_OFFSET above it."""
+SPATULA_SPAWN_POS = (0.03975, -0.12014, 0.84354)
+"""Spatula spawn, env frame [m]. AUTHORED IN THE GUI (user, pose_lab session
+2026-08-05, saved in the ``pregrasp.pt`` stage): the settled pose the pregrasp
+was authored against — handle between the digits of
+:data:`PREGRASP_JOINT_POS`, thumb on one side, index+middle on the other.
+Sits +3 cm along +Y of the pre-session spawn (away from the robot, which
+faces +Y). Absolute rather than derived from ROBOT_STAND_POS because it was
+placed against the posed hand, so it must move only if that pose does.
+Tabletop is LAB_TABLE_HEIGHT (0.83)."""
 
-SPATULA_SPAWN_QUAT = (-0.0002, 0.1011, 0.0025, 0.9949)
+SPATULA_SPAWN_QUAT = (-0.00024, 0.10116, 0.0025, 0.99487)
 """Spawn orientation (x, y, z, w) — THIS FORK'S CONVENTION, not wxyz: the
-probe-baked at-rest attitude (slight pitch; the flat handle hovers a few mm
+at-rest attitude saved with the same pose_lab stage as
+:data:`SPATULA_SPAWN_POS` (slight pitch; the flat handle hovers a few mm
 above the tabletop)."""
 
 REST_SPATULA_Z = SPATULA_SPAWN_POS[2]
@@ -226,30 +229,50 @@ DEFAULT_ARM_JOINT_POS = {
 """Default pose [rad]: left arm down by the side, right hand hovering over the
 handle with the fingers open (no right-hand entries = zeros = open)."""
 
+DEFAULT_LEG_JOINT_POS = {
+    # Symmetric flat-foot stance sized to the FIXED 0.75 m pelvis: hip and
+    # ankle at -knee/2 keeps the sole level and the foot directly under the
+    # pelvis. knee=0.75 is the straightest stance whose reach matches that
+    # pelvis height — measured over a 2 s zero-action hold, it drifts 0.004
+    # rad while every straighter candidate has the feet penetrating the floor
+    # at reset, and the contact buckles the legs into a feet-behind,
+    # hips-pitched-back crouch (the asset's stock -0.1/+0.3/-0.2 crouch
+    # buckled to knee 0.70 this way; it was sized for a floating base).
+    # Same REGEX keys as the asset's own init_state, so the dict merge in
+    # __post_init__ REPLACES those entries — explicit joint names alongside
+    # the patterns would double-match and fail articulation init.
+    ".*_hip_pitch_joint": -0.375,
+    ".*_knee_joint": 0.75,
+    ".*_ankle_pitch_joint": -0.375,
+}
+"""Leg stance [rad] for the fixed-base stand: feet flat on the floor under the
+pelvis, knees bent forward only as much as the 0.75 m pelvis height demands."""
+
 PREGRASP_JOINT_POS = {
-    # AUTHORED IN THE GUI (user), read back out of the saved stage: fingers
-    # curled down onto the tabletop with the spatula BETWEEN the digits —
-    # thumb one side, index+middle the other. This is the claw an instant
-    # before it closes, so an env starting here only has to learn close+lift.
+    # AUTHORED IN THE GUI (user, pose_lab session 2026-08-05), read back out of
+    # the saved ``pregrasp.pt`` stage by joint name: fingers straddling the
+    # handle with the tips down at the tabletop — thumb one side, index+middle
+    # the other. This is the claw an instant before it closes, so an env
+    # starting here only has to learn close+lift. Settle-verified against
+    # SPATULA_SPAWN_POS/QUAT from the same stage: 0.0000 m spatula
+    # displacement over a 2 s zero-action hold.
     # Kept as a plain dict, NOT a grasp_map .pt: *.pt is routed through git-lfs
     # in this repo and arrives unsmudged on some machines, which would silently
     # disable the stage.
-    "right_shoulder_pitch_joint": -0.6842,
-    "right_shoulder_roll_joint": -0.1416,
-    "right_shoulder_yaw_joint": -0.2182,
-    "right_elbow_joint": 1.0332,
-    "right_wrist_roll_joint": -1.5429,
-    "right_wrist_pitch_joint": 0.1047,
-    "right_wrist_yaw_joint": -0.0646,
-    "right_hand_index_0_joint": 0.0017,
-    "right_hand_index_1_joint": 1.2793,
-    "right_hand_middle_0_joint": 0.0017,
-    "right_hand_middle_1_joint": 1.3160,
-    "right_hand_thumb_0_joint": -0.0314,
-    # authored at +0.9617, above this joint's +0.724 upper limit; the event
-    # clamps into limits rather than failing, so it lands at the bound
-    "right_hand_thumb_1_joint": 0.9617,
-    "right_hand_thumb_2_joint": -1.4661,
+    "right_shoulder_pitch_joint": -0.7513,
+    "right_shoulder_roll_joint": -0.3003,
+    "right_shoulder_yaw_joint": -0.0563,
+    "right_elbow_joint": 0.7068,
+    "right_wrist_roll_joint": -1.2449,
+    "right_wrist_pitch_joint": 0.0090,
+    "right_wrist_yaw_joint": 0.4248,
+    "right_hand_index_0_joint": 0.0003,
+    "right_hand_index_1_joint": 1.7450,
+    "right_hand_middle_0_joint": 0.0003,
+    "right_hand_middle_1_joint": 1.7450,
+    "right_hand_thumb_0_joint": -0.0005,
+    "right_hand_thumb_1_joint": 0.7246,
+    "right_hand_thumb_2_joint": -1.6386,
 }
 """Pregrasp pose [rad] for half the resets (see :data:`PREGRASP_RESET_PROB`)."""
 
@@ -857,6 +880,7 @@ class G1SpatulaLiftEnvCfg(ManagerBasedRLEnvCfg):
         self.scene.robot.init_state.joint_pos = {
             **self.scene.robot.init_state.joint_pos,
             **DEFAULT_ARM_JOINT_POS,
+            **DEFAULT_LEG_JOINT_POS,
         }
         # pin the leg pose with stiff implicit PD (legs are static scenery
         # with the root fixed; the asset's DC-motor gains would sag).
