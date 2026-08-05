@@ -17,3 +17,8 @@ Added
 * Added ``object_lifted``, ``track_carry_point`` and ``joint_vel_l2_clamped`` to the
   ``IsaacContrib-Lift-Spatula-G1-v0`` task's ``mdp`` module, and made
   ``fingers_to_handle``'s contact gate optional via ``contact_threshold=None``.
+* Added ``fingertip_table_press`` to the ``IsaacContrib-Lift-Spatula-G1-v0`` task's
+  ``mdp`` module, plus the ``fingertip_table_contact`` scene sensor and the
+  ``table_press`` reward term that uses it. The term pays for the three TriHand
+  fingertips being loaded against the tabletop — the claw's opposing surface —
+  and self-extinguishes once the object is lifted.

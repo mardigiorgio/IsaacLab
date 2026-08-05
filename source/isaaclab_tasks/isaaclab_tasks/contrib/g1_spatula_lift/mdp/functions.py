@@ -108,12 +108,25 @@ def _sensor_peak_force(env: ManagerBasedRLEnv, sensor_name: str) -> torch.Tensor
     sums over the filter-prim axis BEFORE the norm, then takes the max over
     sensor bodies so multi-body sensors report their hardest-pressed link.
     """
+    return _sensor_object_forces(env, sensor_name).max(dim=1).values
+
+
+def _sensor_object_forces(env: ManagerBasedRLEnv, sensor_name: str) -> torch.Tensor:
+    """Per-sensing-object NET filtered contact force magnitude [N], shape [num_envs, num_objects].
+
+    Same reduction as :func:`_sensor_peak_force` minus the final max: the
+    filter-prim axis is summed before the norm, leaving one magnitude per
+    sensing object (body or shape). Column order follows the sensor's own
+    resolved object order, so only ORDER-INVARIANT reductions (mean, sum, max)
+    are safe on shape-level sensors, whose ``sensor_names`` degrade to the
+    collision-prim leaf name.
+    """
     forces = env.scene.sensors[sensor_name].data.force_matrix_w
     if forces is None:
-        return torch.zeros(env.num_envs, device=env.device)
+        return torch.zeros(env.num_envs, 1, device=env.device)
     net = forces.torch.sum(dim=2)
     mag = torch.linalg.vector_norm(net, dim=-1)
-    return mag.reshape(env.num_envs, -1).max(dim=1).values.nan_to_num(0.0)
+    return mag.reshape(env.num_envs, -1).nan_to_num(0.0)
 
 
 ##
@@ -439,6 +452,92 @@ def track_carry_point(
     return (income * lifted.float()).nan_to_num(0.0)
 
 
+def object_lifted_in_cage(
+    env: ManagerBasedRLEnv,
+    rest_height: float,
+    minimal_offset: float,
+    handle_p0_b: tuple[float, float, float],
+    handle_p1_b: tuple[float, float, float],
+    palm_radius: float,
+    thumb_radius: float,
+    contact_radius: float,
+    palm_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=["right_hand_palm_link"]),
+    fingertips_cfg: SceneEntityCfg = SceneEntityCfg(
+        "robot", body_names=["right_hand_thumb_2_link", "right_hand_index_1_link", "right_hand_middle_1_link"]
+    ),
+    object_cfg: SceneEntityCfg = SceneEntityCfg("spatula"),
+) -> torch.Tensor:
+    """Lift indicator ANDed with the geometric claw cage, shape [num_envs].
+
+    The no-catapult gate. :func:`object_lifted` pays for bare altitude however it
+    was produced, which made a ballistic hop the best-paying action in the MDP
+    (measured: median peak 1.19 m, 94.7% of episodes above the carry point).
+    Requiring the cage means a flung spatula stops paying the instant it leaves
+    the digits.
+
+    Unlike the force-based :func:`_opposed_handle_contact` gate removed in the
+    claw rebuild, this is a GEOMETRIC predicate (see :func:`_grasp`) that the
+    claw demonstrably satisfies: at the authored pregrasp reset it fires on 100%
+    of envs with radii 0.150 / 0.100 / 0.100, so the term is payable from step 1
+    for the pregrasp half of the batch.
+
+    Args:
+        env: The RL environment instance.
+        rest_height: Object root height at rest in the env frame [m].
+        minimal_offset: Rise above ``rest_height`` that counts as lifted [m].
+        handle_p0_b: Handle centerline segment start, object body frame [m].
+        handle_p1_b: Handle centerline segment end, object body frame [m].
+        palm_radius: Palm-to-centerline distance that counts as enclosing [m].
+        thumb_radius: Thumb-tip-to-centerline distance that counts as pressing [m].
+        contact_radius: Index/middle-tip-to-centerline distance that counts as touching [m].
+        palm_cfg: Entity config selecting the palm link.
+        fingertips_cfg: Entity config selecting the three fingertip links.
+        object_cfg: Entity config for the lifted object.
+    """
+    lifted = object_lifted(env, rest_height, minimal_offset, object_cfg) > 0.0
+    caged = _grasp(
+        env, handle_p0_b, handle_p1_b, palm_radius, thumb_radius, contact_radius, palm_cfg, fingertips_cfg, object_cfg
+    )
+    return (lifted & caged).float().nan_to_num(0.0)
+
+
+def track_carry_point_in_cage(
+    env: ManagerBasedRLEnv,
+    carry_point: tuple[float, float, float],
+    stds: tuple[float, ...],
+    weights: tuple[float, ...],
+    rest_height: float,
+    minimal_offset: float,
+    handle_p0_b: tuple[float, float, float],
+    handle_p1_b: tuple[float, float, float],
+    palm_radius: float,
+    thumb_radius: float,
+    contact_radius: float,
+    palm_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=["right_hand_palm_link"]),
+    fingertips_cfg: SceneEntityCfg = SceneEntityCfg(
+        "robot", body_names=["right_hand_thumb_2_link", "right_hand_index_1_link", "right_hand_middle_1_link"]
+    ),
+    object_cfg: SceneEntityCfg = SceneEntityCfg("spatula"),
+) -> torch.Tensor:
+    """Carry-point tracking income ANDed with the geometric claw cage, shape [num_envs].
+
+    :func:`track_carry_point` gated on height alone, so a spatula sailing THROUGH
+    the carry point collected the full kernel with nothing holding it. Requiring
+    the cage makes the income a payment for carrying rather than for passing by.
+
+    Args and semantics otherwise match :func:`track_carry_point`; the cage
+    arguments match :func:`object_lifted_in_cage`.
+
+    Raises:
+        ValueError: If ``stds`` and ``weights`` differ in length.
+    """
+    income = track_carry_point(env, carry_point, stds, weights, rest_height, minimal_offset, object_cfg)
+    caged = _grasp(
+        env, handle_p0_b, handle_p1_b, palm_radius, thumb_radius, contact_radius, palm_cfg, fingertips_cfg, object_cfg
+    )
+    return (income * caged.float()).nan_to_num(0.0)
+
+
 def joint_vel_l2_clamped(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
     """Penalize joint velocities with an L2-squared kernel, clamped for solver-divergence safety.
 
@@ -576,6 +675,52 @@ def grasp_handle(
     return _grasp(
         env, handle_p0_b, handle_p1_b, palm_radius, thumb_radius, contact_radius, palm_cfg, fingertips_cfg, object_cfg
     ).float()
+
+
+def fingertip_table_press(
+    env: ManagerBasedRLEnv,
+    force_scale: float,
+    rest_height: float,
+    minimal_offset: float,
+    sensor_name: str = "fingertip_table_contact",
+    object_cfg: SceneEntityCfg = SceneEntityCfg("spatula"),
+) -> torch.Tensor:
+    """Fingertips LOADED against the tabletop while the object is still down, in [0, 1].
+
+    The missing step of the claw recipe. The pick the operator reproduced on the
+    real G1 is: from the pregrasp, push the fingertips DOWN INTO the table, then
+    close — which scoops the flat object up into the palm, with the TABLE as the
+    opposing surface. No prior reward ever asked for the press, and at the
+    authored pregrasp reset the tips float 5-7 cm above the tabletop.
+
+    Formulated on CONTACT FORCE, not on height: "press into the table" is a
+    loading condition, and a proximity kernel is satisfied by hovering at table
+    height without ever bearing on it. Each fingertip contributes its filtered
+    tabletop force divided by ``force_scale``, clamped to 1, and the three are
+    averaged — so pressing harder past ``force_scale`` earns nothing extra and
+    all three tips down beats one.
+
+    SELF-EXTINGUISHING by construction: the whole term is multiplied by
+    ``1 - lifted`` (:func:`object_lifted` semantics), so it pays only while the
+    object is still on the table and reads EXACTLY 0.0 once it is up. Staying
+    down to farm it forfeits ``lift`` and ``track``, which are worth far more,
+    so it cannot become an attractor.
+
+    Only the three fingertip links are sensed (the sensor's own prim filter): a
+    palm-or-any-link version of this term is farmed by resting the back of the
+    hand on the tabletop.
+
+    Args:
+        env: The RL environment instance.
+        force_scale: Per-fingertip tabletop force at which the term saturates [N].
+        rest_height: Object root height at rest in the env frame [m].
+        minimal_offset: Rise above ``rest_height`` that extinguishes the term [m].
+        sensor_name: Name of the fingertip-vs-tabletop contact sensor in the scene.
+        object_cfg: Entity config for the object being picked.
+    """
+    press = (_sensor_object_forces(env, sensor_name) / force_scale).clamp(0.0, 1.0).mean(dim=1)
+    lifted = object_lifted(env, rest_height, minimal_offset, object_cfg)
+    return (press * (1.0 - lifted)).nan_to_num(0.0)
 
 
 def blade_pointed_inward(

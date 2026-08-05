@@ -18,3 +18,17 @@ gym.register(
     },
     disable_env_checker=True,
 )
+
+# NOTE: the id deliberately avoids the substring "Lift". scripts/environments/
+# teleoperation/teleop_se3_agent.py branches on `if "Lift" in args_cli.task` and
+# then dereferences `env_cfg.commands.object_pose`, which only exists on the old
+# Isaac-Lift-Cube-Franka style envs. This env has `commands = None` (inherited
+# from the G1 IK teleop base), so matching that heuristic crashes at startup.
+gym.register(
+    id="IsaacContrib-Spatula-Pickup-G1-Teleop-Abs",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.teleop_env_cfg:G1SpatulaTeleopEnvCfg",
+    },
+    disable_env_checker=True,
+)

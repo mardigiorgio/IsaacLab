@@ -27,6 +27,65 @@ from .isaac_teleop_cfg import IsaacTeleopCfg
 from .teleop_message_processor import TeleopMessageProcessor
 
 
+def _reap_orphaned_cloudxr_runtime(run_dir) -> None:
+    """Kill a CloudXR runtime left behind by a previous session, by PID.
+
+    The runtime is spawned with ``start_new_session=True`` so it survives the
+    Ctrl+C that kills Isaac Sim, and it is only stopped from the session's
+    ``__exit__`` — which does not run on a hard exit. ``CloudXRLauncher``'s own
+    ``_cleanup_stale_runtime`` reaps the previous process by ``fuser``-ing the
+    ``ipc_cloudxr`` socket, but it does that ONLY when that socket exists. An
+    orphan that died before creating its socket, or whose socket was removed,
+    is therefore never killed: the sentinel files get deleted, the orphan keeps
+    running, and the next runtime fails to come up with
+    ``XR_ERROR_RUNTIME_UNAVAILABLE``.
+
+    The launcher writes ``cloudxr.pid`` on every start but never reads it back.
+    This reaps by that PID instead, which does not depend on the socket ever
+    having existed. Safe to call when nothing is stale — a missing or dead PID
+    is a no-op.
+
+    Args:
+        run_dir: The CloudXR run directory, normally ``~/.cloudxr/run``.
+    """
+    import contextlib
+    import signal
+    import time
+
+    pid_file = os.path.join(str(run_dir), "cloudxr.pid")
+    try:
+        with open(pid_file) as fh:
+            pid = int(fh.read().strip())
+    except (FileNotFoundError, ValueError):
+        return
+
+    try:
+        os.kill(pid, 0)  # probe: raises if the pid is gone
+    except (ProcessLookupError, PermissionError):
+        return
+
+    logger.warning("Reaping orphaned CloudXR runtime (pid %d) left by a previous session", pid)
+    for sig, wait in ((signal.SIGTERM, 3.0), (signal.SIGKILL, 1.0)):
+        try:
+            os.kill(pid, sig)
+        except ProcessLookupError:
+            break
+        deadline = time.time() + wait
+        while time.time() < deadline:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.1)
+        else:
+            continue
+        break
+
+    for name in ("cloudxr.pid", "runtime_started", "cloudxr.env", "ipc_cloudxr"):
+        with contextlib.suppress(FileNotFoundError, IsADirectoryError):
+            os.remove(os.path.join(str(run_dir), name))
+
+
 class SupportsDLPack(Protocol):
     """Duck type for objects supporting the DLPack buffer protocol.
 
@@ -839,6 +898,8 @@ class TeleopSessionLifecycle:
         from pathlib import Path
 
         from isaacteleop.cloudxr import CloudXRLauncher as _CloudXRLauncher
+
+        _reap_orphaned_cloudxr_runtime(Path.home() / ".cloudxr" / "run")
 
         self._cloudxr_launcher = _CloudXRLauncher(
             install_dir=str(Path.home() / ".cloudxr"),

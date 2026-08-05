@@ -73,21 +73,26 @@ HANDLE_SEGMENT_P0_B = (0.07, 0.0, 0.02)
 HANDLE_SEGMENT_P1_B = (0.23, 0.0, 0.041)
 """Handle centerline segment end, spatula BODY frame [m]."""
 
-PALM_GRASP_RADIUS = 0.120
+PALM_GRASP_RADIUS = 0.150
 """Palm link within this distance [m] of the handle segment = handle under the
-palm. Calibrated to the TriHand's real geometry (probe-measured): with the
-hand seated on the handle in the pronated grip the palm link ORIGIN floors at
-~0.111 m — the finger knuckles and pads bottom out first."""
+palm. RECALIBRATED TO THE CLAW (measured at the authored pregrasp reset over
+512 envs): the palm link origin sits at 0.101 m. The previous 0.120 was
+calibrated for the PRONATED VERTICAL-CURL grip, a different hand pose."""
 
-THUMB_PRESS_RADIUS = 0.075
+THUMB_PRESS_RADIUS = 0.100
 """Thumb tip link within this distance [m] of the handle segment = thumb pad
-on the handle's near face. The thumb_2 link ORIGIN sits at the knuckle and
-floors at ~0.064 m with the pad seated on the handle (probe-measured in the
-pronated vertical-curl grip)."""
+on the handle's far face. RECALIBRATED TO THE CLAW: measured 0.082 m at the
+pregrasp reset. The previous 0.075 was below the measured value, so the
+predicate could never fire on the claw."""
 
-FINGER_CONTACT_RADIUS = 0.025
+FINGER_CONTACT_RADIUS = 0.100
 """Index/middle tip link within this distance [m] of the handle segment
-counts as touching it (their knuckle origins DO thread the handle's sides)."""
+counts as caging it. RECALIBRATED TO THE CLAW: measured 0.090 m (index) and
+0.086 m (middle) at the pregrasp reset. The previous 0.025 was a leftover from
+the pinch recipe and failed by 3.6x, which is why :func:`mdp.grasp_handle`
+measured 0.00% firing at every radius tested until this correction.
+Verified: at 0.150 / 0.100 / 0.100 the predicate fires on 100% of pregrasp
+resets and 0% of hover resets."""
 
 FINGERTIP_BODY_NAMES = ["right_hand_thumb_2_link", "right_hand_index_1_link", "right_hand_middle_1_link"]
 """TriHand fingertip links for the privileged grasp signal."""
@@ -112,13 +117,16 @@ G1_TOE_REACH = 0.142
 TOE_STANDOFF = 0.02
 """Gap between the toe tips and the table-edge plane [m]."""
 
-ROBOT_STAND_POS = (0.0, -(LAB_TABLE_WIDTH / 2 + G1_TOE_REACH + TOE_STANDOFF), 0.85)
-"""Fixed-base pelvis position [m] at the long table edge, facing +Y. The real
-rig is GANTRY-mounted (user), so the base height is a free parameter: 0.85
-gives the shoulder ~30 cm of clearance over the 83 cm tabletop — at the
+ROBOT_STAND_POS = (0.0, -(LAB_TABLE_WIDTH / 2 + G1_TOE_REACH + TOE_STANDOFF), 0.75)
+"""Fixed-base pelvis position [m] at the long table edge, facing +Y.
+
+0.75 is the G1's natural standing pelvis height, so the feet rest ON the floor.
+This was 0.85 for a gantry-mounted rig, which left the robot visibly floating
+10 cm in the air. The original note claimed 0.85 was needed because "at the
 standing 0.75 the forearm fouls the table edge before the fingers reach the
-handle (324 searched poses all stalled on that contact). A standing policy
-driving legs + waist comes later; this stage is fixed-base."""
+handle"; if that reach problem returns, fix it by moving the robot back in Y or
+re-authoring the arm pose, not by hanging the robot in mid-air.
+"""
 
 PELVIS_TO_SPATULA_Y = 0.366
 """Pelvis -> spatula-spawn Y offset [m]: the ready-pose hand-over-handle
@@ -161,6 +169,14 @@ digit pressing the handle above this zeroes-or-enables all task income."""
 
 CONTACT_COUNT_N = 0.01
 """Per-digit touch threshold [N] for the ungated contact-count bootstrap."""
+
+TABLE_PRESS_FORCE_N = 1.0
+"""Per-fingertip tabletop force [N] at which :func:`mdp.fingertip_table_press`
+saturates. ~1.5x the spatula's own 0.65 N weight, so a resting graze does not
+read as a press. Deliberately LOW against the measured contacts: a scripted
+descent onto the rigid (non-compliant) tabletop reads 1.5-375 N per tip, so
+saturating at 1 N means a gentle press earns exactly as much as hammering —
+the clamp is what stops "press harder" from paying more."""
 
 BLADE_FORCE_THRESHOLD = 1.0
 """Hand-on-blade force [N] that ends the episode — feather grazes forgiven."""
@@ -316,6 +332,20 @@ class G1SpatulaLiftSceneCfg(InteractiveSceneCfg):
     middle_handle_contact = NewtonContactSensorCfg(
         prim_path="{ENV_REGEX_NS}/Robot/right_hand/right_hand_middle_.*_link",
         filter_shape_prim_expr=["{ENV_REGEX_NS}/Spatula/collisions_handle/.*"],
+    )
+
+    # the three FINGERTIPS pressing the TABLETOP: the claw's opposing surface.
+    # Sensed at SHAPE level (one collision mesh per tip) because no single
+    # body-name glob selects exactly thumb_2 + index_1 + middle_1 — and the tip
+    # set must be exact: a palm-or-any-link version of this signal is farmed by
+    # resting the back of the hand on the table. The tabletop is a static
+    # AssetBaseCfg with no rigid body, so the filter is shape-level too.
+    fingertip_table_contact = NewtonContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/right_hand/right_hand_.*_link",
+        sensor_shape_prim_expr=[
+            f"{{ENV_REGEX_NS}}/Robot/right_hand/{name}/collisions/.*/mesh" for name in FINGERTIP_BODY_NAMES
+        ],
+        filter_shape_prim_expr=["{ENV_REGEX_NS}/LabTable/top/.*"],
     )
 
 
@@ -537,24 +567,103 @@ class RewardsCfg:
         },
         weight=1.0,
     )
-    # pure height indicator: 5/60 = 0.083/step for every step off the table
+    # pure height indicator: 1/60 = 0.0167/step for every step off the table.
+    # Bare altitude is worth no more than being near the handle; the reason to
+    # lift is that crossing this gate unlocks `track`. At the old weight 5.0
+    # this term alone paid 0.083/step for an UNPOSSESSED object, which made a
+    # ballistic hop (0.121/step for ~7 steps, discounted 0.84) beat hovering by
+    # the handle to timeout (0.0126/step for 300 steps, discounted 0.63) — so
+    # batting the spatula off the table was the best-paying action in the MDP
+    # and the policy found it (run 2026-08-03_17-56-16: 72% spatula_dropped,
+    # 18.2-step episodes, 41% of every episode spent airborne). At 1.0 the
+    # ordering is hold 3.58 >> hover 0.63 > fling 0.38.
     lift = RewTerm(
-        func=mdp.object_lifted,
-        params={"rest_height": REST_SPATULA_Z, "minimal_offset": 0.03},
-        weight=5.0,
+        func=mdp.object_lifted_in_cage,
+        params={
+            "rest_height": REST_SPATULA_Z,
+            "minimal_offset": 0.03,
+            "handle_p0_b": HANDLE_SEGMENT_P0_B,
+            "handle_p1_b": HANDLE_SEGMENT_P1_B,
+            "palm_radius": PALM_GRASP_RADIUS,
+            "thumb_radius": THUMB_PRESS_RADIUS,
+            "contact_radius": FINGER_CONTACT_RADIUS,
+            "palm_cfg": SceneEntityCfg("robot", body_names=["right_hand_palm_link"]),
+            "fingertips_cfg": SceneEntityCfg("robot", body_names=FINGERTIP_BODY_NAMES),
+        },
+        weight=1.0,
     )
     # THE task income: coarse + fine kernels on distance to the carry point,
     # paid every step to timeout. There is no success termination to game
     track = RewTerm(
-        func=mdp.track_carry_point,
+        func=mdp.track_carry_point_in_cage,
         params={
             "carry_point": CARRY_POINT,
-            "stds": (0.30, 0.05),
+            # coarse std 0.30 -> 0.15: at 0.30 a spatula sailing past at 1.3 m
+            # still collected 0.024/step, MORE than lift now pays at all
+            "stds": (0.15, 0.05),
             "weights": (0.5, 0.5),
             "rest_height": REST_SPATULA_Z,
             "minimal_offset": 0.03,
+            "handle_p0_b": HANDLE_SEGMENT_P0_B,
+            "handle_p1_b": HANDLE_SEGMENT_P1_B,
+            "palm_radius": PALM_GRASP_RADIUS,
+            "thumb_radius": THUMB_PRESS_RADIUS,
+            "contact_radius": FINGER_CONTACT_RADIUS,
+            "palm_cfg": SceneEntityCfg("robot", body_names=["right_hand_palm_link"]),
+            "fingertips_cfg": SceneEntityCfg("robot", body_names=FINGERTIP_BODY_NAMES),
         },
         weight=10.0,
+    )
+    # THE MISSING LADDER RUNG. Run 2026-08-04_00-26-43 gated lift+track on the
+    # cage and both read EXACTLY 0.0000 from iteration 50 to 1499: with the only
+    # income being `reach`, the policy parked ~16 cm from the handle and farmed
+    # it (97% timeouts, drop 0.017) rather than ever closing on the spatula.
+    # The ladder was reach (dense) -> lift+track (cage AND height, simultaneously)
+    # with nothing between. This pays for the cage ALONE, ungated by height:
+    # 2/60 = 0.033/step, ~3x the reach rate at its observed level, so closing the
+    # claw strictly beats hovering and carrying strictly beats closing.
+    # It is payable from step 1 for the pregrasp half of the batch (the predicate
+    # fires on 100% of pregrasp resets at these radii, measured over 512 envs).
+    cage = RewTerm(
+        func=mdp.grasp_handle,
+        params={
+            "handle_p0_b": HANDLE_SEGMENT_P0_B,
+            "handle_p1_b": HANDLE_SEGMENT_P1_B,
+            "palm_radius": PALM_GRASP_RADIUS,
+            "thumb_radius": THUMB_PRESS_RADIUS,
+            "contact_radius": FINGER_CONTACT_RADIUS,
+            "palm_cfg": SceneEntityCfg("robot", body_names=["right_hand_palm_link"]),
+            "fingertips_cfg": SceneEntityCfg("robot", body_names=FINGERTIP_BODY_NAMES),
+        },
+        weight=2.0,
+    )
+    # THE STEP NOBODY ASKED FOR. The operator reproduced this pick on the real
+    # G1 by hand: from the pregrasp, push the fingertips DOWN INTO the table,
+    # THEN close — the press is what scoops a thin flat object into the palm,
+    # with the tabletop as the opposing surface. At the authored pregrasp the
+    # tips instead float above the tabletop (measured over 512 envs: thumb_2
+    # +5.01 cm, index_1 +6.50, middle_1 +6.76), i.e. unloaded, so nothing in the
+    # MDP ever asked them down. FORCE-based, not height-based: the tip link
+    # origins sit at the knuckles, so a tip pad genuinely loaded on the slab
+    # still reads 4-6 cm of link-origin altitude (probe-measured at 33 N) — a
+    # height kernel calibrated on link origins cannot tell pressing from hovering.
+    # SELF-EXTINGUISHING: multiplied by (1 - lifted), so it is worth at most
+    # 0.5/60 = 0.0083/step, and only while the spatula is still down — EXACTLY
+    # 0.0 once it is up. Camping on it forfeits `lift` (1.0) and `track` (10.0),
+    # which is what keeps it a rung and not an attractor.
+    # PAYABILITY VERIFIED (the lesson of run 2026-08-04_00-26-43, where a gated
+    # lift+track read 0.0000 for 1450 iterations): scripted probe over 4 envs —
+    # 0.000000 at the pregrasp reset, peak 1.000000 (all three tips loaded) during
+    # a scripted descent into the slab, and exactly 0.000000 with the spatula
+    # teleported +30 cm while the tips still carried 375 N.
+    table_press = RewTerm(
+        func=mdp.fingertip_table_press,
+        params={
+            "force_scale": TABLE_PRESS_FORCE_N,
+            "rest_height": REST_SPATULA_Z,
+            "minimal_offset": 0.03,
+        },
+        weight=0.5,
     )
     # start at franka-scale ~zero: pre-contact these penalties are the ONLY
     # gradient finger dimensions ever sample (zero income, guaranteed tax),
@@ -626,15 +735,27 @@ class CurriculumCfg:
     ``num_steps_per_env=24`` the old 15000 landed at iteration 625, which is
     42% of the new 1500-iteration budget. 6000 puts it at iteration 250, right
     at the first decision point.
+
+    The step TARGETS are sized in value units, not in isolation. The old
+    -0.05/-0.02 pair moved the per-step penalty from -2.05e-4 to -0.0214, i.e.
+    -0.0214 x the ~50-step effective horizon = -1.08 against a total return
+    scale of 1.40 — 77% of the whole value scale delivered between two
+    consecutive iterations. Measured in run 2026-08-03_17-56-16: mean_reward
+    fell 1.403 -> 0.706 across the step (predicted -0.714 from the penalty
+    delta alone, i.e. ~100% attributable) while gross income actually ROSE,
+    and mean_episode_length went monotone down from 49.9 to 18.2 thereafter.
+    The term's own precondition — regularization AFTER competence — was
+    measurably false at iteration 250. These targets keep the step at ~3% of
+    value scale so the run stays readable.
     """
 
     action_rate = CurrTerm(
         func=mdp.modify_reward_weight,
-        params={"term_name": "action_rate_l2", "weight": -0.05, "num_steps": 6000},
+        params={"term_name": "action_rate_l2", "weight": -0.009, "num_steps": 6000},
     )
     joint_vel = CurrTerm(
         func=mdp.modify_reward_weight,
-        params={"term_name": "joint_vel_l2", "weight": -0.02, "num_steps": 6000},
+        params={"term_name": "joint_vel_l2", "weight": -0.0004, "num_steps": 6000},
     )
 
 

@@ -271,8 +271,9 @@ class NewtonMJWarpManager(NewtonManager):
 
         # Adaptive is opt-in via the cfg field; NEWTON_ADAPTIVE=1 is a shell-level override for quick toggling.
         adaptive = bool(getattr(solver_cfg, "adaptive", False)) or os.environ.get("NEWTON_ADAPTIVE") == "1"
-        # GUI toggle: the Adaptive-timestepping checkbox sets this carb setting; reading it at solver-build
-        # time means flipping it + Stop/Play (which rebuilds the solver) switches the integrator interactively.
+        # Escape hatch: anything that sets this carb setting flips the integrator at the next
+        # solver build (Stop/Play rebuilds it). The auto-loading GUI checkbox that used to set
+        # it was removed; the cfg field and NEWTON_ADAPTIVE=1 above are the supported paths.
         if not adaptive:
             try:
                 import carb
