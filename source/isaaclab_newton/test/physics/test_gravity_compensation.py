@@ -34,7 +34,7 @@ import isaaclab.sim as sim_utils
 from isaaclab.assets import AssetBaseCfg
 from isaaclab.scene import InteractiveScene, InteractiveSceneCfg
 from isaaclab.sim import SimulationCfg, build_simulation_context
-from isaaclab.utils import configclass
+from isaaclab.utils.configclass import configclass
 
 ##
 # Pre-defined configs

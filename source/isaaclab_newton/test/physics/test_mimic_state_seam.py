@@ -25,7 +25,7 @@ import isaaclab.sim as sim_utils
 from isaaclab.assets import AssetBaseCfg, RigidObjectCfg
 from isaaclab.scene import InteractiveScene, InteractiveSceneCfg
 from isaaclab.sim import SimulationCfg, build_simulation_context
-from isaaclab.utils import configclass
+from isaaclab.utils.configclass import configclass
 
 ##
 # Pre-defined configs
@@ -212,8 +212,12 @@ def test_partial_reset_restores_adaptive_dt_only_for_reset_world(solver_cfg_fact
         env_ids = torch.tensor([1], dtype=torch.int32, device=sim.device)
         scene.reset_to(_select_env_state(captured, env_ids), env_ids=env_ids, is_relative=True)
 
-        # NewtonManager.step() calls solver.reset(world_mask=...) exactly once, to
-        # consume the world-reset mask, before the physics step itself runs. That same
+        # NewtonManager.step() consumes the world-reset mask by invoking the
+        # _reset_solver_internals delegate -> solver.reset(world_mask=...) before the
+        # physics step itself runs. Upstream's step() may run that delegate TWICE per
+        # reset boundary (once at the top of step() and once inside forward() before the
+        # masks are zeroed); solver.reset is idempotent, and the capture below keeps only
+        # the FIRST call, which lands at the reset boundary either way. That same
         # step then immediately re-grows dt via step-doubling over the whole control
         # period (see mjwarp_manager._run_solver_substeps), so reading .dt only *after*
         # the step is confounded by that same-step regrowth (measured: dt can regrow
