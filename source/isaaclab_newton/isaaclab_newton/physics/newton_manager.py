@@ -1524,7 +1524,7 @@ class NewtonManager(PhysicsManager):
                     # populated OUTSIDE the capture -- a conditional body graph may not
                     # record allocations. Mirrors _capture_relaxed_graph's warmup.
                     if getattr(cls, "_adaptive", False):
-                        with wp.ScopedDevice(device):
+                        with cls._preserved_solver_step(), wp.ScopedDevice(device):
                             simulate()
                         wp.synchronize_device(device)
                     try:
@@ -1561,6 +1561,29 @@ class NewtonManager(PhysicsManager):
     def _supports_cuda_graph_capture(cls) -> bool:
         """Return whether the active solver configuration supports CUDA graph capture."""
         return True
+
+    @classmethod
+    @contextlib.contextmanager
+    def _preserved_solver_step(cls):
+        """Run a warm-up step without advancing the solver's step counter.
+
+        The warm-up before a graph capture exists only to pre-allocate scratch
+        buffers, but :class:`~newton.solvers.SolverMuJoCo` gates its Newton-state to
+        MuJoCo ``qpos`` sync on ``_step % update_data_interval``. That branch is
+        evaluated once, while the graph is being recorded, and is then baked into the
+        replayed graph. A warm-up that advances ``_step`` therefore shifts the capture
+        onto the opposite parity and can freeze the sync *out* of the graph
+        permanently -- after which every state write (resets, teleports) is silently
+        discarded, while the readback still reports success because it views the write
+        buffer. Restoring the counter keeps capture on the same parity the eager path
+        already uses.
+        """
+        step = getattr(cls._solver, "_step", None)
+        try:
+            yield
+        finally:
+            if step is not None:
+                cls._solver._step = step
 
     @classmethod
     def _capture_relaxed_graph(cls, device: str):
@@ -1610,7 +1633,7 @@ class NewtonManager(PhysicsManager):
         # Warmup: pre-allocate all solver scratch buffers so the capture window has
         # no new cudaMalloc calls (which are forbidden inside graph capture).
         simulate = cls._simulate_full if cls._is_all_graphable() else cls._simulate_physics_only
-        with wp.ScopedDevice(device):
+        with cls._preserved_solver_step(), wp.ScopedDevice(device):
             simulate()
         wp.synchronize_stream(wp.get_stream(device))
 
