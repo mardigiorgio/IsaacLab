@@ -10,6 +10,7 @@ from typing import ClassVar, Literal
 
 from isaaclab.sim.schemas.schemas_cfg import (
     ArticulationRootBaseCfg,
+    ArticulationRootFragment,
     CollisionBaseCfg,
     CollisionFragment,
     DeformableBodyPropertiesBaseCfg,
@@ -188,6 +189,75 @@ class MujocoJointDrivePropertiesCfg(NewtonJointDrivePropertiesCfg):
     When ``True``, compensation forces go to ``qfrc_actuator`` (subject to force limits).
     Requires body-level :attr:`MujocoRigidBodyPropertiesCfg.gravcomp`.
     Written to ``mjc:actuatorgravcomp`` via ``MjcJointAPI``.
+    """
+
+
+@configclass
+class MujocoCollisionCfg(CollisionFragment):
+    """``mjc:*`` per-collider attributes for Newton's MuJoCo solver.
+
+    These attributes tune the MuJoCo contact model on each collision shape. They are applied
+    alongside :class:`~isaaclab.sim.schemas.UsdPhysicsCollisionCfg` via
+    :func:`~isaaclab.sim.schemas.apply_collision_properties`.
+
+    The fragment overrides :attr:`func` with
+    :func:`~isaaclab_newton.sim.schemas.apply_mujoco_collision` because ``solimp`` and ``solref``
+    are authored as fixed-length USD arrays.
+
+    .. note::
+        If a value is ``None``, the corresponding attribute is not modified and Newton uses the
+        imported value or the MuJoCo default.
+    """
+
+    _usd_namespace: ClassVar[str | None] = "mjc"
+    _usd_applied_schema: ClassVar[str | None] = None
+
+    func: Callable | str = "isaaclab_newton.sim.schemas:apply_mujoco_collision"
+
+    condim: Literal[1, 3, 4, 6] | None = None
+    """Number of dimensions in the contact friction cone [dimensionless].
+
+    ``1`` is frictionless, ``3`` adds tangential friction, ``4`` adds torsional friction, and
+    ``6`` adds rolling friction. Written to ``mjc:condim``. Defaults to ``3`` in Newton when the
+    attribute is not authored.
+    """
+
+    group: int | None = None
+    """MuJoCo geometry group [dimensionless].
+
+    Written to ``mjc:group``. Valid values are 0 through 5. This grouping controls MuJoCo
+    visualization and inertia-inference selection; it is not an Isaac Lab collision-filter group.
+    """
+
+    priority: int | None = None
+    """Contact-parameter precedence for this collider [dimensionless].
+
+    Written to ``mjc:priority``. When two colliders have different priorities, MuJoCo uses the
+    higher-priority collider's contact parameters. Values must be non-negative.
+    """
+
+    solimp: tuple[float, float, float, float, float] | None = None
+    """Contact impedance parameters ``(dmin, dmax, width, midpoint, power)``.
+
+    Component units are [dimensionless, dimensionless, m, dimensionless, dimensionless].
+    Written to ``mjc:solimp`` as a five-element array. Newton defaults to
+    ``(0.9, 0.95, 0.001, 0.5, 2.0)`` when the attribute is not authored.
+    """
+
+    solmix: float | None = None
+    """Contact-parameter mixing weight [dimensionless].
+
+    Written to ``mjc:solmix``. MuJoCo uses this weight to combine compatible contact parameters
+    when the colliders have equal :attr:`priority`. Values must be non-negative. Defaults to
+    ``1.0`` in Newton when the attribute is not authored.
+    """
+
+    solref: tuple[float, float] | None = None
+    """Contact reference parameters.
+
+    In positive format, the components are ``(time_constant [s], damping_ratio [dimensionless])``.
+    In non-positive direct format, they are ``(-stiffness [s^-2], -damping [s^-1])``. Written to
+    ``mjc:solref`` as a two-element array.
     """
 
 
@@ -501,6 +571,35 @@ class NewtonMaterialPropertiesCfg(RigidBodyMaterialBaseCfg):
     Range: [0, inf).
     """
 
+    contact_stiffness: float | None = None
+    """Contact normal-force stiffness [N/m].
+
+    Writes ``newton:contactStiffness``. Replaces the deprecated per-shape ``ke`` contact parameter;
+    used by the SemiImplicit, Featherstone, MuJoCo, and VBD solvers.
+    """
+
+    contact_damping: float | None = None
+    """Contact normal-force damping coefficient [N·s/m].
+
+    Writes ``newton:contactDamping``. Replaces the deprecated per-shape ``kd`` contact parameter;
+    used by the SemiImplicit, Featherstone, MuJoCo, and VBD solvers.
+    """
+
+    contact_friction_gain: float | None = None
+    """Friction-force stiffness gain used by the tangential (friction) contact response [N·s/m].
+
+    Writes ``newton:contactFrictionGain``. Replaces the deprecated per-shape ``kf`` contact
+    parameter; used by the SemiImplicit and Featherstone solvers.
+    """
+
+    contact_adhesion: float | None = None
+    """Contact adhesion distance: shapes closer than this threshold experience an attractive
+    (adhesive) force [m].
+
+    Writes ``newton:contactAdhesion``. Replaces the deprecated per-shape ``ka`` contact parameter;
+    used by the SemiImplicit and Featherstone solvers.
+    """
+
 
 @configclass
 class MujocoFixedTendonCfg(FixedTendonFragment):
@@ -545,7 +644,6 @@ class NewtonArticulationRootPropertiesCfg(ArticulationRootBaseCfg):
 
     _usd_namespace: ClassVar[str | None] = "newton"
     _usd_applied_schema: ClassVar[str | None] = "NewtonArticulationRootAPI"
-    _usd_field_exceptions: ClassVar[dict] = {}
 
     self_collision_enabled: bool | None = None
     """Whether self-collisions between bodies in this articulation are enabled.
@@ -553,4 +651,30 @@ class NewtonArticulationRootPropertiesCfg(ArticulationRootBaseCfg):
     Written to ``newton:selfCollisionEnabled`` via ``NewtonArticulationRootAPI``.
     Newton's resolver checks this native attribute first before falling back to
     ``physxArticulation:enabledSelfCollisions``.
+    """
+
+
+@configclass
+class NewtonArticulationCfg(ArticulationRootFragment):
+    """``newton:*`` articulation-root attributes for Newton.
+
+    A single-namespace fragment (see :class:`~isaaclab.sim.schemas.SchemaFragment`) carrying
+    Newton-native self-collision control. It owns the ``NewtonArticulationRootAPI`` applied
+    schema. Composes with :class:`~isaaclab_physx.sim.schemas.PhysxArticulationCfg` in an
+    ``articulation_props`` fragment list; the ``UsdPhysics.ArticulationRootAPI`` anchor is
+    applied by :func:`~isaaclab.sim.schemas.apply_articulation_root_properties`.
+
+    .. note::
+        If the values are None, they are not modified.
+    """
+
+    _usd_namespace: ClassVar[str | None] = "newton"
+    _usd_applied_schema: ClassVar[str | None] = "NewtonArticulationRootAPI"
+
+    self_collision_enabled: bool | None = None
+    """Whether self-collisions between bodies in this articulation are enabled.
+
+    Written to ``newton:selfCollisionEnabled`` via ``NewtonArticulationRootAPI``. Newton's
+    resolver checks this native attribute first before falling back to the PhysX namespace
+    (:attr:`~isaaclab_physx.sim.schemas.PhysxArticulationCfg.enabled_self_collisions`).
     """

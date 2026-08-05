@@ -5,12 +5,15 @@
 
 import math
 
+from isaaclab_newton.renderers import NewtonWarpRendererCfg
+
 import isaaclab.sim as sim_utils
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.sensors import CameraCfg
 from isaaclab.utils.configclass import configclass
+from isaaclab.visualizers import VisualizerCfg
 
 import isaaclab_tasks.core.cartpole.mdp as mdp
 from isaaclab_tasks.core.cartpole.cartpole_manager_env_cfg import CartpoleEnvCfg, CartpoleSceneCfg, ObservationsCfg
@@ -41,9 +44,9 @@ class CartpoleTiledCameraCfg(PresetCfg):
         spawn: sim_utils.PinholeCameraCfg = sim_utils.PinholeCameraCfg(
             focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 20.0)
         )
-        width: int = 100
-        height: int = 100
-        renderer_cfg: MultiBackendRendererCfg = MultiBackendRendererCfg()
+        width: int = 96
+        height: int = 96
+        renderer_cfg: MultiBackendRendererCfg = MultiBackendRendererCfg(newton_renderer=NewtonWarpRendererCfg())
 
     default = BaseCartpoleTiledCameraCfg(data_types=["rgb"])
     depth = BaseCartpoleTiledCameraCfg(data_types=["depth"])
@@ -171,9 +174,8 @@ class CartpoleCameraEnvCfg(PresetCfg):
             # remove ground as it obstructs the camera
             self.scene.ground = None
             self.events.reset_pole_position.params["position_range"] = (-0.125 * math.pi, 0.125 * math.pi)
-            # viewer settings
-            self.viewer.eye = (20.0, 20.0, 20.0)
-            self.viewer.lookat = (0.0, 0.0, 0.0)
+            # visualizer camera settings
+            self.sim.default_visualizer_cfg = VisualizerCfg(eye=(20.0, 20.0, 20.0), lookat=(0.0, 0.0, 0.0))
 
     rgb = BaseCartpoleCameraEnvCfg(observations=image_observations_cfg("rgb"))
     depth = BaseCartpoleCameraEnvCfg(observations=image_observations_cfg("depth"))

@@ -7,14 +7,14 @@
 
 from __future__ import annotations
 
-import inspect
 import logging
 import os
 import re
 
 import numpy as np
-from newton import Contacts, Model
-from newton.solvers import SolverMuJoCo, SolverMuJoCoAdaptive
+import warp as wp
+from newton import Contacts, Control, Model, State
+from newton.solvers import SolverBase, SolverMuJoCo, SolverMuJoCoAdaptive
 
 from isaaclab.physics import PhysicsManager
 from isaaclab.sim.utils.stage import get_current_stage
@@ -162,8 +162,9 @@ def _apply_gravity_compensation(model: Model, mask: np.ndarray) -> None:
 class NewtonMJWarpManager(NewtonManager):
     """:class:`NewtonManager` specialization for the MuJoCo Warp solver.
 
-    Owns construction of :class:`SolverMuJoCo`, contact-buffer allocation in
-    both internal-MuJoCo and Newton-pipeline contact modes, and the debug
+    Owns construction of :class:`SolverMuJoCo` (or, per :attr:`MJWarpSolverCfg.backend`
+    / :attr:`MJWarpSolverCfg.adaptive`, its adaptive and SAP variants), contact-buffer
+    allocation in both internal-MuJoCo and Newton-pipeline contact modes, and the debug
     convergence logging emitted from :meth:`_log_solver_debug` when
     :attr:`NewtonCfg.debug_mode` is enabled.
     """
@@ -183,14 +184,17 @@ class NewtonMJWarpManager(NewtonManager):
     """The vendored ``SapModel`` wrapping the Newton model (fixed-step SAP path only)."""
 
     @classmethod
-    def _build_solver(cls, model: Model, solver_cfg: MJWarpSolverCfg) -> None:
-        """Construct the solver (:class:`SolverMuJoCo` or, when ``solver_cfg.adaptive``,
-        :class:`SolverMuJoCoAdaptive`) and populate the base-class slots.
+    def _resolve_solver_mode(cls, solver_cfg: MJWarpSolverCfg) -> tuple[str, bool]:
+        """Resolve the active backend and adaptivity from the cfg and env overrides.
 
-        Filters cfg fields against the solver's ``__init__`` signature so non-constructor metadata
-        (``solver_type``, ``class_type``, the adaptive control fields) and the deprecated ``ls_parallel``
-        field are not forwarded. Sets :attr:`NewtonManager._needs_collision_pipeline` to ``True`` only
-        when ``use_mujoco_contacts=False``.
+        The cfg is the source of truth; ``NEWTON_SOLVER`` / ``NEWTON_SAP=1`` override the
+        backend and ``NEWTON_ADAPTIVE=1`` / ``NEWTON_SAP_ADAPTIVE=1`` (or the
+        ``/isaaclab/newton/adaptive`` carb setting) override adaptivity, for shell-level
+        toggling without touching task configs.
+
+        Returns:
+            Tuple ``(backend, adaptive)`` where ``backend`` is ``"mujoco"`` or ``"sap"``
+            and ``adaptive`` selects the step-doubling variant of that backend.
         """
         # Backend selection: cfg.backend is the source of truth; NEWTON_SOLVER / NEWTON_SAP=1
         # are shell-level env overrides.
@@ -200,74 +204,9 @@ class NewtonMJWarpManager(NewtonManager):
         if os.environ.get("NEWTON_SAP") == "1":
             backend = "sap"
 
-        # Bodies whose IsaacLab cfg set disable_gravity=True. MuJoCo-Warp honors this per body
-        # via gravcomp (see _apply_gravity_compensation); the SAP backend has no per-body
-        # gravity-compensation mechanism, so it can only warn.
-        disable_gravity_mask = _disable_gravity_body_mask(model)
-
         if backend == "sap":
-            if disable_gravity_mask.any():
-                logger.warning(
-                    "NewtonMJWarpManager: %d body(ies) in this scene have disable_gravity=True, "
-                    "but the SAP backend applies gravity per-world only and has no per-body "
-                    "gravity-compensation mechanism -- these bodies will sag under gravity on SAP. "
-                    "Use MJWarpSolverCfg(backend='mujoco') (fixed or adaptive) instead if per-body "
-                    "gravity compensation is required.",
-                    int(disable_gravity_mask.sum()),
-                )
-            from newton.solvers import SolverSAP, SolverSAPAdaptive, sap_model_from_newton
-
-            _env = os.environ.get
-            sap_adaptive = bool(getattr(solver_cfg, "sap_adaptive", False)) or _env("NEWTON_SAP_ADAPTIVE") == "1"
-            if sap_adaptive:
-                # Error-controlled step-doubling SAP. Owns its own contact pipeline, so no
-                # manager-level collision pipeline; reuses the _adaptive step/reset/no-graph
-                # wiring (host-synced boundary, like SolverMuJoCoAdaptive).
-                NewtonManager._solver = SolverSAPAdaptive(
-                    model,
-                    tol=float(_env("NEWTON_ADAPTIVE_TOL", getattr(solver_cfg, "adaptive_tol", 1e-3))),
-                    dt_inner_init=float(_env("NEWTON_ADAPTIVE_DT_INIT", getattr(solver_cfg, "adaptive_dt_init", 0.01))),
-                    dt_inner_min=float(_env("NEWTON_ADAPTIVE_DT_MIN", getattr(solver_cfg, "adaptive_dt_min", 1e-6))),
-                    max_substeps=int(
-                        _env("NEWTON_ADAPTIVE_MAX_SUBSTEPS", getattr(solver_cfg, "adaptive_max_substeps", 256))
-                    ),
-                    max_rigid_contact=int(solver_cfg.sap_max_rigid_contact),
-                    max_iterations=int(solver_cfg.sap_solver_iterations),
-                    contact_preset_variant=str(_env("NEWTON_SAP_PRESET", solver_cfg.sap_contact_preset)),
-                    line_search_variant=str(_env("NEWTON_SAP_LINE_SEARCH", solver_cfg.sap_line_search)),
-                    contact_tau_d=float(solver_cfg.sap_contact_tau_d),
-                )
-                cls._adaptive = True
-                cls._adaptive_frame = 0
-                NewtonManager._needs_collision_pipeline = False
-                logger.info(
-                    "NewtonMJWarpManager: SolverSAPAdaptive (SAP step-doubling; even+global; "
-                    "solver-internal per-N CUDA-graph capture, set NEWTON_SAP_ADAPTIVE_GRAPH=0 to disable)"
-                )
-            else:
-                # Fixed-step SAP: Newton's CollisionPipeline feeds SapContacts each step
-                # (converted in _step_solver).
-                sap_model = sap_model_from_newton(model)
-                NewtonManager._solver = SolverSAP(
-                    sap_model,
-                    max_rigid_contact=int(solver_cfg.sap_max_rigid_contact),
-                    max_iterations=int(solver_cfg.sap_solver_iterations),
-                    contact_tau_d=float(solver_cfg.sap_contact_tau_d),
-                    contact_preset_variant=str(solver_cfg.sap_contact_preset),
-                    line_search_variant=str(solver_cfg.sap_line_search),
-                )
-                NewtonManager._sap_model = sap_model
-                cls._adaptive = False
-                NewtonManager._needs_collision_pipeline = True
-                logger.info("NewtonMJWarpManager: SolverSAP (fixed-step convex contact; CUDA graph disabled)")
-            cls._sap = True
-            NewtonManager._use_single_state = True
-            return
-        cls._sap = False
-
-        # Must run before SolverMuJoCo/SolverMuJoCoAdaptive construction below (see
-        # _apply_gravity_compensation's docstring for why post-construction is too late).
-        _apply_gravity_compensation(model, disable_gravity_mask)
+            adaptive = bool(getattr(solver_cfg, "sap_adaptive", False)) or os.environ.get("NEWTON_SAP_ADAPTIVE") == "1"
+            return backend, adaptive
 
         # Adaptive is opt-in via the cfg field; NEWTON_ADAPTIVE=1 is a shell-level override for quick toggling.
         adaptive = bool(getattr(solver_cfg, "adaptive", False)) or os.environ.get("NEWTON_ADAPTIVE") == "1"
@@ -281,72 +220,170 @@ class NewtonMJWarpManager(NewtonManager):
                 adaptive = bool(carb.settings.get_settings().get_as_bool("/isaaclab/newton/adaptive"))
             except Exception:
                 pass
-        ignored = {
-            "class_type",
-            "solver_type",
-            "ls_parallel",
-            "adaptive",
-            "adaptive_tol",
-            "adaptive_dt_mode",
-            "adaptive_dt_init",
-            "adaptive_dt_min",
-            "adaptive_tiling",
-            "adaptive_max_substeps",
-        }
-        if adaptive:
-            # SolverMuJoCoAdaptive forces use_mujoco_contacts/use_mujoco_cpu/separate_worlds itself
-            # (its own contact pipeline + step-doubling), so those must not be forwarded.
-            forced = {"use_mujoco_contacts", "use_mujoco_cpu", "separate_worlds"}
-            valid = set(inspect.signature(SolverMuJoCo.__init__).parameters) - {"self", "model"} - ignored - forced
-            kwargs = {k: v for k, v in solver_cfg.to_dict().items() if k in valid}
-            # cfg fields are the source of truth; NEWTON_ADAPTIVE_* env vars override for quick tuning.
-            _env = os.environ.get
-            NewtonManager._solver = SolverMuJoCoAdaptive(
-                model,
-                # honor the cfg's contact source: with use_mujoco_contacts=False the
-                # manager's Newton CollisionPipeline contacts are injected per boundary
-                use_newton_contacts=not bool(getattr(solver_cfg, "use_mujoco_contacts", True)),
-                tol=float(_env("NEWTON_ADAPTIVE_TOL", getattr(solver_cfg, "adaptive_tol", 1e-3))),
-                dt_mode=str(_env("NEWTON_ADAPTIVE_DTMODE", getattr(solver_cfg, "adaptive_dt_mode", "per_world"))),
-                dt_inner_init=float(_env("NEWTON_ADAPTIVE_DT_INIT", getattr(solver_cfg, "adaptive_dt_init", 0.01))),
-                dt_inner_min=float(_env("NEWTON_ADAPTIVE_DT_MIN", getattr(solver_cfg, "adaptive_dt_min", 1e-6))),
-                tiling=str(_env("NEWTON_ADAPTIVE_TILING", getattr(solver_cfg, "adaptive_tiling", "ragged"))),
-                max_substeps=int(
-                    _env("NEWTON_ADAPTIVE_MAX_SUBSTEPS", getattr(solver_cfg, "adaptive_max_substeps", 256))
-                ),
-                **kwargs,
-            )
-            cls._adaptive = True
-            cls._adaptive_frame = 0
-            # NEWTON_ADAPTIVE_JOINT_SCALE=<s> down-weights hinge/slide qpos coords in the error
-            # metric: sets S=s for every hinge/slide coord (free-joint coords keep S=1), i.e.
-            # tol/s on joints only. Runs before the first step, so the in-place copy is
-            # CUDA-graph-capture safe.
-            js = os.environ.get("NEWTON_ADAPTIVE_JOINT_SCALE")
-            if js:
-                import warp as _wp
+        return backend, adaptive
 
-                solver = NewtonManager._solver
-                mjm = solver.mj_model
-                scale = solver._state_scale.numpy()
-                for j in range(mjm.njnt):
-                    if mjm.jnt_type[j] in (2, 3):  # slide, hinge
-                        scale[:, mjm.jnt_qposadr[j]] = float(js)
-                _wp.copy(
-                    solver._state_scale,
-                    _wp.array(scale, dtype=_wp.float32, device=solver._state_scale.device),
+    @classmethod
+    def _create_solver(cls, model: Model, solver_cfg: MJWarpSolverCfg) -> SolverBase:
+        """Construct the configured solver for ``model`` without changing manager state.
+
+        Dispatches on :meth:`_resolve_solver_mode`:
+
+        * ``("mujoco", False)`` — stock :class:`SolverMuJoCo`; ctor kwargs are
+          signature-filtered from the cfg via
+          :meth:`NewtonManager._filter_solver_kwargs` (dropping non-constructor
+          metadata and the ignored deprecated ``ls_parallel`` field).
+        * ``("mujoco", True)`` — :class:`SolverMuJoCoAdaptive` (error-controlled step
+          doubling); the filtered MuJoCo kwargs are forwarded through its ``**kwargs``,
+          minus ``use_mujoco_contacts`` / ``use_mujoco_cpu`` / ``separate_worlds`` which
+          the solver forces itself (its own contact pipeline + step doubling).
+        * ``("sap", False)`` — vendored fixed-step :class:`~newton.solvers.SolverSAP`
+          built on a ``SapModel`` (fed each step from Newton's
+          :class:`CollisionPipeline` contacts, see :meth:`_step_solver`).
+        * ``("sap", True)`` — :class:`~newton.solvers.SolverSAPAdaptive` (step doubling
+          over SAP; owns its own contact pipeline).
+
+        Per-body ``disable_gravity`` prims are mapped onto MuJoCo per-body ``gravcomp=1.0``
+        *before* construction on the MuJoCo backends (the solver reads ``gravcomp`` at
+        construction time only); the SAP backends have no per-body mechanism and log an
+        actionable warning instead. The SAP solvers duck-type the
+        :class:`~newton.solvers.SolverBase` ``step``/``reset`` contract.
+        """
+        backend, adaptive = cls._resolve_solver_mode(solver_cfg)
+
+        # Bodies whose IsaacLab cfg set disable_gravity=True. MuJoCo-Warp honors this per body
+        # via gravcomp (see _apply_gravity_compensation); the SAP backend has no per-body
+        # gravity-compensation mechanism, so it can only warn.
+        disable_gravity_mask = _disable_gravity_body_mask(model)
+
+        _env = os.environ.get
+        if backend == "sap":
+            if disable_gravity_mask.any():
+                logger.warning(
+                    "NewtonMJWarpManager: %d body(ies) in this scene have disable_gravity=True, "
+                    "but the SAP backend applies gravity per-world only and has no per-body "
+                    "gravity-compensation mechanism -- these bodies will sag under gravity on SAP. "
+                    "Use MJWarpSolverCfg(backend='mujoco') (fixed or adaptive) instead if per-body "
+                    "gravity compensation is required.",
+                    int(disable_gravity_mask.sum()),
                 )
-                logger.info(f"NewtonMJWarpManager: joint error-scale override S={js} on hinge/slide coords")
+            from newton.solvers import SolverSAP, SolverSAPAdaptive, sap_model_from_newton
+
+            if adaptive:
+                # Error-controlled step-doubling SAP. Owns its own contact pipeline, so no
+                # manager-level collision pipeline; reuses the _adaptive step/reset/no-graph
+                # wiring (host-synced boundary, like SolverMuJoCoAdaptive).
+                return SolverSAPAdaptive(
+                    model,
+                    tol=float(_env("NEWTON_ADAPTIVE_TOL", getattr(solver_cfg, "adaptive_tol", 1e-3))),
+                    dt_inner_init=float(_env("NEWTON_ADAPTIVE_DT_INIT", getattr(solver_cfg, "adaptive_dt_init", 0.01))),
+                    dt_inner_min=float(_env("NEWTON_ADAPTIVE_DT_MIN", getattr(solver_cfg, "adaptive_dt_min", 1e-6))),
+                    max_substeps=int(
+                        _env("NEWTON_ADAPTIVE_MAX_SUBSTEPS", getattr(solver_cfg, "adaptive_max_substeps", 256))
+                    ),
+                    max_rigid_contact=int(solver_cfg.sap_max_rigid_contact),
+                    max_iterations=int(solver_cfg.sap_solver_iterations),
+                    contact_preset_variant=str(_env("NEWTON_SAP_PRESET", solver_cfg.sap_contact_preset)),
+                    line_search_variant=str(_env("NEWTON_SAP_LINE_SEARCH", solver_cfg.sap_line_search)),
+                    contact_tau_d=float(solver_cfg.sap_contact_tau_d),
+                )
+            # Fixed-step SAP: Newton's CollisionPipeline feeds SapContacts each step
+            # (converted in _step_solver).
+            sap_model = sap_model_from_newton(model)
+            return SolverSAP(
+                sap_model,
+                max_rigid_contact=int(solver_cfg.sap_max_rigid_contact),
+                max_iterations=int(solver_cfg.sap_solver_iterations),
+                contact_tau_d=float(solver_cfg.sap_contact_tau_d),
+                contact_preset_variant=str(solver_cfg.sap_contact_preset),
+                line_search_variant=str(solver_cfg.sap_line_search),
+            )
+
+        # Must run before SolverMuJoCo/SolverMuJoCoAdaptive construction below (see
+        # _apply_gravity_compensation's docstring for why post-construction is too late).
+        _apply_gravity_compensation(model, disable_gravity_mask)
+
+        kwargs = cls._filter_solver_kwargs(SolverMuJoCo, solver_cfg)
+        # ls_parallel is deprecated in newton; forwarding it (even as False) emits a warning.
+        kwargs.pop("ls_parallel", None)
+        if not adaptive:
+            return SolverMuJoCo(model, **kwargs)
+
+        # SolverMuJoCoAdaptive forces use_mujoco_contacts/use_mujoco_cpu/separate_worlds itself
+        # (its own contact pipeline + step-doubling), so those must not be forwarded.
+        for forced in ("use_mujoco_contacts", "use_mujoco_cpu", "separate_worlds"):
+            kwargs.pop(forced, None)
+        # cfg fields are the source of truth; NEWTON_ADAPTIVE_* env vars override for quick tuning.
+        solver = SolverMuJoCoAdaptive(
+            model,
+            # honor the cfg's contact source: with use_mujoco_contacts=False the
+            # manager's Newton CollisionPipeline contacts are injected per boundary
+            use_newton_contacts=not bool(getattr(solver_cfg, "use_mujoco_contacts", True)),
+            tol=float(_env("NEWTON_ADAPTIVE_TOL", getattr(solver_cfg, "adaptive_tol", 1e-3))),
+            dt_mode=str(_env("NEWTON_ADAPTIVE_DTMODE", getattr(solver_cfg, "adaptive_dt_mode", "per_world"))),
+            dt_inner_init=float(_env("NEWTON_ADAPTIVE_DT_INIT", getattr(solver_cfg, "adaptive_dt_init", 0.01))),
+            dt_inner_min=float(_env("NEWTON_ADAPTIVE_DT_MIN", getattr(solver_cfg, "adaptive_dt_min", 1e-6))),
+            tiling=str(_env("NEWTON_ADAPTIVE_TILING", getattr(solver_cfg, "adaptive_tiling", "ragged"))),
+            max_substeps=int(_env("NEWTON_ADAPTIVE_MAX_SUBSTEPS", getattr(solver_cfg, "adaptive_max_substeps", 256))),
+            **kwargs,
+        )
+        # NEWTON_ADAPTIVE_JOINT_SCALE=<s> down-weights hinge/slide qpos coords in the error
+        # metric: sets S=s for every hinge/slide coord (free-joint coords keep S=1), i.e.
+        # tol/s on joints only. Runs before the first step, so the in-place copy is
+        # CUDA-graph-capture safe.
+        js = os.environ.get("NEWTON_ADAPTIVE_JOINT_SCALE")
+        if js:
+            mjm = solver.mj_model
+            scale = solver._state_scale.numpy()
+            for j in range(mjm.njnt):
+                if mjm.jnt_type[j] in (2, 3):  # slide, hinge
+                    scale[:, mjm.jnt_qposadr[j]] = float(js)
+            wp.copy(
+                solver._state_scale,
+                wp.array(scale, dtype=wp.float32, device=solver._state_scale.device),
+            )
+            logger.info(f"NewtonMJWarpManager: joint error-scale override S={js} on hinge/slide coords")
+        return solver
+
+    @classmethod
+    def _build_solver(cls, model: Model, solver_cfg: MJWarpSolverCfg) -> None:
+        """Construct the configured solver via :meth:`_create_solver` and populate the base-class slots.
+
+        Filters cfg fields against the solver's ``__init__`` signature so
+        non-constructor metadata (``solver_type``, ``class_type``, the adaptive/SAP
+        control fields) and the ignored deprecated ``ls_parallel`` field are not
+        forwarded. Sets :attr:`NewtonManager._needs_collision_pipeline` to ``True``
+        only when the solver consumes Newton :class:`CollisionPipeline` contacts:
+        ``use_mujoco_contacts=False`` on the MuJoCo backends, always for fixed-step
+        SAP, and never for SAP-adaptive (which owns its own contact pipeline).
+        """
+        backend, adaptive = cls._resolve_solver_mode(solver_cfg)
+        NewtonManager._solver = cls._create_solver(model, solver_cfg)
+        NewtonManager._use_single_state = True
+        cls._adaptive = adaptive
+        cls._sap = backend == "sap"
+        if cls._adaptive:
+            cls._adaptive_frame = 0
+
+        if cls._sap:
+            if cls._adaptive:
+                NewtonManager._sap_model = None
+                NewtonManager._needs_collision_pipeline = False
+                logger.info(
+                    "NewtonMJWarpManager: SolverSAPAdaptive (SAP step-doubling; even+global; "
+                    "solver-internal per-N CUDA-graph capture, set NEWTON_SAP_ADAPTIVE_GRAPH=0 to disable)"
+                )
+            else:
+                # SolverSAP stores the SapModel built in _create_solver as its .model.
+                NewtonManager._sap_model = getattr(NewtonManager._solver, "model", None)
+                NewtonManager._needs_collision_pipeline = True
+                logger.info("NewtonMJWarpManager: SolverSAP (fixed-step convex contact; CUDA graph disabled)")
+            return
+
+        if cls._adaptive:
             logger.info(
                 "NewtonMJWarpManager: SolverMuJoCoAdaptive (adaptive step-doubling; solver-internal "
                 "per-iteration CUDA-graph replay, set NEWTON_MJ_ADAPTIVE_GRAPH=0 to disable)"
             )
-        else:
-            valid = set(inspect.signature(SolverMuJoCo.__init__).parameters) - {"self", "model"} - ignored
-            kwargs = {k: v for k, v in solver_cfg.to_dict().items() if k in valid}
-            NewtonManager._solver = SolverMuJoCo(model, **kwargs)
-            cls._adaptive = False
-        NewtonManager._use_single_state = True
         NewtonManager._needs_collision_pipeline = not solver_cfg.use_mujoco_contacts
 
         cfg = PhysicsManager._cfg
@@ -359,14 +396,16 @@ class NewtonMJWarpManager(NewtonManager):
             )
 
     @classmethod
-    def _step_solver(cls, state_0, state_1, control, contacts, substep_dt) -> None:
+    def _step_solver(
+        cls, state_0: State, state_1: State, control: Control, contacts: Contacts | None, substep_dt: float
+    ) -> None:
         """Run one solver substep.
 
         Adaptive: drive :class:`SolverMuJoCoAdaptive` via ``step`` (owns its inner
         error-controlled dt loop + its own contacts, updates ``state_0`` in place).
         Otherwise the stock single ``solver.step`` (5-positional).
         """
-        if getattr(cls, "_sap", False):
+        if cls._sap:
             if cls._adaptive:
                 # SAP-adaptive owns its inner even+global loop + its own contacts; updates state_0.
                 # step() is the boundary call (Newton signature: state_in, state_out, control,
@@ -395,12 +434,10 @@ class NewtonMJWarpManager(NewtonManager):
                 sc = sap_contacts_from_newton(contacts)
                 cls._solver.step(s0, s0, c, sc, substep_dt)
             return
-        if cls._adaptive:
-            # MuJoCo-adaptive: step() is the boundary call (state_in, state_out, control,
-            # contacts, dt); it owns its inner step-doubling loop + its own contacts.
-            cls._solver.step(state_0, state_1, control, contacts, substep_dt)
-        else:
-            cls._solver.step(state_0, state_1, control, contacts, substep_dt)
+        # MuJoCo fixed and adaptive share the stock 5-positional call; for the adaptive
+        # solver step() is the boundary call (it owns its inner step-doubling loop + its
+        # own contacts).
+        cls._solver.step(state_0, state_1, control, contacts, substep_dt)
 
     @classmethod
     def _run_solver_substeps(cls, contacts) -> None:
@@ -418,30 +455,96 @@ class NewtonMJWarpManager(NewtonManager):
         super()._run_solver_substeps(contacts)
 
     @classmethod
-    def _reset_solver_state(cls, world_mask) -> None:
-        """Adaptive: restore the step-doubling controller's persistent per-world
-        state (dt / sim_time / next_time / latches) for worlds the env reset this
-        step, so pre-reset controller state does not leak into the post-reset
-        dynamics. flags=0 preserves the env's randomized post-reset joint state
-        (only MuJoCo warm-start buffers + controller buffers are cleared)."""
-        # Fixed-step SAP clears its contact-solve warm-start; SAP-adaptive falls through to the
-        # _adaptive branch (its own .reset restores controller buffers + clears the SAP warm-start).
-        if getattr(cls, "_sap", False) and not cls._adaptive and cls._solver is not None:
-            cls._solver.reset_runtime_state()
+    def _initialize_contacts(cls) -> None:
+        """Allocate contact buffers.
+
+        Delegates to the base implementation when Newton's
+        :class:`CollisionPipeline` is active.  When ``use_mujoco_contacts=True``
+        the solver runs MuJoCo's internal collision detection, so this method
+        instead pre-allocates a :class:`Contacts` buffer sized to the solver's
+        maximum contact count; ``solver.update_contacts`` later populates it
+        from MuJoCo data for contact-sensor reporting.
+        """
+        if cls._needs_collision_pipeline:
+            super()._initialize_contacts()
             return
-        if cls._adaptive and world_mask is not None and cls._solver is not None:
-            cls._solver.reset(cls._state_0, world_mask=world_mask, flags=0)
+        if cls._solver is not None:
+            NewtonManager._contacts = Contacts(
+                rigid_contact_max=cls._solver.get_max_contact_count(),
+                soft_contact_max=0,
+                device=PhysicsManager._device,
+                requested_attributes=cls._model.get_requested_contact_attributes(),
+            )
+
+    @classmethod
+    def _reset_solver_internals(cls, world_mask: wp.array | None) -> None:
+        """Clear solver-internal state for flagged worlds.
+
+        Specializes the base hook, whose :meth:`SolverBase.reset` call resolves here
+        per backend:
+
+        * **Fixed-step MuJoCo** — :meth:`SolverMuJoCo.reset` with ``flags=0`` zeroes
+          only the solver-owned buffers persisting across steps (``qacc_warmstart``,
+          ``qfrc_applied``, ``xfrc_applied``, ``ctrl``, ``act``) for the flagged
+          worlds, while the joint state IsaacLab authored during the env reset is
+          left untouched.  Without this, a NaN produced in one solve persists
+          across :meth:`isaaclab.envs.ManagerBasedEnv.reset` because the next
+          solver substep warm-starts from the NaN — the world is then permanently
+          dead.  See https://github.com/newton-physics/newton/issues/1266.
+        * **Adaptive (MuJoCo or SAP step-doubling)** — the solver's ``reset``
+          additionally restores the step-doubling controller's persistent per-world
+          state (dt / sim_time / next_time / accepted+diverged latches) so pre-reset
+          controller state does not leak into the post-reset dynamics; ``flags=0``
+          again preserves the env's randomized post-reset joint state.
+        * **Fixed-step SAP** — the vendored solver has no per-world reset; its
+          contact-solve warm-start is cleared globally via ``reset_runtime_state()``,
+          gated on at least one world actually being flagged.  With staggered
+          per-env resets, untouched envs pay a small re-convergence cost, measured
+          to be dynamically negligible (see ``test_mimic_state_seam.py``).
+
+        With ``use_mujoco_cpu=True`` the solver owns a single global ``MjData``
+        and its reset path is not mask-aware — it clears the buffers for every
+        world.  Since this hook fires on every step/forward boundary (usually
+        with an all-``False`` mask), the CPU path is gated on at least one
+        world actually being flagged so warm-starting is not defeated on every
+        step.
+
+        Args:
+            world_mask: Per-world bool mask of shape ``(world_count + 1,)``.
+                Entries before the last select local worlds; the final entry
+                selects global entities in world -1. ``None`` is a no-op.
+        """
+        if world_mask is None or cls._solver is None:
+            return
+        # The solvers' reset paths are strictly per-world: drop the mask's trailing
+        # global-entities entry before handing it to the solver.
+        local_mask = world_mask[: cls._model.world_count]
+        if cls._sap and not cls._adaptive:
+            if local_mask.numpy().any():
+                cls._solver.reset_runtime_state()
+            return
+        if cls._adaptive:
+            cls._solver.reset(cls._state_0, world_mask=local_mask, flags=0)
+            return
+        if cls._solver.use_mujoco_cpu and not local_mask.numpy().any():
+            return
+        # flags=0 skips the joint-state reset to model defaults: IsaacLab owns
+        # joint_q/joint_qd and has already written the authored reset pose.
+        cls._solver.reset(cls._state_0, world_mask=local_mask, flags=0)
 
     @classmethod
     def _supports_cuda_graph_capture(cls) -> bool:
-        # MANAGER-level capture stays OFF for SAP (owns its capture internally). For the
-        # MuJoCo adaptive solver it is opt-in via NEWTON_MJ_ADAPTIVE_CONDITIONAL=1: in
-        # that mode the solver's data-dependent boundary loop records as a CUDA
-        # conditional while-node (wp.capture_while), with mujoco_warp's per-step scratch
-        # allocations hidden behind the MjwStepAllocCache shim (CUDA forbids allocation
-        # nodes inside conditional bodies). By default the adaptive solver instead owns
-        # its capture internally (one regular graph per iteration body, replayed with a
-        # 4-byte boundary-flag poll), which the manager must not wrap.
+        """Return whether the active solver configuration supports CUDA graph capture.
+
+        MANAGER-level capture stays OFF for SAP (owns its capture internally). For the
+        MuJoCo adaptive solver it is opt-in via ``NEWTON_MJ_ADAPTIVE_CONDITIONAL=1``: in
+        that mode the solver's data-dependent boundary loop records as a CUDA
+        conditional while-node (``wp.capture_while``), with mujoco_warp's per-step
+        scratch allocations hidden behind the MjwStepAllocCache shim (CUDA forbids
+        allocation nodes inside conditional bodies). By default the adaptive solver
+        instead owns its capture internally (one regular graph per iteration body,
+        replayed with a 4-byte boundary-flag poll), which the manager must not wrap.
+        """
         if cls._sap:
             return False
         if cls._adaptive:
@@ -470,28 +573,6 @@ class NewtonMJWarpManager(NewtonManager):
                 )
         except Exception as exc:  # telemetry must never break the sim
             logger.debug(f"adaptive telemetry skipped: {exc}")
-
-    @classmethod
-    def _initialize_contacts(cls) -> None:
-        """Allocate contact buffers.
-
-        Delegates to the base implementation when Newton's
-        :class:`CollisionPipeline` is active.  When ``use_mujoco_contacts=True``
-        the solver runs MuJoCo's internal collision detection, so this method
-        instead pre-allocates a :class:`Contacts` buffer sized to the solver's
-        maximum contact count; ``solver.update_contacts`` later populates it
-        from MuJoCo data for contact-sensor reporting.
-        """
-        if cls._needs_collision_pipeline:
-            super()._initialize_contacts()
-            return
-        if cls._solver is not None:
-            NewtonManager._contacts = Contacts(
-                rigid_contact_max=cls._solver.get_max_contact_count(),
-                soft_contact_max=0,
-                device=PhysicsManager._device,
-                requested_attributes=cls._model.get_requested_contact_attributes(),
-            )
 
     @classmethod
     def _log_solver_debug(cls) -> None:

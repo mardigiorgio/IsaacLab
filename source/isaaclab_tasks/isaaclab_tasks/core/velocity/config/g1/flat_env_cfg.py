@@ -3,10 +3,18 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-from isaaclab_newton.physics import MJWarpSolverCfg, NewtonCfg, NewtonCollisionPipelineCfg, NewtonShapeCfg
+from isaaclab_newton.physics import (
+    KaminoSolverCfg,
+    MJWarpSolverCfg,
+    NewtonCfg,
+    NewtonCollisionPipelineCfg,
+    NewtonShapeCfg,
+)
+from isaaclab_ovphysx.physics import OvPhysxCfg
 from isaaclab_physx.physics import PhysxCfg
 
 from isaaclab.managers import SceneEntityCfg
+from isaaclab.physics import PhysxAutoCfg
 from isaaclab.sim import SimulationCfg
 from isaaclab.utils.configclass import configclass
 
@@ -17,7 +25,9 @@ from .rough_env_cfg import G1RoughEnvCfg
 
 @configclass
 class PhysicsCfg(PresetCfg):
-    default = PhysxCfg(gpu_max_rigid_patch_count=10 * 2**15)
+    isaacsim_physx = PhysxCfg(gpu_max_rigid_patch_count=10 * 2**15)
+    ovphysx = OvPhysxCfg(gpu_max_rigid_patch_count=10 * 2**15)
+    physx = PhysxAutoCfg(isaacsim_physx=isaacsim_physx, ovphysx=ovphysx)
     newton_mjwarp = NewtonCfg(
         solver_cfg=MJWarpSolverCfg(
             # use_mujoco_contacts=False: contacts come from Newton's CollisionPipeline
@@ -26,7 +36,7 @@ class PhysicsCfg(PresetCfg):
             njmax=400,
             nconmax=200,
             cone="pyramidal",
-            impratio=1,
+            impratio=1.0,
             integrator="implicitfast",
             use_mujoco_contacts=False,
         ),
@@ -43,6 +53,8 @@ class PhysicsCfg(PresetCfg):
         simplify_meshes_exclude=[".*ankle_roll_link.*"],
         debug_mode=False,
     )
+    newton_kamino = NewtonCfg(solver_cfg=KaminoSolverCfg(max_contacts_per_world=64))
+    default = isaacsim_physx
 
 
 @configclass
@@ -50,19 +62,19 @@ class G1FlatEnvCfg(G1RoughEnvCfg):
     sim: SimulationCfg = SimulationCfg(physics=PhysicsCfg())
 
     def __post_init__(self):
-        # post init of parent
         super().__post_init__()
 
-        # change terrain to flat
+        # scene
         self.scene.terrain.terrain_type = "plane"
         self.scene.terrain.terrain_generator = None
-        # no height scan
         self.scene.height_scanner = None
+        # observations
         self.observations.policy.height_scan = None
-        # no terrain curriculum
-        self.curriculum.terrain_levels = None
-
-        # Rewards
+        # commands
+        self.commands.base_velocity.ranges.lin_vel_x = (0.0, 1.0)
+        self.commands.base_velocity.ranges.lin_vel_y = (-0.5, 0.5)
+        self.commands.base_velocity.ranges.ang_vel_z = (-1.0, 1.0)
+        # rewards
         self.rewards.track_ang_vel_z_exp.weight = 1.0
         self.rewards.lin_vel_z_l2.weight = -0.2
         self.rewards.action_rate_l2.weight = -0.005
@@ -73,22 +85,5 @@ class G1FlatEnvCfg(G1RoughEnvCfg):
         self.rewards.dof_torques_l2.params["asset_cfg"] = SceneEntityCfg(
             "robot", joint_names=[".*_hip_.*", ".*_knee_joint"]
         )
-        # Commands
-        self.commands.base_velocity.ranges.lin_vel_x = (0.0, 1.0)
-        self.commands.base_velocity.ranges.lin_vel_y = (-0.5, 0.5)
-        self.commands.base_velocity.ranges.ang_vel_z = (-1.0, 1.0)
-
-
-class G1FlatEnvCfg_PLAY(G1FlatEnvCfg):
-    def __post_init__(self) -> None:
-        # post init of parent
-        super().__post_init__()
-
-        # make a smaller scene for play
-        self.scene.num_envs = 50
-        self.scene.env_spacing = 2.5
-        # disable randomization for play
-        self.observations.policy.enable_corruption = False
-        # remove random pushing
-        self.events.base_external_force_torque = None
-        self.events.push_robot = None
+        # curriculum
+        self.curriculum.terrain_levels = None

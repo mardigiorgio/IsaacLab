@@ -24,6 +24,8 @@ app.asyncRendering = true
 app.asyncRenderingLowLatency = true
 
 # For XR, set this back to default "#define OMNI_MAX_DEVICE_GROUP_DEVICE_COUNT 16"
+renderer.multiGpu.enabled = true
+renderer.multiGpu.autoEnable = true
 renderer.multiGpu.maxGpuCount = 16
 renderer.gpuEnumeration.glInterop.enabled = true # Allow Kit XR OpenXR to render headless
 
@@ -39,17 +41,20 @@ xr.skipInputDeviceUSDWrites = true
 
 [dependencies]
 "isaaclab.python" = {}
+"omni.replicator.core" = {}
 
 # Required for XR instruction widget (CopyFabricPrim)
 "omni.fabric.commands" = {}
-# omni.kit.xr.bundle.generic is a meta-extension that is NOT shipped in the pip
-# isaacsim distribution, so Kit tried to fetch it from the Omniverse extension
-# registry and aborted when the registry was unreachable. Depend on the concrete
-# extensions instead — these are the same four that isaacsim's own working XR
-# experience (isaacsim/apps/isaacsim.exp.base.xr.vr.kit) lists, and all four are
-# present in isaacsim/extscache at 109.0.0.
+
+# XR extensions shipped on disk with Isaac Sim. Do not depend on
+# omni.kit.xr.bundle.generic: it is not shipped and resolves only from the Kit
+# SDK registry, so XR aborts wherever that registry is unreachable.
+# omni.kit.xr.ui.window.profile replaces omni.kit.xr.profile.ar (removed in Kit 110).
 "omni.kit.xr.core" = {}
 "omni.kit.xr.system.openxr" = {}
+# Simulated XR device backend (part of the same discrete set that
+# isaacsim.exp.base.xr.vr.kit declares); lets XR teleop sessions run without a
+# physical headset.
 "omni.kit.xr.system.simulatedxr" = {}
 "omni.kit.xr.ui.window.profile" = {}
 

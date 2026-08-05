@@ -11,6 +11,7 @@ from typing import ClassVar
 
 from isaaclab.sim.schemas.schemas_cfg import (
     ArticulationRootBaseCfg,
+    ArticulationRootFragment,
     CollisionBaseCfg,
     CollisionFragment,
     DeformableBodyPropertiesBaseCfg,
@@ -95,7 +96,7 @@ class PhysXDeformableBodyPropertiesCfg:
     r"""Distance below which self-collision is disabled [m].
 
     The default value of -inf indicates that the simulation selects a suitable value.
-    Constrained to range [:attr:`rest_offset` \* 2, inf].
+    Constrained to range [:attr:`~isaaclab.sim.schemas.CollisionBaseCfg.rest_offset` \* 2, inf].
     """
 
     enable_speculative_c_c_d: bool | None = None
@@ -132,47 +133,9 @@ class PhysXDeformableBodyPropertiesCfg:
 
 
 @configclass
-class PhysxDeformableCollisionPropertiesCfg:
-    """PhysX-specific collision properties for a deformable body.
-
-    These properties are set with the prefix ``physxCollision:<property_name>``.
-
-    See the PhysX documentation for more information on the available properties.
-
-    .. note::
-        This class is distinct from
-        :class:`~isaaclab_physx.sim.schemas.PhysxCollisionPropertiesCfg` (lowercase x),
-        which is the rigid-body collision cfg layered on
-        :class:`~isaaclab.sim.schemas.CollisionBaseCfg`. This class is used internally
-        as a base of :class:`DeformableBodyPropertiesCfg`.
-    """
-
-    _usd_namespace: ClassVar[str | None] = "physxCollision"
-    _usd_applied_schema: ClassVar[str | None] = "PhysxCollisionAPI"
-    _usd_field_exceptions: ClassVar[dict] = {}
-
-    contact_offset: float | None = None
-    """Contact offset for the collision shape [m].
-
-    The collision detector generates contact points as soon as two shapes get closer than the sum of their
-    contact offsets. This quantity should be non-negative which means that contact generation can potentially start
-    before the shapes actually penetrate.
-    """
-
-    rest_offset: float | None = None
-    """Rest offset for the collision shape [m].
-
-    The rest offset quantifies how close a shape gets to others at rest, At rest, the distance between two
-    vertically stacked objects is the sum of their rest offsets. If a pair of shapes have a positive rest
-    offset, the shapes will be separated at rest by an air gap.
-    """
-
-
-@configclass
 class PhysxDeformableBodyPropertiesCfg(
     OmniPhysicsDeformableBodyPropertiesCfg,
     PhysXDeformableBodyPropertiesCfg,
-    PhysxDeformableCollisionPropertiesCfg,
 ):
     """PhysX-specific properties to apply to a deformable body.
 
@@ -180,10 +143,12 @@ class PhysxDeformableBodyPropertiesCfg(
     The configuration allows users to specify the properties of the deformable body,
     such as the solver iteration counts, damping, and self-collision.
 
-    An FEM-based deformable body is created by providing a collision mesh and simulation mesh. The collision mesh
-    is used for collision detection and the simulation mesh is used for simulation.
+    An FEM-based deformable body is simulated on a simulation mesh, which also acts as its collider.
 
     See :meth:`modify_deformable_body_properties` for more information.
+
+    .. note::
+        Collision offsets belong on the mesh spawner's ``collision_props``, not here.
 
     .. note::
         If the values are :obj:`None`, they are not modified. This is useful when you want to set only a subset of
@@ -590,6 +555,51 @@ class PhysxArticulationRootPropertiesCfg(ArticulationRootBaseCfg):
 
     stabilization_threshold: float | None = None
     """The mass-normalized kinetic energy threshold below which an articulation may participate in stabilization."""
+
+
+@configclass
+class PhysxArticulationCfg(ArticulationRootFragment):
+    """``physxArticulation:*`` articulation-root attributes from `PhysxArticulationAPI`_.
+
+    A single-namespace fragment (see :class:`~isaaclab.sim.schemas.SchemaFragment`) for the PhysX
+    articulation add-on schema. Applied alongside other articulation-root fragments via
+    :func:`~isaaclab.sim.schemas.apply_articulation_root_properties`, which applies the
+    ``UsdPhysics.ArticulationRootAPI`` anchor (presence-gated). This fragment owns the
+    ``PhysxArticulationAPI`` applied schema.
+
+    .. _PhysxArticulationAPI: https://docs.omniverse.nvidia.com/kit/docs/omni_usd_schema_physics/104.2/class_physx_schema_physx_articulation_a_p_i.html
+    """
+
+    _usd_namespace: ClassVar[str | None] = "physxArticulation"
+    _usd_applied_schema: ClassVar[str | None] = "PhysxArticulationAPI"
+
+    articulation_enabled: bool | None = None
+    """Whether to enable or disable the articulation.
+
+    PhysX honors this per-articulation at sim time via ``physxArticulation:articulationEnabled``:
+    setting False makes PhysX skip the articulation in its solver passes.
+    """
+
+    enabled_self_collisions: bool | None = None
+    """Whether self-collisions between bodies in the same articulation are enabled.
+
+    Written to ``physxArticulation:enabledSelfCollisions``. The Newton-native counterpart is
+    :attr:`~isaaclab_newton.sim.schemas.NewtonArticulationCfg.self_collision_enabled`
+    (``newton:selfCollisionEnabled``).
+    """
+
+    solver_position_iteration_count: int | None = None
+    """Solver position iteration counts for the articulation."""
+
+    solver_velocity_iteration_count: int | None = None
+    """Solver velocity iteration counts for the articulation."""
+
+    sleep_threshold: float | None = None
+    """Mass-normalized kinetic energy threshold below which an actor may go to sleep [m²/s²]."""
+
+    stabilization_threshold: float | None = None
+    """Mass-normalized kinetic energy threshold below which an articulation may participate in
+    stabilization [m²/s²]."""
 
 
 @configclass

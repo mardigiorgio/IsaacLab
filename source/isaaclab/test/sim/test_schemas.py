@@ -24,11 +24,17 @@ from isaaclab_physx.sim.schemas import (
 )
 from isaaclab_physx.sim.schemas import (
     PhysxArticulationRootPropertiesCfg,
+    PhysxCollisionCfg,
     PhysxCollisionPropertiesCfg,
+    PhysxDeformableBodyPropertiesCfg,
     PhysxJointDrivePropertiesCfg,
     PhysxRigidBodyPropertiesCfg,
 )
-from isaaclab_physx.sim.spawners.materials import PhysxRigidBodyMaterialCfg, RigidBodyMaterialCfg
+from isaaclab_physx.sim.spawners.materials import (
+    PhysxRigidBodyMaterialCfg,
+    PhysxSurfaceDeformableBodyMaterialCfg,
+    RigidBodyMaterialCfg,
+)
 
 from pxr import UsdPhysics
 
@@ -38,6 +44,8 @@ from isaaclab.sim import SimulationCfg, SimulationContext
 from isaaclab.sim.spawners.materials import RigidBodyMaterialBaseCfg, spawn_rigid_body_material
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.utils.string import to_camel_case
+
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
@@ -384,6 +392,42 @@ def test_collision_base_cfg_no_physx_schema_when_only_usd_field_set(setup_simula
     assert "PhysxCollisionAPI" not in applied, (
         f"PhysxCollisionAPI should not be applied when only collision_enabled is set; got {list(applied)}"
     )
+
+
+@pytest.mark.isaacsim_ci
+def test_deformable_collision_props_land_on_simulation_mesh(setup_simulation):
+    """Regression: ``collision_props`` on a deformable spawner must author ``physxCollision:*``
+    on the simulation mesh, which is the prim carrying ``UsdPhysics.CollisionAPI``. Authoring
+    them on the deformable body prim leaves them inert."""
+    stage = sim_utils.get_current_stage()
+
+    cfg = sim_utils.MeshCuboidCfg(
+        size=(0.3, 0.04, 0.04),
+        deformable_props=PhysxDeformableBodyPropertiesCfg(),
+        collision_props=[PhysxCollisionCfg(contact_offset=0.005, rest_offset=0.0005)],
+        # selects the surface branch, which needs no tetrahedralization dependency
+        physics_material=PhysxSurfaceDeformableBodyMaterialCfg(),
+    )
+    cfg.func("/World/beam_dc", cfg)
+
+    sim_mesh_prim = stage.GetPrimAtPath("/World/beam_dc/sim_mesh")
+    assert "PhysxCollisionAPI" in sim_mesh_prim.GetAppliedSchemas()
+    assert sim_mesh_prim.GetAttribute("physxCollision:contactOffset").Get() == pytest.approx(0.005)
+    assert sim_mesh_prim.GetAttribute("physxCollision:restOffset").Get() == pytest.approx(0.0005)
+    body_prim = stage.GetPrimAtPath("/World/beam_dc")
+    assert not body_prim.GetAttribute("physxCollision:restOffset").HasAuthoredValue()
+
+
+@pytest.mark.isaacsim_ci
+def test_deformable_collision_props_reject_legacy_cfg(setup_simulation):
+    """Legacy collision cfgs cannot resolve onto the simulation mesh, so they must be rejected."""
+    cfg = sim_utils.MeshCuboidCfg(
+        size=(0.1, 0.1, 0.1),
+        deformable_props=PhysxDeformableBodyPropertiesCfg(),
+        collision_props=PhysxCollisionPropertiesCfg(rest_offset=0.0005),
+    )
+    with pytest.raises(ValueError, match="collision fragments"):
+        cfg.func("/World/beam_legacy", cfg)
 
 
 @pytest.mark.isaacsim_ci
@@ -754,7 +798,11 @@ def test_modify_properties_on_articulation_usd(setup_simulation):
 
 @pytest.mark.isaacsim_ci
 def test_fix_root_link_authors_fixed_joint_without_omni_physx(setup_simulation, monkeypatch):
-    """A world fixed joint is authored with pure USD when ``omni.physx`` is unavailable (kitless launches)."""
+    """The fixed-root-link path authors the world joint with pure USD and never needs ``omni.physx``.
+
+    Blocking the ``omni.physx.scripts`` import guards against a regression to the old
+    Kit-only joint authoring, which broke kitless backends (e.g. Newton headless launches).
+    """
     import sys
 
     from pxr import Gf, Sdf
@@ -766,7 +814,7 @@ def test_fix_root_link_authors_fixed_joint_without_omni_physx(setup_simulation, 
     UsdPhysics.RigidBodyAPI.Apply(root_prim)
     UsdPhysics.ArticulationRootAPI.Apply(root_prim)
 
-    # simulate a kitless launch: importing omni.physx raises ModuleNotFoundError
+    # simulate a kitless launch: importing omni.physx raises ImportError
     monkeypatch.setitem(sys.modules, "omni.physx.scripts", None)
 
     arti_cfg.fix_root_link = True
@@ -774,11 +822,64 @@ def test_fix_root_link_authors_fixed_joint_without_omni_physx(setup_simulation, 
 
     stage = root_prim.GetStage()
     joint = UsdPhysics.FixedJoint(stage.GetPrimAtPath("/World/asset_kitless/root/FixedJoint"))
-    assert joint, "pure-USD fallback did not author the FixedJoint prim"
+    assert joint, "pure-USD authoring did not create the FixedJoint prim"
     assert joint.GetBody1Rel().GetTargets() == [Sdf.Path("/World/asset_kitless/root")]
     # the joint anchors the root link at its current world pose
     assert joint.GetLocalPos0Attr().Get() == Gf.Vec3f(1.0, 2.0, 0.5)
     assert joint.GetLocalRot1Attr().Get() == Gf.Quatf(1.0)
+
+
+@pytest.mark.isaacsim_ci
+def test_activate_contact_sensors_nested_rigid_bodies(setup_simulation):
+    """Test contact-report schemas are applied to nested rigid-body trees."""
+    stage = sim_utils.get_current_stage()
+
+    rigid_body_paths = [
+        "/World/Robot/Geometry/pelvis",
+        "/World/Robot/Geometry/pelvis/left_hip",
+        "/World/Robot/Geometry/pelvis/left_hip/left_knee",
+    ]
+    sim_utils.create_prim("/World/Robot", prim_type="Xform")
+    sim_utils.create_prim("/World/Robot/Geometry", prim_type="Xform")
+    for prim_path in rigid_body_paths:
+        sim_utils.create_prim(prim_path, prim_type="Xform")
+        UsdPhysics.RigidBodyAPI.Apply(stage.GetPrimAtPath(prim_path))
+
+    schemas.activate_contact_sensors("/World/Robot", threshold=2.5)
+
+    for prim_path in rigid_body_paths:
+        prim = stage.GetPrimAtPath(prim_path)
+        applied_schemas = prim.GetAppliedSchemas()
+        assert "PhysxRigidBodyAPI" in applied_schemas
+        assert "PhysxContactReportAPI" in applied_schemas
+        assert prim.GetAttribute("physxRigidBody:sleepThreshold").Get() == pytest.approx(0.0)
+        assert prim.GetAttribute("physxContactReport:threshold").Get() == pytest.approx(2.5)
+
+
+@pytest.mark.isaacsim_ci
+def test_modify_rigid_body_and_mass_properties_nested_rigid_bodies(setup_simulation):
+    """Test rigid-body and mass properties are applied to nested rigid-body trees."""
+    stage = sim_utils.get_current_stage()
+
+    rigid_body_paths = [
+        "/World/Robot/Geometry/pelvis",
+        "/World/Robot/Geometry/pelvis/left_hip",
+        "/World/Robot/Geometry/pelvis/left_hip/left_knee",
+    ]
+    sim_utils.create_prim("/World/Robot", prim_type="Xform")
+    sim_utils.create_prim("/World/Robot/Geometry", prim_type="Xform")
+    for prim_path in rigid_body_paths:
+        sim_utils.create_prim(prim_path, prim_type="Xform")
+        UsdPhysics.RigidBodyAPI.Apply(stage.GetPrimAtPath(prim_path))
+        UsdPhysics.MassAPI.Apply(stage.GetPrimAtPath(prim_path))
+
+    schemas.modify_rigid_body_properties("/World/Robot", schemas.RigidBodyPropertiesCfg(disable_gravity=True))
+    schemas.modify_mass_properties("/World/Robot", schemas.MassPropertiesCfg(mass=2.5))
+
+    for prim_path in rigid_body_paths:
+        prim = stage.GetPrimAtPath(prim_path)
+        assert prim.GetAttribute("physxRigidBody:disableGravity").Get() is True, f"Failed for {prim_path}"
+        assert prim.GetAttribute("physics:mass").Get() == pytest.approx(2.5), f"Failed for {prim_path}"
 
 
 @pytest.mark.isaacsim_ci

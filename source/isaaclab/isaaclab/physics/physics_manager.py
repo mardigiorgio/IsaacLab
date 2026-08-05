@@ -14,6 +14,9 @@ from collections.abc import Callable
 from enum import Enum
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from isaaclab.sim.utils.stage import get_current_stage
+from isaaclab.utils._device import set_cuda_device
+
 if TYPE_CHECKING:
     from isaaclab.scene_data import SceneDataBackend
     from isaaclab.sim.simulation_context import SimulationContext
@@ -85,6 +88,11 @@ class PhysicsManager(ABC):
     _callback_id: ClassVar[int] = 0
 
     @classmethod
+    def _prepare_stage_creation(cls) -> None:
+        """Perform backend-specific setup required before the USD stage is created."""
+        pass
+
+    @classmethod
     def provides_implicit_damping(cls) -> bool:
         """Whether this backend's integrator has implicit numerical damping.
 
@@ -98,6 +106,101 @@ class PhysicsManager(ABC):
             Whether the backend's integrator has implicit numerical damping.
         """
         return True
+
+    @classmethod
+    def fix_articulation_root(cls, articulation_prim: Any, stage: Any = None) -> Any:
+        """Ensure that an articulation root has one enabled world fixed joint.
+
+        The base implementation leaves the root in place. Backends whose parser requires a different
+        root topology may relocate it and return the resulting root prim.
+
+        Args:
+            articulation_prim: The articulation-root prim to fix.
+            stage: The stage containing the prim. Defaults to the current stage.
+
+        Returns:
+            The articulation-root prim after backend normalization.
+
+        Raises:
+            NotImplementedError: If a new joint is needed and the root is not a rigid body.
+        """
+        # Keep these imports local. Hoisting the isaaclab.sim ones closes a real import cycle:
+        # isaaclab.physics -> sim.schemas.schemas -> sim.utils.prims -> sim.utils.queries ->
+        # sim.simulation_context -> isaaclab.physics (partially initialized). Keeping pxr local
+        # also keeps USD out of the config-definition path, which env configs import through
+        # managers.manager_base before the simulation app starts.
+        from pxr import UsdPhysics  # noqa: PLC0415
+
+        from isaaclab.sim.schemas.schemas import create_world_fixed_joint  # noqa: PLC0415
+        from isaaclab.sim.utils import find_global_fixed_joint_prim  # noqa: PLC0415
+
+        if stage is None:
+            stage = get_current_stage()
+        root_path = articulation_prim.GetPath().pathString
+        joint = find_global_fixed_joint_prim(root_path, stage=stage)
+        if joint is not None:
+            joint.GetJointEnabledAttr().Set(True)
+            return articulation_prim
+        if not articulation_prim.HasAPI(UsdPhysics.RigidBodyAPI):
+            raise NotImplementedError(f"Cannot fix non-rigid articulation root '{root_path}'.")
+
+        create_world_fixed_joint(articulation_prim, stage)
+        return articulation_prim
+
+    @staticmethod
+    def _relocate_articulation_root(
+        articulation_prim: Any,
+        companion_schema: str,
+        companion_namespace: str,
+    ) -> Any:
+        """Move root-bearing schemas and authored properties to the root link's parent."""
+        # Keep pxr local: this module is imported while environment configs load (via the manager
+        # classes), and config loading must not pull USD/omni modules before the simulation app
+        # starts.
+        from pxr import Usd, UsdPhysics  # noqa: PLC0415
+
+        new_root = articulation_prim.GetParent()
+        if new_root.HasAPI(UsdPhysics.ArticulationRootAPI):
+            raise RuntimeError(
+                f"Cannot relocate '{articulation_prim.GetPath()}' to existing articulation root '{new_root.GetPath()}'."
+            )
+
+        registry = Usd.SchemaRegistry()
+        root_schema = UsdPhysics.Tokens.PhysicsArticulationRootAPI
+        schemas_to_move = []
+        for schema_name in articulation_prim.GetPrimTypeInfo().GetAppliedAPISchemas():
+            definition = registry.FindAppliedAPIPrimDefinition(schema_name)
+            if schema_name == companion_schema:
+                properties = list(articulation_prim.GetAuthoredPropertiesInNamespace(companion_namespace))
+            elif schema_name == root_schema or (
+                definition is not None and root_schema in definition.GetAppliedAPISchemas()
+            ):
+                properties = []
+                if definition is not None:
+                    for property_name in definition.GetPropertyNames():
+                        prop = articulation_prim.GetProperty(property_name)
+                        if prop and prop.IsAuthored():
+                            properties.append(prop)
+            else:
+                continue
+            schemas_to_move.append((schema_name, properties))
+
+        for schema_name, properties in schemas_to_move:
+            if not new_root.AddAppliedSchema(schema_name):
+                raise RuntimeError(f"Failed to apply '{schema_name}' to '{new_root.GetPath()}'.")
+            for prop in properties:
+                if not prop.FlattenTo(new_root):
+                    raise RuntimeError(f"Failed to move '{prop.GetPath()}' to '{new_root.GetPath()}'.")
+        for schema_name, _ in schemas_to_move:
+            if not articulation_prim.RemoveAppliedSchema(schema_name):
+                raise RuntimeError(f"Failed to remove '{schema_name}' from '{articulation_prim.GetPath()}'.")
+        if articulation_prim.HasAPI(UsdPhysics.ArticulationRootAPI) or not new_root.HasAPI(
+            UsdPhysics.ArticulationRootAPI
+        ):
+            raise RuntimeError(
+                f"Failed to relocate articulation root '{articulation_prim.GetPath()}' to '{new_root.GetPath()}'."
+            )
+        return new_root
 
     @classmethod
     def register_callback(
@@ -271,6 +374,12 @@ class PhysicsManager(ABC):
         PhysicsManager._device = sim_context.cfg.device
         PhysicsManager._sim_time = 0.0
 
+        # Synchronize the process-wide CUDA device before backend-specific
+        # initialization allocates state. PyTorch must select the device before
+        # Warp so that both runtimes retain the same primary CUDA context.
+        if "cuda" in PhysicsManager._device:
+            set_cuda_device(PhysicsManager._device)
+
     @classmethod
     @abstractmethod
     def reset(cls, soft: bool = False) -> None:
@@ -314,11 +423,24 @@ class PhysicsManager(ABC):
     def after_visualizers_render(cls) -> None:
         """Hook after visualizers have stepped during :meth:`~isaaclab.sim.SimulationContext.render`.
 
-        Use for physics-backend sync (e.g. fabric) if needed. Recording pipelines (Kit/RTX,
-        Newton GL video, etc.) run from :mod:`isaaclab.envs.utils.recording_hooks` so they are not
-        tied to a specific physics manager. Default is a no-op.
+        Use for physics-backend sync (e.g. fabric) if needed. Default is a no-op.
         """
         pass
+
+    @classmethod
+    def video_capture_backend(cls) -> str | None:
+        """Return the video capture backend identifier for this physics manager.
+
+        Used by :class:`~isaaclab.envs.utils.video_recorder.VideoRecorder` to select
+        how perspective video frames are captured when no visualizer is active.
+
+        Returns:
+            ``"kit"`` for backends that use Kit/Replicator (e.g. :class:`~isaaclab_physx.physics.PhysxManager`),
+            ``"newton_gl"`` for backends that use a headless Newton GL viewer
+            (e.g. :class:`~isaaclab_newton.physics.NewtonManager`),
+            or ``None`` if the backend does not support perspective video capture.
+        """
+        return None
 
     @classmethod
     def close(cls) -> None:
@@ -327,7 +449,13 @@ class PhysicsManager(ABC):
         Subclasses should call super().close() after backend-specific cleanup.
         """
         sim = PhysicsManager._sim
-        is_active_manager = sim is not None and sim.physics_manager is cls
+        # A config may declare its manager lazily as a ``"module:Class"`` string, which proxies
+        # attribute access but is a ``str``, so compare against that form as well as the class.
+        # The string must name the class's defining module; a config that pointed at a re-export
+        # path would not match here.
+        is_active_manager = sim is not None and (
+            sim.physics_manager is cls or sim.physics_manager == f"{cls.__module__}:{cls.__qualname__}"
+        )
         if is_active_manager:
             cls.dispatch_event(PhysicsEvent.STOP)  # notify listeners before cleanup
 
