@@ -42,6 +42,10 @@ from isaaclab_tasks.contrib.locomanip_pick_place.fixed_base_upper_body_ik_g1_env
 from isaaclab_assets.props.lab_table import lab_table_cfgs
 from isaaclab_assets.robots.unitree import G1_29DOF_CFG
 
+# Lightweight marker so the env test suite categorizes this as a teleop env
+# (see ``isaaclab_tasks/test/env_test_utils.py::_is_teleop_env``).
+_TELEOP_AVAILABLE = True
+
 from . import mdp
 from .g1_spatula_lift_env_cfg import (
     DEFAULT_ARM_JOINT_POS,
