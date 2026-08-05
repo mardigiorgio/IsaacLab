@@ -1170,7 +1170,8 @@ class NewtonManager(PhysicsManager):
         # ``bvh_constructor_*`` preferences only apply when the API exists.
         if not hasattr(ModelBuilder, "BvhConfig"):
             if isinstance(cfg, NewtonCfg) and any(
-                v is not None for v in (cfg.bvh_constructor_geometry, cfg.bvh_constructor_gaussian, cfg.bvh_constructor_scene)
+                v is not None
+                for v in (cfg.bvh_constructor_geometry, cfg.bvh_constructor_gaussian, cfg.bvh_constructor_scene)
             ):
                 logger.warning(
                     "NewtonCfg.bvh_constructor_* is set but this Newton build predates ModelBuilder.BvhConfig;"
