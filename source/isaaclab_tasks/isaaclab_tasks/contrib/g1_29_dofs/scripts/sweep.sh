@@ -22,7 +22,7 @@
 set -uo pipefail
 
 CODE_DIR=${CODE_DIR:-$HOME/Documents/code}
-RUBATO_DIR=${RUBATO_DIR:-$CODE_DIR/isaac-rubato}
+RUBATO_DIR=${RUBATO_DIR:-$CODE_DIR/IsaacLabRubato}
 ISAACLAB_DIR=${ISAACLAB_DIR:-$CODE_DIR/IsaacLab}
 NEWTON_DIR=${NEWTON_DIR:-$CODE_DIR/newton-adaptive}
 
