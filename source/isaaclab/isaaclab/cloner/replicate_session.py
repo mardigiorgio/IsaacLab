@@ -64,6 +64,10 @@ def replicate(plan: ClonePlan, *, stage: Usd.Stage, replicate_physics: bool = Tr
         stage: USD stage to author replicated prim specs into.
         replicate_physics: Whether physics replication clones each environment. If False,
             cloning is USD-only; an asset whose contexts are all physics-based is not cloned.
+            Contexts that declare ``builds_physics_model = True`` (e.g. Newton's, which
+            authors the physics model itself instead of letting the engine parse it from
+            the replicated USD stage) are kept even then — dropping them would leave the
+            backend with no physics model at all.
     """
     from isaaclab.sim import SimulationContext  # noqa: PLC0415
 
@@ -89,7 +93,7 @@ def replicate(plan: ClonePlan, *, stage: Usd.Stage, replicate_physics: bool = Tr
         else:
             contexts = [string_to_callable(c) if isinstance(c, str) else c for c in cfg.cloning_contexts]
         if not replicate_physics:
-            contexts = [c for c in contexts if c is UsdReplicateContext]
+            contexts = [c for c in contexts if c is UsdReplicateContext or getattr(c, "builds_physics_model", False)]
         ctx_set = dict.fromkeys(contexts)
         if getattr(cfg, "spawn", None) is not None and kit_available:
             ctx_set.setdefault(UsdReplicateContext, None)

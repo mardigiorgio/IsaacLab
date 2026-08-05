@@ -165,6 +165,18 @@ def _renderer_wants_visual_shapes() -> bool:
 class NewtonReplicateContext:
     """Queue and run Newton replication work for one stage."""
 
+    builds_physics_model = True
+    """This context authors the Newton model builder itself; it is the only step that gives
+    the Newton backend a physics model in the :class:`~isaaclab.scene.InteractiveScene` flow.
+
+    :func:`isaaclab.cloner.replicate_session.replicate` therefore keeps this context active
+    even under ``replicate_physics=False``: PhysX parses physics straight from the replicated
+    USD stage so its context can be dropped, but skipping Newton replication would leave
+    ``NewtonManager`` with no builder, and the stage-parse fallback in
+    :meth:`~isaaclab_newton.physics.NewtonManager.instantiate_builder_from_stage` does not
+    understand the ``/World/envs/env_<id>`` scene layout (all bodies land in the global
+    world, which the MuJoCo-Warp solvers reject)."""
+
     def __init__(
         self,
         stage: Usd.Stage,

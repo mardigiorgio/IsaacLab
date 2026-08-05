@@ -461,6 +461,52 @@ def test_replicate_physics_false_keeps_usd_only(sim):
     assert stage.GetPrimAtPath("/World/envs/env_1/Robot").IsValid()
 
 
+def test_replicate_physics_false_keeps_model_building_context(sim):
+    """replicate(replicate_physics=False) keeps a context that declares builds_physics_model.
+
+    Backends like Newton author the physics model inside the replicate context instead of
+    parsing it from the replicated USD stage; dropping such a context would leave the
+    backend with no physics model at all (regression: the Newton stack-cube mimic pipeline
+    failed with all bodies in the global world once ``replicate_physics=False`` started
+    dropping physics contexts).
+    """
+
+    class FakeModelBuildingCtx:
+        replicate_priority = 0
+        builds_physics_model = True
+        instances: list["FakeModelBuildingCtx"] = []
+        replicated: list["FakeModelBuildingCtx"] = []
+
+        def __init__(self, stage):
+            FakeModelBuildingCtx.instances.append(self)
+
+        def queue_mapping(self, sources, destinations, env_ids, mask, *, positions=None):
+            pass
+
+        def replicate(self):
+            FakeModelBuildingCtx.replicated.append(self)
+
+    stage = sim_utils.get_current_stage()
+    stage.DefinePrim("/World/envs/env_0/Robot", "Xform")
+    cfg = SimpleNamespace(
+        prim_path="/World/envs/env_.*/Robot", cloning_contexts=(UsdReplicateContext, FakeModelBuildingCtx)
+    )
+    REPLICATION_QUEUE.append(cfg)
+
+    plan = ClonePlan(
+        sources=("/World/envs/env_0/Robot",),
+        destinations=("/World/envs/env_{}/Robot",),
+        clone_mask=torch.ones((1, 2), dtype=torch.bool, device=sim.cfg.device),
+        env_ids=torch.arange(2, dtype=torch.long, device=sim.cfg.device),
+        positions=grid_transforms(2, 1.0, device=sim.cfg.device)[0],
+        cfg_rows={id(cfg): (0,)},
+    )
+    replicate(plan, stage=stage, replicate_physics=False)
+
+    assert len(FakeModelBuildingCtx.instances) == 1
+    assert len(FakeModelBuildingCtx.replicated) == 1
+
+
 def test_replicate_drains_queue_dispatches_and_publishes(sim):
     """replicate(plan) drains REPLICATION_QUEUE, calls each backend once, publishes, clears."""
 
