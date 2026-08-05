@@ -45,7 +45,7 @@ _STABLE_TASKS_WITH_WARP_COVERAGE = [
     "Isaac-Reach-UR10",
     "Isaac-Velocity-Flat-AnymalD",
     "Isaac-Velocity-Flat-Cassie",
-    "Isaac-Velocity-Flat-G1",
+    "Isaac-Velocity-Flat-G1-v0",
     "Isaac-Velocity-Flat-H1",
     "Isaac-Velocity-Flat-UnitreeGo2",
 ]

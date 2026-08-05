@@ -731,8 +731,8 @@ Environments based on legged locomotion tasks.
 .. |velocity-flat-h1-link| replace:: :isaaclab-source:`Isaac-Velocity-Flat-H1 <source/isaaclab_tasks/isaaclab_tasks/core/velocity/config/h1/flat_env_cfg.py>`
 .. |velocity-rough-h1-link| replace:: :isaaclab-source:`Isaac-Velocity-Rough-H1 <source/isaaclab_tasks/isaaclab_tasks/core/velocity/config/h1/rough_env_cfg.py>`
 
-.. |velocity-flat-g1-link| replace:: :isaaclab-source:`Isaac-Velocity-Flat-G1 <source/isaaclab_tasks/isaaclab_tasks/core/velocity/config/g1/flat_env_cfg.py>`
-.. |velocity-rough-g1-link| replace:: :isaaclab-source:`Isaac-Velocity-Rough-G1 <source/isaaclab_tasks/isaaclab_tasks/core/velocity/config/g1/rough_env_cfg.py>`
+.. |velocity-flat-g1-link| replace:: :isaaclab-source:`Isaac-Velocity-Flat-G1-v0 <source/isaaclab_tasks/isaaclab_tasks/core/velocity/config/g1/flat_env_cfg.py>`
+.. |velocity-rough-g1-link| replace:: :isaaclab-source:`Isaac-Velocity-Rough-G1-v0 <source/isaaclab_tasks/isaaclab_tasks/core/velocity/config/g1/rough_env_cfg.py>`
 
 .. |dr-legs-hold-pose-link| replace:: :isaaclab-source:`IsaacContrib-DrLegs-HoldPose <source/isaaclab_tasks/isaaclab_tasks/contrib/dr_legs/hold_pose_env_cfg.py>`
 .. |dr-legs-walk-link| replace:: :isaaclab-source:`IsaacContrib-DrLegs-Walk <source/isaaclab_tasks/isaaclab_tasks/contrib/dr_legs/walk_env_cfg.py>`
@@ -1203,7 +1203,7 @@ including disabling runtime perturbations used for training.
       - Manager Based
       - **rsl_rl** (PPO), **skrl** (PPO)
       - **physics=** ``isaacsim_physx``, ``newton_kamino``, ``newton_mjwarp``, ``ovphysx``
-    * - Isaac-Velocity-Flat-G1
+    * - Isaac-Velocity-Flat-G1-v0
       - Manager Based
       - **rsl_rl** (PPO), **skrl** (PPO)
       - **physics=** ``isaacsim_physx``, ``newton_kamino``, ``newton_mjwarp``, ``ovphysx``
@@ -1223,7 +1223,7 @@ including disabling runtime perturbations used for training.
       - Manager Based
       - **rsl_rl** (PPO), **skrl** (PPO)
       - **physics=** ``isaacsim_physx``, ``newton_mjwarp``, ``ovphysx``
-    * - Isaac-Velocity-Rough-G1
+    * - Isaac-Velocity-Rough-G1-v0
       - Manager Based
       - **rsl_rl** (PPO), **skrl** (PPO)
       - **physics=** ``isaacsim_physx``, ``newton_mjwarp``, ``ovphysx``

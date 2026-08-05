@@ -156,6 +156,6 @@ TEST_RL_ENVS = [
     # locomotion
     "Isaac-Velocity-Flat-UnitreeGo2",
     "Isaac-Velocity-Rough-AnymalD",
-    "Isaac-Velocity-Rough-G1",
+    "Isaac-Velocity-Rough-G1-v0",
 ]
 """A list of RL environments to test training on by run_train_envs.py"""

@@ -65,7 +65,7 @@ MDP term for its warp twin). Select the Newton solver explicitly with
 - ``Isaac-Reach-UR10``
 - ``Isaac-Velocity-Flat-AnymalD``
 - ``Isaac-Velocity-Flat-Cassie``
-- ``Isaac-Velocity-Flat-G1``
+- ``Isaac-Velocity-Flat-G1-v0``
 - ``Isaac-Velocity-Flat-H1``
 - ``Isaac-Velocity-Flat-UnitreeGo2``
 
@@ -179,7 +179,7 @@ both running on the Newton physics backend. Measured over 300 iterations with 40
      - 17,320
      - 10,706
      - -38.19%
-   * - Isaac-Velocity-Flat-G1
+   * - Isaac-Velocity-Flat-G1-v0
      - Manager
      - 34,487
      - 27,300

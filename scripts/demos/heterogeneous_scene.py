@@ -82,7 +82,7 @@ DEFAULT_TASKS = (
     "Isaac-Velocity-Flat-UnitreeGo2",
     "Isaac-Velocity-Flat-Cassie",
     "IsaacContrib-Velocity-Flat-Digit",
-    "Isaac-Velocity-Flat-G1",
+    "Isaac-Velocity-Flat-G1-v0",
     "Isaac-Velocity-Flat-H1",
     "IsaacContrib-Navigation-Flat-AnymalC",
     # arm and hand manipulation

@@ -176,7 +176,7 @@ available.
 * ``IsaacContrib-Velocity-Rough-UnitreeGo1``
 * ``Isaac-Velocity-Rough-UnitreeGo2``
 * ``Isaac-Velocity-Rough-Cassie``
-* ``Isaac-Velocity-Rough-G1``
+* ``Isaac-Velocity-Rough-G1-v0``
 * ``Isaac-Velocity-Rough-H1``
 
 Status and follow-up
