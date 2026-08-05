@@ -94,7 +94,6 @@ def physx_annotated_dataset(source_dataset) -> str:
             "--output_file",
             annotated,
             "--auto",
-            "--headless",
         ],
         timeout=_SUBPROCESS_TIMEOUT,
     )
@@ -156,7 +155,6 @@ def test_generate_on_newton(physx_annotated_dataset, solver):
             "newton_mjwarp",
             "--solver",
             solver,
-            "--headless",
         ],
         timeout=_GENERATION_SUBPROCESS_TIMEOUT,
     )
@@ -215,7 +213,6 @@ def test_annotate_and_generate_on_newton(source_dataset, solver):
             "newton_mjwarp",
             "--solver",
             solver,
-            "--headless",
         ],
         timeout=_SUBPROCESS_TIMEOUT,
     )
@@ -257,7 +254,6 @@ def test_annotate_and_generate_on_newton(source_dataset, solver):
             "newton_mjwarp",
             "--solver",
             solver,
-            "--headless",
         ],
         timeout=_SUBPROCESS_TIMEOUT,
     )
