@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import inspect
 import re
 import warnings
 from collections.abc import Callable, Sequence
@@ -374,7 +375,14 @@ def replicate_builder_mapping(
         stride = source_builder.shape_count
         source_xform_inv = _invert_xform(xforms_np[0])
         xforms = _compose_world_xforms(positions_np, quaternions_np, source_xform_inv)
-        builder.replicate(source_builder, num_worlds, xforms=xforms)
+        # Newton builds without the ``xforms`` kwarg on ``replicate()`` (older than
+        # the pinned commit) add one world at a time instead; ``add_world`` applies
+        # the same per-copy transform that upstream's batched replicate would.
+        if "xforms" in inspect.signature(builder.replicate).parameters:
+            builder.replicate(source_builder, num_worlds, xforms=xforms)
+        else:
+            for row in xforms.tolist():
+                builder.add_world(source_builder, xform=wp.transform(*row))
 
         for label, local_indices in site_local_indices.items():
             local_site_map[label] = [
