@@ -49,13 +49,13 @@ def _settled_env(physics_preset_name, num_envs=2, steps=30):
         env.close()
 
 
-@pytest.mark.parametrize("physics_preset_name", [None, "newton_mjwarp"], ids=["physx", "newton_mjwarp"])
+@pytest.mark.parametrize("physics_preset_name", [None, "newton_mjwarp"], ids=["default", "newton_mjwarp"])
 def test_random_actions_smoke(physics_preset_name):
     """Env creates and survives 20 random-action steps with valid signals on both backends."""
     _run_environments(TASK, "cuda", 2, num_steps=20, physics_preset_name=physics_preset_name)
 
 
-@pytest.mark.parametrize("physics_preset_name", [None, "newton_mjwarp"], ids=["physx", "newton_mjwarp"])
+@pytest.mark.parametrize("physics_preset_name", [None, "newton_mjwarp"], ids=["default", "newton_mjwarp"])
 def test_init_pose_is_stable(physics_preset_name):
     """The init pose settles without exploding: joints stay finite and within limits."""
     with _settled_env(physics_preset_name) as env:
@@ -67,7 +67,7 @@ def test_init_pose_is_stable(physics_preset_name):
         assert torch.all(joint_pos < limits[..., 1] + 0.1), "joint positions above upper limits"
 
 
-@pytest.mark.parametrize("physics_preset_name", [None, "newton_mjwarp"], ids=["physx", "newton_mjwarp"])
+@pytest.mark.parametrize("physics_preset_name", [None, "newton_mjwarp"], ids=["default", "newton_mjwarp"])
 def test_spatula_settles_on_tabletop(physics_preset_name):
     """The spatula rests on the table near its deterministic spawn, not inside or below it."""
     from isaaclab_tasks.contrib.g1_spatula_lift.g1_spatula_lift_env_cfg import LAB_TABLE_HEIGHT, SPATULA_SPAWN_POS
@@ -86,7 +86,7 @@ def test_spatula_settles_on_tabletop(physics_preset_name):
         assert torch.all(xy_drift < 0.08), f"spatula drifted in xy: {xy_drift.tolist()}"
 
 
-@pytest.mark.parametrize("physics_preset_name", [None, "newton_mjwarp"], ids=["physx", "newton_mjwarp"])
+@pytest.mark.parametrize("physics_preset_name", [None, "newton_mjwarp"], ids=["default", "newton_mjwarp"])
 def test_reach_obs_and_rewards_use_right_hand_bodies(physics_preset_name):
     """SceneEntityCfgs resolve: 3-dim palm obs and the right palm.
 

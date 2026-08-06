@@ -16,7 +16,6 @@ import os
 
 from isaaclab_newton.physics import MJWarpSolverCfg, NewtonCfg, NewtonCollisionPipelineCfg, NewtonShapeCfg
 from isaaclab_newton.sensors import ContactSensorCfg as NewtonContactSensorCfg
-from isaaclab_physx.physics import PhysxCfg
 
 import isaaclab.sim as sim_utils
 from isaaclab.actuators import ImplicitActuatorCfg
@@ -791,13 +790,11 @@ class CurriculumCfg:
 class PhysicsCfg(PresetCfg):
     """Physics backend presets."""
 
-    default = PhysxCfg(
-        bounce_threshold_velocity=0.01,
-        gpu_found_lost_aggregate_pairs_capacity=1024 * 1024 * 4,
-        gpu_total_aggregate_pairs_capacity=2**21,
-        friction_correlation_distance=0.00625,
-    )
-    newton_mjwarp = NewtonCfg(
+    # Newton IS the default: the task's contact recipe (shape-filtered
+    # force_matrix_w through every mdp consumer, raw spatula triangle
+    # colliders on a dynamic body) cannot be expressed under PhysX, so a
+    # PhysX preset can only ever fail at env construction.
+    default = NewtonCfg(
         solver_cfg=MJWarpSolverCfg(
             solver="newton",
             integrator="implicitfast",
@@ -837,7 +834,7 @@ class PhysicsCfg(PresetCfg):
         num_substeps=1,
         debug_mode=False,
     )
-    physx = default
+    newton_mjwarp = default
 
 
 ##
