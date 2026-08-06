@@ -11,9 +11,10 @@ fidelity (cube-table penetration). Emits one markdown table — the
 fidelity-vs-throughput tradeoff the adaptive solvers exist to win.
 
 The full fidelity table requires source demos that succeed under the target backend.
-As of this branch, cross-backend (PhysX-recorded) sources yield zero accepted demos
-on Newton; the harness's full run awaits Newton-native recorded demos (see
-scripts/tools/record_demos.py --record_subtask_signals).
+With the stack tasks' stabilized Newton contact preset, cross-backend (PhysX-annotated)
+sources accept demos on --solver mujoco at roughly a 15-20% rate (PhysX ~50%); rates on
+the remaining solver modes are unverified. Newton-native recorded demos (see
+scripts/tools/record_demos.py --record_subtask_signals) remain the path to parity.
 
 Run (from the repo root; needs a GPU and an annotated source dataset):
     ./isaaclab.sh -p scripts/imitation_learning/isaaclab_mimic/benchmark_datagen_fidelity.py \\
@@ -60,7 +61,6 @@ def run_generation(solver: str, out_file: str, args) -> tuple[float, int, int]:
         args.physics_preset,
         "--solver",
         solver,
-        "--headless",
     ]
     t0 = time.perf_counter()
     proc = subprocess.run(cmd, capture_output=True, text=True)
