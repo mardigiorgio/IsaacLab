@@ -6,6 +6,8 @@
 from dataclasses import MISSING
 
 from isaaclab_newton.physics import MJWarpSolverCfg, NewtonCfg, NewtonCollisionPipelineCfg, NewtonShapeCfg
+from isaaclab_newton.sim.schemas import MujocoCollisionCfg
+from isaaclab_newton.sim.spawners.materials import NewtonMaterialCfg
 from isaaclab_physx.physics import PhysxCfg
 
 import isaaclab.sim as sim_utils
@@ -23,6 +25,7 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors.frame_transformer.frame_transformer_cfg import FrameTransformerCfg, OffsetCfg
 from isaaclab.sim.schemas.schemas_cfg import RigidBodyPropertiesCfg
 from isaaclab.sim.spawners.from_files.from_files_cfg import GroundPlaneCfg, UsdFileCfg
+from isaaclab.sim.spawners.materials.physics_materials_cfg import UsdPhysicsRigidBodyMaterialCfg
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.utils.configclass import configclass
 
@@ -40,6 +43,33 @@ _CUBE_PROPERTIES = RigidBodyPropertiesCfg(
     max_depenetration_velocity=5.0,
     disable_gravity=False,
 )
+
+
+def _cube_collision_props() -> MujocoCollisionCfg:
+    """Per-cube collider fragment (fresh instance per cube to avoid config aliasing).
+
+    ``mjc:condim=6`` gives finger-cube (and cube-cube) contacts torsional and rolling
+    friction rows on the Newton MuJoCo backends. With the default ``condim=3`` a pinched
+    cube spins freely about the fingertip contacts (measured ~40-200 deg/s inside a firm
+    ~45 N pinch) until it squirts out of the grasp. PhysX ignores the ``mjc:*`` namespace,
+    so this is inert on the default backend.
+    """
+    return MujocoCollisionCfg(condim=6)
+
+
+def _cube_physics_material() -> list[UsdPhysicsRigidBodyMaterialCfg | NewtonMaterialCfg]:
+    """Per-cube physics-material fragments (fresh instances per cube).
+
+    The UsdPhysics values mirror the DexCube asset's own authored material
+    (static 0.8 / dynamic 1.0), so PhysX behavior is unchanged. The Newton fragment
+    raises torsional friction (0.005 -> 0.05) so the ``condim=6`` torsional row has
+    authority to stop in-grasp spin, and nudges rolling friction (1e-4 -> 2e-3) to damp
+    rolling creep without freezing cubes on their bevel edges when they settle.
+    """
+    return [
+        UsdPhysicsRigidBodyMaterialCfg(static_friction=0.8, dynamic_friction=1.0),
+        NewtonMaterialCfg(torsional_friction=0.05, rolling_friction=0.002),
+    ]
 
 
 def make_ee_frame_cfg(
@@ -129,6 +159,8 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
             usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/blue_block.usd",
             scale=(1.0, 1.0, 1.0),
             rigid_props=_CUBE_PROPERTIES,
+            collision_props=_cube_collision_props(),
+            physics_material=_cube_physics_material(),
             semantic_tags=[("class", "cube_1")],
         ),
     )
@@ -139,6 +171,8 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
             usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/red_block.usd",
             scale=(1.0, 1.0, 1.0),
             rigid_props=_CUBE_PROPERTIES,
+            collision_props=_cube_collision_props(),
+            physics_material=_cube_physics_material(),
             semantic_tags=[("class", "cube_2")],
         ),
     )
@@ -149,6 +183,8 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
             usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/green_block.usd",
             scale=(1.0, 1.0, 1.0),
             rigid_props=_CUBE_PROPERTIES,
+            collision_props=_cube_collision_props(),
+            physics_material=_cube_physics_material(),
             semantic_tags=[("class", "cube_3")],
         ),
     )
@@ -190,7 +226,12 @@ class StackEventCfg:
         func=stack_events.randomize_object_pose,
         mode="reset",
         params={
-            "pose_range": {"x": (0.4, 0.6), "y": (-0.10, 0.10), "z": (0.0203, 0.0203), "yaw": (-1.0, 1.0)},
+            # z = 0.0245 spawns the cubes just above both backends' resting heights. The old
+            # 0.0203 (the PhysX rest height) interpenetrates the DexCube collision mesh
+            # (half-height 0.0235) with the table under Newton, whose depenetration settles
+            # cubes tilted on their bevel edges; under PhysX the cubes simply drop ~4 mm and
+            # settle at 0.0203 within a few frames.
+            "pose_range": {"x": (0.4, 0.6), "y": (-0.10, 0.10), "z": (0.0245, 0.0245), "yaw": (-1.0, 1.0)},
             "min_separation": 0.1,
             "asset_cfgs": [SceneEntityCfg("cube_1"), SceneEntityCfg("cube_2"), SceneEntityCfg("cube_3")],
         },
@@ -317,17 +358,16 @@ class PhysicsCfg(PresetCfg):
             sap_solver_iterations=64,
         ),
         collision_cfg=NewtonCollisionPipelineCfg(),
-        # Stock MuJoCo-Warp default compliance (ke=2.5e3/kd=100, ~20 ms timeconst) lets the
-        # gripper pads sink ~F/ke = 1.6 cm into the cube at the ~40 N pinch force this task
-        # reaches, letting the cube squirt out of a nominally closed grasp. Stiffen contact
-        # (ke=1e6/kd=2000 -> solref (0.001, 1.0), sub-mm sink) so the fingers actually stall on
-        # the cube instead of closing through it. Arm/finger PD gains are intentionally left at
-        # their stock values here: the droop and over-fast finger closure that earlier probes
-        # papered over with detuned gains are now fixed at the source (per-body gravity
-        # compensation and drive velocity-limit clamping), so the high-PD gain assumptions the
-        # stock franka cfg relies on hold again.
-        default_shape_cfg=NewtonShapeCfg(ke=1e6, kd=2000),
-        num_substeps=2,
+        # Contact stiffness must respect the MuJoCo solref stability bounds at the substep
+        # rate: (ke, kd) convert to solref as timeconst = 2/kd and the contact is only stable
+        # when timeconst >= 2 * substep dt with a strongly overdamped ratio. The previous
+        # ke=1e6/kd=2000 authored timeconst 1 ms at a 5 ms substep -- an unstable finger-cube
+        # contact whose mm-scale grip chatter spun grasped cubes until they were ballistically
+        # ejected (measured 1-5 m/s). ke=4e4/kd=400 at num_substeps=4 (2.5 ms substep) sits
+        # exactly at the stability boundary (timeconst 5 ms, dampratio ~4.5): grasps are calm
+        # and stiff enough that stacked cubes settle within the task's height tolerance.
+        default_shape_cfg=NewtonShapeCfg(ke=4e4, kd=400),
+        num_substeps=4,
         debug_mode=False,
     )
     physx = PhysxAutoCfg(isaacsim_physx=isaacsim_physx)
