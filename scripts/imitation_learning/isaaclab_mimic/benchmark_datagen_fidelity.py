@@ -11,10 +11,12 @@ fidelity (cube-table penetration). Emits one markdown table — the
 fidelity-vs-throughput tradeoff the adaptive solvers exist to win.
 
 The full fidelity table requires source demos that succeed under the target backend.
-With the stack tasks' stabilized Newton contact preset, cross-backend (PhysX-annotated)
-sources accept demos on --solver mujoco at roughly a 15-20% rate (PhysX ~50%); rates on
-the remaining solver modes are unverified. Newton-native recorded demos (see
-scripts/tools/record_demos.py --record_subtask_signals) remain the path to parity.
+With the stack tasks' stabilized Newton contact preset and the boundingCube collider fix,
+cross-backend (PhysX-annotated) sources accept demos at measured rates of ~24% on
+--solver mujoco and ~19% on mujoco-adaptive (PhysX ~50%); the SAP modes measured 0/25
+(SolverSAP applies its own contact compliance and ignores the preset's ke/kd -> solref
+stiffness). Newton-native recorded demos (see scripts/tools/record_demos.py
+--record_subtask_signals) remain the path to parity.
 
 Run (from the repo root; needs a GPU and an annotated source dataset):
     ./isaaclab.sh -p scripts/imitation_learning/isaaclab_mimic/benchmark_datagen_fidelity.py \\
