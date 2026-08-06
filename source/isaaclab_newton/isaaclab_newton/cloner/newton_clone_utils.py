@@ -53,10 +53,46 @@ def _apply_authored_approximations(builder: ModelBuilder, path_shape_map: dict, 
         if index is None:
             continue
         authored_shape_indices.add(index)
+        if mode == "boundingcube":
+            _approximate_mesh_with_local_aabb(builder, index)
+            continue
         method = _APPROXIMATION_TO_REMESHING_METHOD.get(mode)
         if method is not None:
             builder.approximate_meshes(method, shape_indices=[index], keep_visual_shapes=True)
     return authored_shape_indices
+
+
+def _approximate_mesh_with_local_aabb(builder: ModelBuilder, index: int) -> None:
+    """Replace a mesh collider with its local-frame axis-aligned bounding box.
+
+    USD's ``physics:approximation = "boundingCube"`` is the mesh's own-frame bounding box
+    (PhysX semantics). Newton's ``approximate_meshes("bounding_box")`` instead fits an
+    inertia-aligned OBB via ``compute_inertia_obb``; for near-isotropic meshes the principal
+    axes are numerically degenerate, so the fitted box comes out arbitrarily rotated and
+    inflated. The nucleus DexCube blocks (56-vertex beveled cubes, authored ``boundingCube``)
+    hit this exactly: the fitted box was canted ~6 deg and ~10% oversized, which raised the
+    blocks' rest height (0.0228 m vs the 0.0235 m half-height) and their stacked
+    center-to-center height (0.0517 m vs 0.0470 m) enough to consume the stack tasks' 5 mm
+    success tolerance under Newton.
+
+    Delegates to ``approximate_meshes("bounding_box", keep_visual_shapes=True)`` for the
+    visual-copy bookkeeping, then overwrites the fitted OBB with the deterministic
+    local-frame AABB of the original mesh.
+    """
+    mesh = builder.shape_source[index]
+    scale = np.asarray(builder.shape_scale[index], dtype=np.float32)
+    vertices = np.asarray(mesh.vertices, dtype=np.float32) * scale
+    vmin = vertices.min(axis=0)
+    vmax = vertices.max(axis=0)
+    shape_tf = builder.shape_transform[index]
+    tf_prev = wp.transform(wp.vec3(*shape_tf.p), wp.quat(*shape_tf.q))
+    builder.approximate_meshes("bounding_box", shape_indices=[index], keep_visual_shapes=True)
+    if builder.shape_type[index] != GeoType.BOX:
+        # the upstream call fell back to another representation; leave it untouched
+        return
+    center = 0.5 * (vmin + vmax)
+    builder.shape_scale[index] = tuple(0.5 * (vmax - vmin))
+    builder.shape_transform[index] = tf_prev * wp.transform(wp.vec3(*center), wp.quat_identity())
 
 
 def _unauthored_collision_mesh_shapes(builder: ModelBuilder, authored_shape_indices: set[int]) -> list[int]:

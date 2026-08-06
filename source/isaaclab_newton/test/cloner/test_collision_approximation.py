@@ -73,6 +73,38 @@ def _make_two_source_stage(approximation_a: str | None, approximation_b: str | N
     return stage, sources
 
 
+def _make_cuboctahedron_stage() -> Usd.Stage:
+    """A rigid body whose collision mesh has cubic symmetry (near-isotropic inertia).
+
+    The cuboctahedron's inertia tensor is isotropic, which makes the principal axes an
+    inertia-OBB fit relies on numerically degenerate — the worst case for
+    ``physics:approximation = "boundingCube"``.
+    """
+    import numpy as np
+    from newton._src.geometry.utils import remesh_convex_hull
+
+    stage = Usd.Stage.CreateInMemory()
+    UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
+    UsdGeom.SetStageMetersPerUnit(stage, 1.0)
+    xform = UsdGeom.Xform.Define(stage, _SOURCE)
+    UsdPhysics.RigidBodyAPI.Apply(xform.GetPrim())
+
+    # all permutations of (+-1, +-1, 0): 12 vertices, AABB = the unit cube
+    points = []
+    for a in (-1.0, 1.0):
+        for b in (-1.0, 1.0):
+            points += [(a, b, 0.0), (a, 0.0, b), (0.0, a, b)]
+    verts, faces = remesh_convex_hull(np.asarray(points, dtype=np.float64))
+
+    mesh = UsdGeom.Mesh.Define(stage, f"{_SOURCE}/geom")
+    mesh.CreatePointsAttr([tuple(v) for v in verts.tolist()])
+    mesh.CreateFaceVertexCountsAttr([3] * len(faces))
+    mesh.CreateFaceVertexIndicesAttr([int(i) for tri in faces.tolist() for i in tri])
+    UsdPhysics.CollisionAPI.Apply(mesh.GetPrim())
+    UsdPhysics.MeshCollisionAPI.Apply(mesh.GetPrim()).CreateApproximationAttr().Set("boundingCube")
+    return stage
+
+
 def _make_mixed_visual_stage() -> Usd.Stage:
     """Create dynamic and static colliders with and without separate visual shapes."""
     stage = Usd.Stage.CreateInMemory()
@@ -184,6 +216,35 @@ class TestClonerCollisionApproximation:
 
         for source in sources:
             assert list(_collision_shapes(builders[source]).values()) == [GeoType.SPHERE]
+
+    def test_bounding_cube_is_local_frame_aabb(self):
+        """``boundingCube`` must produce the mesh's own-frame AABB, not an inertia OBB.
+
+        For meshes with near-isotropic inertia (blocks, dice), the principal axes an
+        inertia-OBB fit relies on are numerically degenerate, so the fitted box comes out
+        arbitrarily rotated and inflated. Regression: the nucleus DexCube blocks (authored
+        ``boundingCube``) imported ~10% oversized and canted ~6 deg, raising their rest and
+        stacked heights past the stack tasks' 5 mm success tolerance under Newton.
+        """
+        import numpy as np
+
+        builder = _build(_make_cuboctahedron_stage())
+
+        box_indices = [
+            i
+            for i, shape_type in enumerate(builder.shape_type)
+            if builder.shape_flags[i] & ShapeFlags.COLLIDE_SHAPES and GeoType(shape_type) == GeoType.BOX
+        ]
+        assert len(box_indices) == 1, f"expected one BOX collider, got {box_indices}"
+        index = box_indices[0]
+
+        half_extents = np.asarray(builder.shape_scale[index], dtype=np.float64)
+        np.testing.assert_allclose(half_extents, (1.0, 1.0, 1.0), atol=1e-5)
+
+        transform = builder.shape_transform[index]
+        np.testing.assert_allclose(np.asarray(transform.p, dtype=np.float64), 0.0, atol=1e-5)
+        # identity rotation up to quaternion sign
+        assert abs(float(transform.q[3])) > 1.0 - 1e-6, f"box collider is rotated: q={tuple(transform.q)}"
 
     def test_primitive_collider_remains_visible_in_mixed_visual_model(self):
         """Colliders remain visible only when their body or static parent has no visual shape."""

@@ -226,11 +226,10 @@ class StackEventCfg:
         func=stack_events.randomize_object_pose,
         mode="reset",
         params={
-            # z = 0.0245 spawns the cubes just above both backends' resting heights. The old
-            # 0.0203 (the PhysX rest height) interpenetrates the DexCube collision mesh
-            # (half-height 0.0235) with the table under Newton, whose depenetration settles
-            # cubes tilted on their bevel edges; under PhysX the cubes simply drop ~4 mm and
-            # settle at 0.0203 within a few frames.
+            # z = 0.0245 spawns the cubes just above both backends' resting heights
+            # (PhysX ~0.0203, Newton ~0.0205 with the block's boundingCube collider,
+            # half-height 0.0235): the cubes drop ~4 mm and settle within a few frames
+            # instead of starting interpenetrated with the table.
             "pose_range": {"x": (0.4, 0.6), "y": (-0.10, 0.10), "z": (0.0245, 0.0245), "yaw": (-1.0, 1.0)},
             "min_separation": 0.1,
             "asset_cfgs": [SceneEntityCfg("cube_1"), SceneEntityCfg("cube_2"), SceneEntityCfg("cube_3")],
