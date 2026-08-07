@@ -324,6 +324,10 @@ class NewtonMJWarpManager(NewtonManager):
             dt_inner_min=float(_env("NEWTON_ADAPTIVE_DT_MIN", getattr(solver_cfg, "adaptive_dt_min", 1e-6))),
             tiling=str(_env("NEWTON_ADAPTIVE_TILING", getattr(solver_cfg, "adaptive_tiling", "ragged"))),
             max_substeps=int(_env("NEWTON_ADAPTIVE_MAX_SUBSTEPS", getattr(solver_cfg, "adaptive_max_substeps", 256))),
+            dt_histogram=str(
+                _env("NEWTON_ADAPTIVE_DT_HIST", "1" if getattr(solver_cfg, "adaptive_dt_histogram", False) else "0")
+            )
+            not in ("0", "", "false", "False"),
             **kwargs,
         )
         # NEWTON_ADAPTIVE_JOINT_SCALE=<s> down-weights hinge/slide qpos coords in the error

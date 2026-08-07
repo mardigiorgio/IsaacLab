@@ -154,6 +154,15 @@ class MJWarpSolverCfg(NewtonSolverCfg):
     be ~dt_outer/dt_min ~ 1e4 and effectively hang the per-world fixed loop). Default 256 only bounds
     runaway; normal motion needs N ~ 1-60."""
 
+    adaptive_dt_histogram: bool = False
+    """Adaptive only: accumulate a per-iteration histogram of the inner timestep, exposing
+    how often the controller runs at the ``adaptive_dt_min`` floor.
+
+    Off by default -- it adds one kernel launch per adaptive iteration, which would perturb
+    benchmark timings. Read the result via
+    :meth:`~newton.solvers.SolverMuJoCoAdaptive.dt_histogram_stats`. Overridable at runtime
+    via ``NEWTON_ADAPTIVE_DT_HIST=1``."""
+
     backend: str = "mujoco"
     """Inner physics backend: ``"mujoco"`` (MuJoCo-Warp, default) or ``"sap"`` (the vendored convex SAP
     contact solver :class:`~newton.solvers.SolverSAP`). Overridable at runtime via ``NEWTON_SOLVER`` or
