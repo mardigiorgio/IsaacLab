@@ -154,6 +154,20 @@ class MJWarpSolverCfg(NewtonSolverCfg):
     be ~dt_outer/dt_min ~ 1e4 and effectively hang the per-world fixed loop). Default 256 only bounds
     runaway; normal motion needs N ~ 1-60."""
 
+    adaptive_landed_fraction: float = 1.0
+    """Adaptive only: fraction of worlds that must reach the control boundary before the
+    inner march may stop, in ``(0, 1]``.
+
+    The march otherwise runs until EVERY world lands, making its length the maximum over
+    worlds of the per-world attempt count -- and a batched step costs the same whether all
+    worlds need it or one does, so the whole batch pays for its slowest member. The maximum
+    grows with world count; a quantile does not. Worlds abandoned by the stop take their
+    whole boundary remainder in one unchecked step, so they land at the correct time with
+    degraded accuracy rather than silently under-advancing.
+
+    ``1.0`` (default) preserves the wait-for-every-world behavior exactly. Overridable at
+    runtime via ``NEWTON_ADAPTIVE_LANDED_FRACTION``."""
+
     adaptive_dt_histogram: bool = False
     """Adaptive only, MuJoCo backend only (``backend="mujoco"``): accumulate a per-iteration
     histogram of the inner timestep, exposing how often the controller runs at the

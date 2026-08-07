@@ -280,6 +280,9 @@ class NewtonMJWarpManager(NewtonManager):
                     max_substeps=int(
                         _env("NEWTON_ADAPTIVE_MAX_SUBSTEPS", getattr(solver_cfg, "adaptive_max_substeps", 256))
                     ),
+                    landed_fraction=float(
+                        _env("NEWTON_ADAPTIVE_LANDED_FRACTION", getattr(solver_cfg, "adaptive_landed_fraction", 1.0))
+                    ),
                     max_rigid_contact=int(solver_cfg.sap_max_rigid_contact),
                     max_iterations=int(solver_cfg.sap_solver_iterations),
                     contact_preset_variant=str(_env("NEWTON_SAP_PRESET", solver_cfg.sap_contact_preset)),
@@ -324,6 +327,9 @@ class NewtonMJWarpManager(NewtonManager):
             dt_inner_min=float(_env("NEWTON_ADAPTIVE_DT_MIN", getattr(solver_cfg, "adaptive_dt_min", 1e-6))),
             tiling=str(_env("NEWTON_ADAPTIVE_TILING", getattr(solver_cfg, "adaptive_tiling", "ragged"))),
             max_substeps=int(_env("NEWTON_ADAPTIVE_MAX_SUBSTEPS", getattr(solver_cfg, "adaptive_max_substeps", 256))),
+            landed_fraction=float(
+                _env("NEWTON_ADAPTIVE_LANDED_FRACTION", getattr(solver_cfg, "adaptive_landed_fraction", 1.0))
+            ),
             dt_histogram=str(
                 _env("NEWTON_ADAPTIVE_DT_HIST", "1" if getattr(solver_cfg, "adaptive_dt_histogram", False) else "0")
             )
