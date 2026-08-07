@@ -155,8 +155,12 @@ class MJWarpSolverCfg(NewtonSolverCfg):
     runaway; normal motion needs N ~ 1-60."""
 
     adaptive_dt_histogram: bool = False
-    """Adaptive only: accumulate a per-iteration histogram of the inner timestep, exposing
-    how often the controller runs at the ``adaptive_dt_min`` floor.
+    """Adaptive only, MuJoCo backend only (``backend="mujoco"``): accumulate a per-iteration
+    histogram of the inner timestep, exposing how often the controller runs at the
+    ``adaptive_dt_min`` floor.
+
+    With ``backend="sap"`` the manager builds :class:`~newton.solvers.SolverSAPAdaptive`
+    instead, which has no histogram -- this flag is silently ignored in that case.
 
     Off by default -- it adds one kernel launch per adaptive iteration, which would perturb
     benchmark timings. Read the result via

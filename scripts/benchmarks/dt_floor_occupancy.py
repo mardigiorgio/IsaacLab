@@ -23,7 +23,7 @@
 #
 # Usage (from IsaacLab root):
 #   uv run python scripts/benchmarks/dt_floor_occupancy.py \
-#       --headless --task Isaac-Lift-KukaAllegro --num_envs 1024 --steps 256
+#       --task Isaac-Lift-KukaAllegro --num_envs 1024 --steps 256
 # Results append as JSON lines to dt_floor_results.jsonl next to this script (untracked).
 
 import argparse
@@ -59,8 +59,10 @@ sys.argv = [sys.argv[0]] + hydra_args
 def _newton_preset(task: str):
     """Return the task's newton_mjwarp physics preset.
 
-    ``resolve_task_config`` collapses the ``PresetCfg`` to its default (PhysX for both
-    of these tasks), so the preset is fetched from the cfg module directly.
+    ``resolve_task_config`` collapses the ``PresetCfg`` to its default, which is
+    ``newton_mjwarp`` for the Allegro reorient task (``allegro_hand_common.PhysicsCfg.default``)
+    but PhysX for Kuka-Allegro (``KukaAllegroPhysicsCfg.default = isaacsim_physx``) -- so the
+    preset is fetched from the cfg module directly instead, to force ``newton_mjwarp`` for both.
 
     Args:
         task: The task id, e.g. ``Isaac-Reorient-Cube-Allegro-Direct`` or ``Isaac-Lift-KukaAllegro``.
