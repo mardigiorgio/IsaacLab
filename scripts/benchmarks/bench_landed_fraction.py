@@ -120,6 +120,17 @@ def main():
             boundaries = max(st["boundaries"], 1)
             wb = boundaries * args_cli.num_envs
             behind = float((solver.sim_time.numpy() - solver._next_time.numpy()).min())
+            # A forced step is unchecked, so it can in principle blow a world up. Landing
+            # on time is not enough -- the state has to still be finite.
+            import numpy as np  # noqa: PLC0415
+
+            obs = env.unwrapped._get_observations() if hasattr(env.unwrapped, "_get_observations") else None
+            finite_state = bool(np.all(np.isfinite(solver.state_0.joint_q.numpy()))) if hasattr(solver, "state_0") else True
+            nonfinite_obs = 0
+            if isinstance(obs, dict):
+                for v in obs.values():
+                    if hasattr(v, "isfinite"):
+                        nonfinite_obs += int((~v.isfinite()).sum().item())
             loop = iters / boundaries
             per_world = st["total_samples"] / max(wb, 1)
             results[frac] = {
@@ -131,6 +142,8 @@ def main():
                 "forced_pct": 100.0 * st["unfinished_worlds"] / max(wb, 1),
                 "floor_pct": 100.0 * st["floor_fraction"],
                 "worst_world_behind_s": behind,
+                "state_finite": finite_state,
+                "nonfinite_obs": nonfinite_obs,
             }
             env.close()
             del env
@@ -160,7 +173,13 @@ def main():
             )
         print(f"\n  speedup: {rec['speedup']:.2f}x")
         bad = [f for f, r in results.items() if r["worst_world_behind_s"] < -1e-6]
-        print("  CORRECTNESS FAILURE: world left short at " + str(bad) if bad else "  correctness: every world landed")
+        nf = [f for f, r in results.items() if not r["state_finite"] or r["nonfinite_obs"]]
+        if bad:
+            print(f"  CORRECTNESS FAILURE: world left short of its boundary at {bad}")
+        if nf:
+            print(f"  CORRECTNESS FAILURE: non-finite state/observations at {nf}")
+        if not bad and not nf:
+            print("  correctness: every world landed, state and observations finite")
 
         with open(args_cli.out, "a") as f:
             f.write(json.dumps(rec) + "\n")
