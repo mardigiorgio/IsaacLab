@@ -133,6 +133,25 @@ class TrossenSpatulaLiftPhysicsCfg(PresetCfg):
         debug_mode=False,
         use_cuda_graph=True,
     )
+    # Fixed-step stability tier for the blade-squeeze contact: the gripper bottoms out
+    # at 4.83 cm around a 6.98 cm blade, a sustained stiff squeeze the cube task never
+    # produced, and fixed stepping at mj dt 0.01 goes non-finite on first grasp
+    # (NaN at ~iter 38, 8192 envs). 5 substeps -> mj dt 0.002, the MuJoCo-Menagerie
+    # standard for aloha-class grippers. Use for the FIXED arm
+    # (``--solver mujoco physics=newton_mjwarp_fine``); the adaptive arm keeps the
+    # default preset -- choosing dt inside the boundary is its job.
+    newton_mjwarp_fine: NewtonCfg = NewtonCfg(
+        solver_cfg=MJWarpSolverCfg(
+            njmax=_NEWTON_NJMAX,
+            nconmax=_NEWTON_NCONMAX,
+            cone="pyramidal",
+            impratio=1,
+            integrator="implicitfast",
+        ),
+        num_substeps=5,
+        debug_mode=False,
+        use_cuda_graph=True,
+    )
 
 
 # ---------------------------------------------------------------------------- scene
