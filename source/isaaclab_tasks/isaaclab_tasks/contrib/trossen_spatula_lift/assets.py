@@ -31,13 +31,19 @@ _USD_DIR = os.path.join(os.path.dirname(__file__), "assets", "usd")
 
 STATIONARY_AI_USD = os.path.join(_USD_DIR, "stationary_ai.usd")
 STATIONARY_AI_NORAILS_USD = os.path.join(_USD_DIR, "stationary_ai_norails.usda")
+# Task overrides: zero the physxMimicJoint gearing on the passive right carriages. The
+# mimic is PhysX-specific; Newton maps it loosely (the passive finger overshot its
+# limits under the fixed solver and differed between solvers). Both carriages are
+# explicitly actuated instead, so the gripper is identical under every backend.
+STATIONARY_AI_TASK_USD = os.path.join(_USD_DIR, "stationary_ai_task.usda")
+STATIONARY_AI_TASK_RAILS_USD = os.path.join(_USD_DIR, "stationary_ai_task_rails.usda")
 
 
 def rig_usd_path() -> str:
     """The rig USD to load: no-rails default, full rig via ``TROSSEN_RAILS=1``."""
     if os.environ.get("TROSSEN_RAILS") == "1":
-        return STATIONARY_AI_USD
-    return STATIONARY_AI_NORAILS_USD
+        return STATIONARY_AI_TASK_RAILS_USD
+    return STATIONARY_AI_TASK_USD
 
 
 STATIONARY_AI_CFG = ArticulationCfg(
@@ -63,8 +69,22 @@ STATIONARY_AI_CFG = ArticulationCfg(
     ),
     actuators={
         "left_arm": ImplicitActuatorCfg(joint_names_expr=["follower_left_joint_[0-5]"], stiffness=80.0, damping=4.0),
+        # BOTH carriages are actuated explicitly. The right one is nominally driven by a
+        # physxMimicJoint (gearing -1, frames absorb the sign: it tracks the left 1:1 in
+        # joint coordinates -- measured under PhysX: open 0.0441/0.0440, closed
+        # 0.0006/0.0002). Newton maps that PhysX-specific constraint loosely -- the
+        # passive finger overshot its limits under the fixed solver and landed
+        # differently under the adaptive one, giving the two experiment arms different
+        # effective grippers. Commanding both joints to the same targets removes the
+        # solver-sensitive DOF; the mimic (where honored) agrees with the command.
+        # Explicit gains matching the left carriage's USD-baked drive (stiffness 217687,
+        # damping 10884, maxForce 400): the right carriage ships with NO drive at all
+        # (it was mimic-driven), so baked-gains passthrough (None) commands nothing.
         "left_gripper": ImplicitActuatorCfg(
-            joint_names_expr=["follower_left_left_carriage_joint"], stiffness=None, damping=None
+            joint_names_expr=["follower_left_left_carriage_joint", "follower_left_right_carriage_joint"],
+            stiffness=217687.0,
+            damping=10884.0,
+            effort_limit_sim=400.0,
         ),
         "right_arm": ImplicitActuatorCfg(joint_names_expr=["follower_right_joint_[0-5]"], stiffness=None, damping=None),
         "right_gripper": ImplicitActuatorCfg(

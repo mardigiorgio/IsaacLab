@@ -60,6 +60,9 @@ from .assets import STATIONARY_AI_CFG
 # Measured Stationary AI wiring (see the cube task for the derivations).
 ARM_JOINTS = "follower_left_joint_[0-5]"
 GRIPPER_JOINT = "follower_left_left_carriage_joint"
+# The right carriage tracks the left 1:1 in joint coordinates (PhysX-measured); command
+# it explicitly so the gripper geometry is identical under every solver.
+GRIPPER_JOINT_R = "follower_left_right_carriage_joint"
 EE_LINK = "follower_left_link_6"
 # link_6 -> finger midpoint along link_6 local x: the true grasp point (the
 # ee_gripper_link offset of 0.1561 lands ~7 cm past the fingers).
@@ -179,9 +182,13 @@ class ActionsCfg:
     )
     gripper_action = mdp.BinaryJointPositionActionCfg(
         asset_name="robot",
-        joint_names=[GRIPPER_JOINT],
-        open_command_expr={GRIPPER_JOINT: 0.044},
-        close_command_expr={GRIPPER_JOINT: 0.0},
+        joint_names=[GRIPPER_JOINT, GRIPPER_JOINT_R],
+        # Right carriage is WELDED (limits [0,0] in the task override): the passive
+        # mimic finger was solver-sensitive under Newton in both directions, so the
+        # travel lives entirely in the left finger. Commanding the welded joint to 0
+        # keeps every backend's drive consistent with the constraint.
+        open_command_expr={GRIPPER_JOINT: 0.044, GRIPPER_JOINT_R: 0.0},
+        close_command_expr={GRIPPER_JOINT: 0.0, GRIPPER_JOINT_R: 0.0},
     )
 
 
