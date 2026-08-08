@@ -70,6 +70,20 @@ EE_TCP_OFFSET = (0.087, 0.0, 0.0)
 BASE_LINK = "follower_left_base_link"
 
 SPATULA_USD_PATH = os.path.join(os.path.dirname(__file__), "assets", "usd", "thimma_wood_natural_flat_spatula.usd")
+
+# ---- Real-world-reproducible placement (see REAL_SETUP.md) -------------------------
+# Physical reference: the LEFT arm's base plate center at tabletop level. Its env-frame
+# position was measured in sim (geometry survey): (-0.020, 0.4575). The spatula's
+# nominal pose is defined RELATIVE to that landmark so the identical setup can be
+# reproduced at the rig with a tape measure:
+#   blade center on the base plate's centerline (lateral offset 0),
+#   33.0 cm forward of the base plate center (toward the opposite arm),
+#   lying flat, handle pointing to the operator's left, blade edge facing the arm.
+BASE_PLATE_ENV = (-0.020, 0.4575)
+SPATULA_FORWARD_M = 0.330
+SPATULA_LATERAL_M = 0.0
+_SPAWN_X = BASE_PLATE_ENV[0] + SPATULA_LATERAL_M
+_SPAWN_Y = BASE_PLATE_ENV[1] - SPATULA_FORWARD_M
 # Rig tabletop slab top is z=0.02; the blade rests just above it.
 SPATULA_REST_Z = 0.025
 # Root rest z is ~0.023; 0.08 demands unambiguous lift-off while tolerating the
@@ -128,7 +142,7 @@ class TrossenSpatulaLiftSceneCfg(InteractiveSceneCfg):
 
     object: RigidObjectCfg = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/Object",
-        init_state=RigidObjectCfg.InitialStateCfg(pos=[0.0, 0.13, SPATULA_REST_Z], rot=[1, 0, 0, 0]),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=[_SPAWN_X, _SPAWN_Y, SPATULA_REST_Z], rot=[1, 0, 0, 0]),
         spawn=UsdFileCfg(
             usd_path=SPATULA_USD_PATH,
             rigid_props=RigidBodyPropertiesCfg(
@@ -297,8 +311,17 @@ class TrossenSpatulaLiftEnvCfg(ManagerBasedRLEnvCfg):
 
 @configclass
 class TrossenSpatulaLiftEnvCfg_PLAY(TrossenSpatulaLiftEnvCfg):
+    """Evaluation variant: no observation noise and ZERO spawn jitter, so every episode
+    starts from the exact tape-measure pose in REAL_SETUP.md -- paired sim/real trials
+    evaluate the same initial condition."""
+
     def __post_init__(self):
         super().__post_init__()
         self.scene.num_envs = 50
         self.scene.env_spacing = 2.5
         self.observations.policy.enable_corruption = False
+        self.events.reset_object_position.params["pose_range"] = {
+            "x": (0.0, 0.0),
+            "y": (0.0, 0.0),
+            "z": (0.0, 0.0),
+        }
