@@ -109,6 +109,18 @@ class TrossenSpatulaLiftPhysicsCfg(PresetCfg):
             cone="pyramidal",
             impratio=1,
             integrator="implicitfast",
+            # MuJoCo's contact pipeline, deliberately. Measured on this asset: the
+            # fingers pinch ACROSS the blade width, and a convex hull is exact at its
+            # extremal points, so per-geom convexification (blade + handle are separate
+            # geoms) is faithful along the grasp direction; the 1.5x hull volume error
+            # is the scoop cavity nothing touches. The Newton CollisionPipeline path
+            # (use_mujoco_contacts=False) was probed and has two blocking defects with
+            # this solver lineage: reset-time depenetration EJECTS the 66 g blade
+            # (ballistic to 0.4 m), and contacts freeze per physics boundary while the
+            # solver substeps inside it, so the thin blade TUNNELS through the slab
+            # (and would tunnel through fingers) at ~2 m/s. MuJoCo re-detects contact
+            # every solver step; neither pathology exists there (probe-verified).
+            use_mujoco_contacts=True,
         ),
         num_substeps=1,
         debug_mode=False,
@@ -128,6 +140,18 @@ class TrossenSpatulaLiftPhysicsCfg(PresetCfg):
             cone="pyramidal",
             impratio=1,
             integrator="implicitfast",
+            # MuJoCo's contact pipeline, deliberately. Measured on this asset: the
+            # fingers pinch ACROSS the blade width, and a convex hull is exact at its
+            # extremal points, so per-geom convexification (blade + handle are separate
+            # geoms) is faithful along the grasp direction; the 1.5x hull volume error
+            # is the scoop cavity nothing touches. The Newton CollisionPipeline path
+            # (use_mujoco_contacts=False) was probed and has two blocking defects with
+            # this solver lineage: reset-time depenetration EJECTS the 66 g blade
+            # (ballistic to 0.4 m), and contacts freeze per physics boundary while the
+            # solver substeps inside it, so the thin blade TUNNELS through the slab
+            # (and would tunnel through fingers) at ~2 m/s. MuJoCo re-detects contact
+            # every solver step; neither pathology exists there (probe-verified).
+            use_mujoco_contacts=True,
         ),
         num_substeps=1,
         debug_mode=False,
@@ -147,6 +171,18 @@ class TrossenSpatulaLiftPhysicsCfg(PresetCfg):
             cone="pyramidal",
             impratio=1,
             integrator="implicitfast",
+            # MuJoCo's contact pipeline, deliberately. Measured on this asset: the
+            # fingers pinch ACROSS the blade width, and a convex hull is exact at its
+            # extremal points, so per-geom convexification (blade + handle are separate
+            # geoms) is faithful along the grasp direction; the 1.5x hull volume error
+            # is the scoop cavity nothing touches. The Newton CollisionPipeline path
+            # (use_mujoco_contacts=False) was probed and has two blocking defects with
+            # this solver lineage: reset-time depenetration EJECTS the 66 g blade
+            # (ballistic to 0.4 m), and contacts freeze per physics boundary while the
+            # solver substeps inside it, so the thin blade TUNNELS through the slab
+            # (and would tunnel through fingers) at ~2 m/s. MuJoCo re-detects contact
+            # every solver step; neither pathology exists there (probe-verified).
+            use_mujoco_contacts=True,
         ),
         num_substeps=5,
         debug_mode=False,
