@@ -13,6 +13,10 @@
 **/*.usda
 **/*.usdc
 **/*.usdz
+# Exception: the Trossen spatula-lift task vendors its (LFS-tracked) scene assets so a
+# plain git pull is the entire setup -- no fetch scripts, no external asset clone.
+!source/isaaclab_tasks/isaaclab_tasks/contrib/trossen_spatula_lift/assets/usd/*.usd
+!source/isaaclab_tasks/isaaclab_tasks/contrib/trossen_spatula_lift/assets/usd/*.usda
 
 # Python
 .DS_Store
