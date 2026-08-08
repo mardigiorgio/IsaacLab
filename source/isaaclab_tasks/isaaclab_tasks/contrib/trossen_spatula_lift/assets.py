@@ -5,18 +5,12 @@
 
 """Trossen Stationary AI rig articulation for the spatula-lift task.
 
-The rig USD comes from Trossen's official asset repository
-(https://github.com/TrossenRobotics/trossen_ai_isaac), cloned OUTSIDE this repo:
-
-    git clone https://github.com/TrossenRobotics/trossen_ai_isaac \
-        ~/Documents/code/isaac-data/trossen_ai_isaac
-
-By default the task loads the NO-RAILS override (``stationary_ai_norails.usda``,
-generated once by the IsaacLabRubato experiment's ``make_norails_usd.py``): the rig's
-rail frame is a collision body a lift policy exploits by jamming the object against it
-instead of grasping. ``TROSSEN_RAILS=1`` selects the full rig as a contact-rich
-ablation. Paths are overridable via ``TROSSEN_ASSET_ROOT`` / ``STATIONARY_AI_USD`` /
-``STATIONARY_AI_NORAILS_USD``.
+Fully self-contained: the rig USD (from Trossen's official
+https://github.com/TrossenRobotics/trossen_ai_isaac, zero external references) and its
+no-rails override are vendored under ``assets/usd/`` -- no clone, no env setup. The
+no-rails variant is the default: the rig's rail frame is a collision body a lift policy
+exploits by jamming the object against it instead of grasping. ``TROSSEN_RAILS=1``
+selects the full rig as a contact-rich ablation.
 
 Actuator gains follow the Isaac Lab manipulation reference (arm stiffness=80,
 damping=4, as Franka lift): the USD-baked gains are ~500x stiffer and reproduce the
@@ -33,34 +27,17 @@ import isaaclab.sim as sim_utils
 from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets import ArticulationCfg
 
-_ASSET_ROOT = os.path.expanduser(
-    os.environ.get(
-        "TROSSEN_ASSET_ROOT",
-        os.path.join(os.environ.get("TROSSEN_DATA_ROOT", "~/Documents/code/isaac-data"), "trossen_ai_isaac"),
-    )
-)
-_ROBOT_DIR = os.path.join(_ASSET_ROOT, "assets", "robots", "stationary_ai")
+_USD_DIR = os.path.join(os.path.dirname(__file__), "assets", "usd")
 
-STATIONARY_AI_USD = os.environ.get("STATIONARY_AI_USD", os.path.join(_ROBOT_DIR, "stationary_ai.usd"))
-STATIONARY_AI_NORAILS_USD = os.environ.get(
-    "STATIONARY_AI_NORAILS_USD", os.path.join(_ROBOT_DIR, "stationary_ai_norails.usda")
-)
+STATIONARY_AI_USD = os.path.join(_USD_DIR, "stationary_ai.usd")
+STATIONARY_AI_NORAILS_USD = os.path.join(_USD_DIR, "stationary_ai_norails.usda")
 
 
 def rig_usd_path() -> str:
-    """The rig USD the task should load (no-rails default, rails via ``TROSSEN_RAILS=1``)."""
+    """The rig USD to load: no-rails default, full rig via ``TROSSEN_RAILS=1``."""
     if os.environ.get("TROSSEN_RAILS") == "1":
         return STATIONARY_AI_USD
-    if os.path.isfile(STATIONARY_AI_NORAILS_USD):
-        return STATIONARY_AI_NORAILS_USD
-    # Fall back to the full rig rather than fail: training still works, but the rail
-    # exploit is available to the policy -- generate the override to remove it.
-    print(
-        f"[trossen_spatula_lift] WARNING: no-rails USD not found at {STATIONARY_AI_NORAILS_USD}; "
-        "loading the FULL rig (rail-jam exploit available). Generate it with "
-        "IsaacLabRubato/experiments/trossen_cube_lift/make_norails_usd.py."
-    )
-    return STATIONARY_AI_USD
+    return STATIONARY_AI_NORAILS_USD
 
 
 STATIONARY_AI_CFG = ArticulationCfg(
