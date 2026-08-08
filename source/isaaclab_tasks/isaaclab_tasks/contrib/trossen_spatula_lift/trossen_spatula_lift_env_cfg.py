@@ -81,14 +81,21 @@ _NEWTON_NCONMAX = 200
 # ---------------------------------------------------------------------------- physics
 @configclass
 class TrossenSpatulaLiftPhysicsCfg(PresetCfg):
-    """PhysX default; ``physics=newton_mjwarp`` selects Newton (adaptive via ``--solver``)."""
+    """Newton (MuJoCo-Warp) is the DEFAULT: the experiment is Newton-fixed vs
+    Newton-adaptive (``--solver mujoco`` / ``mujoco-adaptive``). PhysX remains reachable
+    via ``physics=physx`` as a debugging escape hatch only."""
 
-    default: PhysxCfg = PhysxCfg(
-        bounce_threshold_velocity=0.01,
-        friction_correlation_distance=0.00625,
-        gpu_max_rigid_patch_count=2**20,
-        gpu_total_aggregate_pairs_capacity=2**23,
-        gpu_found_lost_aggregate_pairs_capacity=2**26,
+    default: NewtonCfg = NewtonCfg(
+        solver_cfg=MJWarpSolverCfg(
+            njmax=_NEWTON_NJMAX,
+            nconmax=_NEWTON_NCONMAX,
+            cone="pyramidal",
+            impratio=1,
+            integrator="implicitfast",
+        ),
+        num_substeps=1,
+        debug_mode=False,
+        use_cuda_graph=True,
     )
     physx: PhysxCfg = PhysxCfg(
         bounce_threshold_velocity=0.01,
