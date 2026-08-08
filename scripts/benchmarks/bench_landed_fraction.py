@@ -125,7 +125,9 @@ def main():
             import numpy as np  # noqa: PLC0415
 
             obs = env.unwrapped._get_observations() if hasattr(env.unwrapped, "_get_observations") else None
-            finite_state = bool(np.all(np.isfinite(solver.state_0.joint_q.numpy()))) if hasattr(solver, "state_0") else True
+            finite_state = (
+                bool(np.all(np.isfinite(solver.state_0.joint_q.numpy()))) if hasattr(solver, "state_0") else True
+            )
             nonfinite_obs = 0
             if isinstance(obs, dict):
                 for v in obs.values():

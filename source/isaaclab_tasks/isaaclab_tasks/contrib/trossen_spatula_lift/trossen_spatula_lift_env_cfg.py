@@ -274,7 +274,7 @@ class EventCfg:
 # ---------------------------------------------------------------------------- env cfg
 @configclass
 class TrossenSpatulaLiftEnvCfg(ManagerBasedRLEnvCfg):
-    scene: TrossenSpatulaLiftSceneCfg = TrossenSpatulaLiftSceneCfg(num_envs=2048, env_spacing=2.5)
+    scene: TrossenSpatulaLiftSceneCfg = TrossenSpatulaLiftSceneCfg(num_envs=8192, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     commands: CommandsCfg = CommandsCfg()
