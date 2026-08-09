@@ -252,11 +252,13 @@ class ActionsCfg:
     gripper_action = mdp.BinaryJointPositionActionCfg(
         asset_name="robot",
         joint_names=[GRIPPER_JOINT, GRIPPER_JOINT_R],
-        # Right carriage is WELDED (limits [0,0] in the task override): the passive
-        # mimic finger was solver-sensitive under Newton in both directions, so the
-        # travel lives entirely in the left finger. Commanding the welded joint to 0
-        # keeps every backend's drive consistent with the constraint.
-        open_command_expr={GRIPPER_JOINT: 0.044, GRIPPER_JOINT_R: 0.0},
+        # BOTH carriages actively driven to the same target -- symmetric close, like
+        # the real hardware. This replaces the earlier right-carriage weld (a
+        # ghost-world-era workaround for the solver-sensitive passive mimic): with
+        # the mimic defused in the task layer, two position-driven carriages need no
+        # coupling constraint at all, and the grasp stays centered like the real
+        # gripper's.
+        open_command_expr={GRIPPER_JOINT: 0.044, GRIPPER_JOINT_R: 0.044},
         close_command_expr={GRIPPER_JOINT: 0.0, GRIPPER_JOINT_R: 0.0},
     )
 
