@@ -317,9 +317,11 @@ class EventCfg:
         func=mdp.reset_root_state_uniform,
         mode="reset",
         params={
-            # In front of the arm, inside the measured reach; z jitter 0 -- tabletop
-            # objects start resting (a dropped 66 g blade flips airborne).
-            "pose_range": {"x": (-0.10, 0.10), "y": (-0.075, 0.075), "z": (0.0, 0.0)},
+            # ZERO spawn jitter, deliberately: the real-world protocol is a
+            # tape-measured FIXED placement (REAL_SETUP.md), so the experiment is
+            # lift-from-THE-spot. Prove pickup first; add randomization only if the
+            # rig demands robustness. Also makes exploration far cheaper.
+            "pose_range": {"x": (0.0, 0.0), "y": (0.0, 0.0), "z": (0.0, 0.0)},
             "velocity_range": {},
             "asset_cfg": SceneEntityCfg("object"),
         },
