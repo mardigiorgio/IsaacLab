@@ -99,8 +99,8 @@ _NEWTON_NCONMAX = 200
 @configclass
 class TrossenSpatulaLiftPhysicsCfg(PresetCfg):
     """Newton (MuJoCo-Warp) is the DEFAULT: the experiment is Newton-fixed vs
-    Newton-adaptive (``--solver mujoco`` / ``mujoco-adaptive``). PhysX remains reachable
-    via ``physics=physx`` as a debugging escape hatch only."""
+    Newton-adaptive (``--solver mujoco physics=newton_mjwarp`` / ``mujoco-adaptive``).
+    PhysX remains reachable via ``physics=physx`` as a debugging escape hatch only."""
 
     default: NewtonCfg = NewtonCfg(
         solver_cfg=MJWarpSolverCfg(
@@ -153,39 +153,10 @@ class TrossenSpatulaLiftPhysicsCfg(PresetCfg):
             # every solver step; neither pathology exists there (probe-verified).
             use_mujoco_contacts=True,
         ),
-        num_substeps=1,
-        debug_mode=False,
-        use_cuda_graph=True,
-    )
-    # Fixed-step stability tier for the blade-squeeze contact: the gripper bottoms out
-    # at 4.83 cm around a 6.98 cm blade, a sustained stiff squeeze the cube task never
-    # produced, and fixed stepping at mj dt 0.01 goes non-finite on first grasp
-    # (NaN at ~iter 38, 8192 envs). 2 substeps -> mj dt 0.005, probing the cheapest
-    # stable fixed step; 5 substeps (mj dt 0.002, the MuJoCo-Menagerie standard for
-    # aloha-class grippers) is the validated fallback if first grasp goes non-finite.
-    # Use for the FIXED arm (``--solver mujoco physics=newton_mjwarp_fine``); the
-    # adaptive arm keeps the default preset -- choosing dt inside the boundary is its
-    # job.
-    newton_mjwarp_fine: NewtonCfg = NewtonCfg(
-        solver_cfg=MJWarpSolverCfg(
-            njmax=_NEWTON_NJMAX,
-            nconmax=_NEWTON_NCONMAX,
-            cone="pyramidal",
-            impratio=1,
-            integrator="implicitfast",
-            # MuJoCo's contact pipeline, deliberately. Measured on this asset: the
-            # fingers pinch ACROSS the blade width, and a convex hull is exact at its
-            # extremal points, so per-geom convexification (blade + handle are separate
-            # geoms) is faithful along the grasp direction; the 1.5x hull volume error
-            # is the scoop cavity nothing touches. The Newton CollisionPipeline path
-            # (use_mujoco_contacts=False) was probed and has two blocking defects with
-            # this solver lineage: reset-time depenetration EJECTS the 66 g blade
-            # (ballistic to 0.4 m), and contacts freeze per physics boundary while the
-            # solver substeps inside it, so the thin blade TUNNELS through the slab
-            # (and would tunnel through fingers) at ~2 m/s. MuJoCo re-detects contact
-            # every solver step; neither pathology exists there (probe-verified).
-            use_mujoco_contacts=True,
-        ),
+        # The FIXED arm's tier: fixed stepping at mj dt 0.01 goes non-finite on first
+        # grasp of the blade squeeze (NaN at ~iter 38, 8192 envs), so the fixed arm
+        # subdivides to mj dt 0.005. The adaptive arm runs ``default`` at 1 substep --
+        # choosing dt inside the boundary is its job.
         num_substeps=2,
         debug_mode=False,
         use_cuda_graph=True,
