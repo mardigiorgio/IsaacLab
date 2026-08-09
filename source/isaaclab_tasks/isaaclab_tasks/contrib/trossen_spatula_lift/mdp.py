@@ -66,6 +66,23 @@ def nonfinite_state(
     return ~valid
 
 
+def object_off_table(
+    env: ManagerBasedRLEnv,
+    x_bound: float,
+    y_bound: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """Terminate envs whose object left the tabletop footprint (env-local xy).
+
+    The rig's tabletop slab rests directly on the ground plane, so an object knocked
+    off the table always ends up on the floor beyond the slab footprint; xy bounds
+    alone decide the condition, independent of lift height or reset settling.
+    """
+    obj = env.scene[object_cfg.name]
+    pos_local = obj.data.root_pos_w.torch[:, :2] - env.scene.env_origins[:, :2]
+    return (pos_local[:, 0].abs() > x_bound) | (pos_local[:, 1].abs() > y_bound)
+
+
 def _finite(reward: torch.Tensor) -> torch.Tensor:
     """Sanitize a reward term: no NaN/inf, magnitude clamped to a sane band.
 

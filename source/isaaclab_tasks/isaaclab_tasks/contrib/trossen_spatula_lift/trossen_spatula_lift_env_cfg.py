@@ -294,6 +294,9 @@ class TerminationsCfg:
     # (~1 per 5.8M env-steps, fixed solver): terminate + reset instead of crashing the
     # run. Symmetric on both arms -- its trigger rate is an experiment metric.
     sim_nonfinite = DoneTerm(func=mdp.nonfinite_state)
+    # Off the table is irrecoverable: end the episode instead of letting the policy
+    # farm shaping next to a dead object. Bounds sit just outside the slab footprint.
+    object_off_table = DoneTerm(func=mdp.object_off_table, params={"x_bound": 0.40, "y_bound": 0.63})
 
 
 @configclass
