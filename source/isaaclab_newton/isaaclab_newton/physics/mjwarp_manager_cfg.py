@@ -134,7 +134,7 @@ class MJWarpSolverCfg(NewtonSolverCfg):
     """Adaptive only: inf-norm ``joint_q`` error tolerance per world [m or rad]."""
 
     adaptive_dt_mode: str = "per_world"
-    """Adaptive only: ``"per_world"`` (each env adapts its own dt) or ``"global"`` (shared worst-case dt)."""
+    """Adaptive only: ``"per_world"`` (each env adapts its own dt) or ``"per_world"`` (shared worst-case dt)."""
 
     adaptive_dt_init: float = 0.01
     """Adaptive only: initial inner timestep [s]. Set below ``sim.dt`` to give the controller room to subdivide."""

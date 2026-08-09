@@ -526,21 +526,21 @@ class NewtonMJWarpManager(NewtonManager):
         """
         if world_mask is None or cls._solver is None:
             return
-        # The solvers' reset paths are strictly per-world: drop the mask's trailing
-        # global-entities entry before handing it to the solver.
+        # solver.reset takes the canonical (world_count + 1,) mask (trailing
+        # global-entities slot); slice only for the host-side any() gates.
         local_mask = world_mask[: cls._model.world_count]
         if cls._sap and not cls._adaptive:
             if local_mask.numpy().any():
                 cls._solver.reset_runtime_state()
             return
         if cls._adaptive:
-            cls._solver.reset(cls._state_0, world_mask=local_mask, flags=0)
+            cls._solver.reset(cls._state_0, world_mask=world_mask, flags=0)
             return
         if cls._solver.use_mujoco_cpu and not local_mask.numpy().any():
             return
         # flags=0 skips the joint-state reset to model defaults: IsaacLab owns
         # joint_q/joint_qd and has already written the authored reset pose.
-        cls._solver.reset(cls._state_0, world_mask=local_mask, flags=0)
+        cls._solver.reset(cls._state_0, world_mask=world_mask, flags=0)
 
     @classmethod
     def _supports_cuda_graph_capture(cls) -> bool:

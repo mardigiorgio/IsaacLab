@@ -432,8 +432,8 @@ def _get_names_from_newton_usd_builder(
 
     try:
         from newton import JointType, ModelBuilder, solvers  # noqa: PLC0415
-        from newton._src.usd.schemas import SchemaResolverNewton, SchemaResolverPhysx  # noqa: PLC0415
         from newton.selection import ArticulationView  # noqa: PLC0415
+        from newton.usd import SchemaResolverNewton, SchemaResolverPhysx  # noqa: PLC0415
 
         from pxr import UsdGeom, UsdPhysics  # noqa: PLC0415
 

@@ -10,7 +10,7 @@ from typing import Any
 
 import torch
 from newton import ModelBuilder
-from newton._src.usd.schemas import SchemaResolverNewton, SchemaResolverPhysx
+from newton.usd import SchemaResolverNewton, SchemaResolverPhysx
 
 from pxr import Usd
 

@@ -3274,8 +3274,8 @@ class NewtonManager(PhysicsManager):
         with Timer(name="newton_contact_sensor", msg="Contact sensor construction took:"):
             sensor = NewtonContactSensor(
                 cls._model,
-                sensing_obj_bodies=_normalize_for_labels(_to_fnmatch(body_names_expr), body_labels),
-                sensing_obj_shapes=_normalize_for_labels(_to_fnmatch(shape_names_expr), shape_labels),
+                sensing_bodies=_normalize_for_labels(_to_fnmatch(body_names_expr), body_labels),
+                sensing_shapes=_normalize_for_labels(_to_fnmatch(shape_names_expr), shape_labels),
                 counterpart_bodies=_normalize_for_labels(_to_fnmatch(contact_partners_body_expr), body_labels),
                 counterpart_shapes=_normalize_for_labels(_to_fnmatch(contact_partners_shape_expr), shape_labels),
                 measure_total=True,
