@@ -77,14 +77,22 @@ STATIONARY_AI_CFG = ArticulationCfg(
         # differently under the adaptive one, giving the two experiment arms different
         # effective grippers. Commanding both joints to the same targets removes the
         # solver-sensitive DOF; the mimic (where honored) agrees with the command.
-        # Explicit gains matching the left carriage's USD-baked drive (stiffness 217687,
-        # damping 10884, maxForce 400): the right carriage ships with NO drive at all
-        # (it was mimic-driven), so baked-gains passthrough (None) commands nothing.
+        # Gains are SIZED TO THE MEASURED 0.0813 kg carriage+finger assembly, not the
+        # USD-baked PhysX drive (stiffness 217687, damping 10884, maxForce 400). Under
+        # MuJoCo the baked drive is a saturated bang-bang relay, not a servo: damping
+        # alone rails the 400 N clamp above 37 mm/s, closing on the 6.98 cm blade
+        # commands kp*err = 2340 N >> 400 N, and the explicit kp stability bound
+        # (dt < 2/sqrt(kp/m) = 1.22 ms) is violated at every experiment dt -- each
+        # pinch chatters at (400/0.0813)*dt per solver step and goes non-finite in
+        # float32 MJWarp (policy-driven grasp reproduced NaN at iter 13, 8192 envs,
+        # mj dt 0.005). stiffness 3000 -> omega*dt = 0.96 at mj dt 0.005 (stable),
+        # zeta = 1.92 (no ringing), 20 N cap = 31x the 66 g spatula's weight vs the
+        # ~2 N a mu 0.5 pinch grip needs (micro-repro settles fully at dt 0.005/0.002).
         "left_gripper": ImplicitActuatorCfg(
             joint_names_expr=["follower_left_left_carriage_joint", "follower_left_right_carriage_joint"],
-            stiffness=217687.0,
-            damping=10884.0,
-            effort_limit_sim=400.0,
+            stiffness=3000.0,
+            damping=60.0,
+            effort_limit_sim=20.0,
         ),
         "right_arm": ImplicitActuatorCfg(joint_names_expr=["follower_right_joint_[0-5]"], stiffness=None, damping=None),
         "right_gripper": ImplicitActuatorCfg(

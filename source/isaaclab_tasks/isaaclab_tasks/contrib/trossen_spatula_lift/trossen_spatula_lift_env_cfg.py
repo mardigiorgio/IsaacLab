@@ -273,7 +273,7 @@ class RewardsCfg:
         weight=5.0,
     )
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
-    joint_vel = RewTerm(func=mdp.joint_vel_l2, weight=-1e-4, params={"asset_cfg": SceneEntityCfg("robot")})
+    joint_vel = RewTerm(func=mdp.joint_vel_l2_safe, weight=-1e-4, params={"asset_cfg": SceneEntityCfg("robot")})
 
 
 @configclass
@@ -283,6 +283,10 @@ class TerminationsCfg:
         func=mdp.root_height_below_minimum,
         params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("object")},
     )
+    # Containment for sporadic per-world float32 solver collapse under grasp contact
+    # (~1 per 5.8M env-steps, fixed solver): terminate + reset instead of crashing the
+    # run. Symmetric on both arms -- its trigger rate is an experiment metric.
+    sim_nonfinite = DoneTerm(func=mdp.nonfinite_state)
 
 
 @configclass
