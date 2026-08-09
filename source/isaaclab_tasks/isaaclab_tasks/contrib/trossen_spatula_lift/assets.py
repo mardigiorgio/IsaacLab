@@ -54,7 +54,14 @@ STATIONARY_AI_CFG = ArticulationCfg(
             max_depenetration_velocity=5.0,
         ),
         articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-            enabled_self_collisions=True,
+            # Self-collisions OFF: under MuJoCo contacts every robot mesh is a convex
+            # hull, and the two finger assemblies' hulls overlap the grasp channel --
+            # measured free-air close stall at a 7.5 cm finger gap (blade is 6.98 cm),
+            # i.e. the fingers could never reach the blade. Finger-object and
+            # object-table contact are robot-external pairs and unaffected. Cost: the
+            # arm no longer collides with the rig tabletop (same articulation);
+            # restore via fitted pad collision boxes if that ever matters.
+            enabled_self_collisions=False,
             solver_position_iteration_count=8,
             solver_velocity_iteration_count=0,
         ),
