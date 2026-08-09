@@ -29,7 +29,10 @@ class TrossenSpatulaLiftPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         hidden_dims=[256, 128, 64],
         activation="elu",
         obs_normalization=False,
-        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=1.0, std_type="log"),
+        # std floor keeps the effectively-binary gripper dim from collapsing sigma to
+        # zero (log-prob blowup); the cap bounds exploration drift (measured 1.83 and
+        # climbing before the runaway).
+        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=1.0, std_type="log", std_range=(0.05, 3.0)),
     )
     critic = RslRlMLPModelCfg(
         hidden_dims=[256, 128, 64],

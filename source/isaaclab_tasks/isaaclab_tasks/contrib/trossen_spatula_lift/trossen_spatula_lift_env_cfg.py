@@ -219,8 +219,11 @@ class CommandsCfg:
 
 @configclass
 class ActionsCfg:
+    # clip at 6 sigma of the initial policy: harmless for any sane policy, and it
+    # bounds the action-rate penalty against the last_action feedback runaway (see
+    # the clipped actions observation term).
     arm_action = mdp.JointPositionActionCfg(
-        asset_name="robot", joint_names=[ARM_JOINTS], scale=0.5, use_default_offset=True
+        asset_name="robot", joint_names=[ARM_JOINTS], scale=0.5, use_default_offset=True, clip={".*": (-6.0, 6.0)}
     )
     gripper_action = mdp.BinaryJointPositionActionCfg(
         asset_name="robot",
@@ -246,7 +249,11 @@ class ObservationsCfg:
         joint_vel = ObsTerm(func=mdp.joint_vel_rel)
         object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
         target_object_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "object_pose"})
-        actions = ObsTerm(func=mdp.last_action)
+        # The raw last action feeds back into the policy input; unclipped, the loop
+        # goes exponentially unstable once the network's feedback gain crosses 1
+        # (measured: |action| 1.3e6 within one rollout, then NaN in the PPO update).
+        # The clip bounds the loop; 6 sigma never binds for a healthy policy.
+        actions = ObsTerm(func=mdp.last_action, clip=(-6.0, 6.0))
 
         def __post_init__(self):
             self.enable_corruption = True
