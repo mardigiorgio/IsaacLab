@@ -96,32 +96,60 @@ _NEWTON_NCONMAX = 200
 
 
 # ---------------------------------------------------------------------------- physics
+def _mjwarp_solver_cfg() -> MJWarpSolverCfg:
+    # MuJoCo's contact pipeline, deliberately. Measured on this asset: the fingers
+    # pinch ACROSS the blade width, and a convex hull is exact at its extremal points,
+    # so per-geom convexification (blade + handle are separate geoms) is faithful
+    # along the grasp direction; the 1.5x hull volume error is the scoop cavity
+    # nothing touches. The Newton CollisionPipeline path (use_mujoco_contacts=False)
+    # was probed and has two blocking defects with this solver lineage: reset-time
+    # depenetration EJECTS the 66 g blade (ballistic to 0.4 m), and contacts freeze
+    # per physics boundary while the solver substeps inside it, so the thin blade
+    # TUNNELS through the slab (and would tunnel through fingers) at ~2 m/s. MuJoCo
+    # re-detects contact every solver step; neither pathology exists there
+    # (probe-verified).
+    return MJWarpSolverCfg(
+        njmax=_NEWTON_NJMAX,
+        nconmax=_NEWTON_NCONMAX,
+        cone="pyramidal",
+        impratio=1,
+        integrator="implicitfast",
+        use_mujoco_contacts=True,
+    )
+
+
 @configclass
 class TrossenSpatulaLiftPhysicsCfg(PresetCfg):
-    """Newton (MuJoCo-Warp) is the DEFAULT: the experiment is Newton-fixed vs
-    Newton-adaptive (``--solver mujoco physics=newton_mjwarp`` / ``mujoco-adaptive``).
-    PhysX remains reachable via ``physics=physx`` as a debugging escape hatch only."""
+    """Newton (MuJoCo-Warp) is the DEFAULT: the experiment is Newton-fixed
+    (``--solver mujoco``, preset ``newton_mjwarp`` == ``default``) vs Newton-adaptive
+    (``--solver mujoco-adaptive physics=newton_mjwarp_adaptive``). PhysX remains
+    reachable via ``physics=physx`` as a debugging escape hatch only.
 
+    The default IS the fixed tier: a bare ``--solver mujoco`` run must never land on
+    the 1-substep boundary, where mj dt 0.01 sinks the resting blade into the
+    tabletop (rest-probe measured) and goes non-finite on first grasp (NaN at
+    ~iter 38, 8192 envs).
+    """
+
+    # The FIXED arm: 2 substeps -> mj dt 0.005, the cheapest fixed step that holds
+    # both the resting blade and the blade-squeeze contact.
     default: NewtonCfg = NewtonCfg(
-        solver_cfg=MJWarpSolverCfg(
-            njmax=_NEWTON_NJMAX,
-            nconmax=_NEWTON_NCONMAX,
-            cone="pyramidal",
-            impratio=1,
-            integrator="implicitfast",
-            # MuJoCo's contact pipeline, deliberately. Measured on this asset: the
-            # fingers pinch ACROSS the blade width, and a convex hull is exact at its
-            # extremal points, so per-geom convexification (blade + handle are separate
-            # geoms) is faithful along the grasp direction; the 1.5x hull volume error
-            # is the scoop cavity nothing touches. The Newton CollisionPipeline path
-            # (use_mujoco_contacts=False) was probed and has two blocking defects with
-            # this solver lineage: reset-time depenetration EJECTS the 66 g blade
-            # (ballistic to 0.4 m), and contacts freeze per physics boundary while the
-            # solver substeps inside it, so the thin blade TUNNELS through the slab
-            # (and would tunnel through fingers) at ~2 m/s. MuJoCo re-detects contact
-            # every solver step; neither pathology exists there (probe-verified).
-            use_mujoco_contacts=True,
-        ),
+        solver_cfg=_mjwarp_solver_cfg(),
+        num_substeps=2,
+        debug_mode=False,
+        use_cuda_graph=True,
+    )
+    newton_mjwarp: NewtonCfg = NewtonCfg(
+        solver_cfg=_mjwarp_solver_cfg(),
+        num_substeps=2,
+        debug_mode=False,
+        use_cuda_graph=True,
+    )
+    # The ADAPTIVE arm: 1 substep keeps the full 0.01 boundary -- choosing dt inside
+    # it is the adaptive solver's job. Guarded against fixed-solver use in
+    # :meth:`TrossenSpatulaLiftEnvCfg.validate_config`.
+    newton_mjwarp_adaptive: NewtonCfg = NewtonCfg(
+        solver_cfg=_mjwarp_solver_cfg(),
         num_substeps=1,
         debug_mode=False,
         use_cuda_graph=True,
@@ -132,34 +160,6 @@ class TrossenSpatulaLiftPhysicsCfg(PresetCfg):
         gpu_max_rigid_patch_count=2**20,
         gpu_total_aggregate_pairs_capacity=2**23,
         gpu_found_lost_aggregate_pairs_capacity=2**26,
-    )
-    newton_mjwarp: NewtonCfg = NewtonCfg(
-        solver_cfg=MJWarpSolverCfg(
-            njmax=_NEWTON_NJMAX,
-            nconmax=_NEWTON_NCONMAX,
-            cone="pyramidal",
-            impratio=1,
-            integrator="implicitfast",
-            # MuJoCo's contact pipeline, deliberately. Measured on this asset: the
-            # fingers pinch ACROSS the blade width, and a convex hull is exact at its
-            # extremal points, so per-geom convexification (blade + handle are separate
-            # geoms) is faithful along the grasp direction; the 1.5x hull volume error
-            # is the scoop cavity nothing touches. The Newton CollisionPipeline path
-            # (use_mujoco_contacts=False) was probed and has two blocking defects with
-            # this solver lineage: reset-time depenetration EJECTS the 66 g blade
-            # (ballistic to 0.4 m), and contacts freeze per physics boundary while the
-            # solver substeps inside it, so the thin blade TUNNELS through the slab
-            # (and would tunnel through fingers) at ~2 m/s. MuJoCo re-detects contact
-            # every solver step; neither pathology exists there (probe-verified).
-            use_mujoco_contacts=True,
-        ),
-        # The FIXED arm's tier: fixed stepping at mj dt 0.01 goes non-finite on first
-        # grasp of the blade squeeze (NaN at ~iter 38, 8192 envs), so the fixed arm
-        # subdivides to mj dt 0.005. The adaptive arm runs ``default`` at 1 substep --
-        # choosing dt inside the boundary is its job.
-        num_substeps=2,
-        debug_mode=False,
-        use_cuda_graph=True,
     )
 
 
@@ -314,6 +314,24 @@ class TrossenSpatulaLiftEnvCfg(ManagerBasedRLEnvCfg):
     terminations: TerminationsCfg = TerminationsCfg()
     events: EventCfg = EventCfg()
     curriculum = None
+
+    def validate_config(self):
+        """Reject the fixed MJWarp solver on a 1-substep boundary.
+
+        mj dt 0.01 sinks the resting blade into the tabletop and goes non-finite on
+        first grasp; only the adaptive solver may own the full 0.01 boundary.
+        """
+        solver_cfg = getattr(self.sim.physics, "solver_cfg", None)
+        if solver_cfg is None:
+            return
+        num_substeps = getattr(self.sim.physics, "num_substeps", 1)
+        if not getattr(solver_cfg, "adaptive", False) and num_substeps < 2:
+            raise ValueError(
+                "The spatula task requires num_substeps >= 2 (mj dt <= 0.005) under the fixed"
+                " MJWarp solver: dt 0.01 sinks the resting blade into the tabletop and goes"
+                " non-finite on first grasp. Use the default/newton_mjwarp preset, or pair"
+                " physics=newton_mjwarp_adaptive with --solver mujoco-adaptive."
+            )
 
     def __post_init__(self):
         # Reference lift timing: 100 Hz physics, decimation 2 -> 50 Hz control, 5 s episodes.
