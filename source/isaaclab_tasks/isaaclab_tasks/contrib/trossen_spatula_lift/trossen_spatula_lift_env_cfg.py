@@ -120,9 +120,15 @@ def _newton_collision_cfg() -> NewtonCollisionPipelineCfg:
     # rigid_contact_max pinned explicitly: the auto-estimator can size the arena
     # below MuJoCo's demand (nconmax x nworld), which breaks graph capture and
     # corrupts the eager fallback. 2M covers nconmax=200 at 8192 worlds.
+    # max_triangle_pairs is a GLOBAL cap across all worlds: raw-mesh narrowphase
+    # candidates scale with world count, and overflow silently drops mesh
+    # contacts (the spatula falls through the table). Logged demand at 8192
+    # worlds is 5.1M pre-grasp against the 1M default; 24M leaves grasp-phase
+    # headroom.
     return NewtonCollisionPipelineCfg(
         broad_phase="explicit",
         rigid_contact_max=2_000_000,
+        max_triangle_pairs=24_000_000,
     )
 
 
