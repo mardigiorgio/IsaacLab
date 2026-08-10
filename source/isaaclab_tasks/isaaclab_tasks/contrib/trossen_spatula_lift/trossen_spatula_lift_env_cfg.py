@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import os
 
-from isaaclab_newton.physics import MJWarpSolverCfg, NewtonCfg
+from isaaclab_newton.physics import MJWarpSolverCfg, NewtonCfg, NewtonShapeCfg
 from isaaclab_newton.physics.newton_collision_cfg import NewtonCollisionPipelineCfg
 from isaaclab_physx.physics import PhysxCfg
 
@@ -49,7 +49,6 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import FrameTransformerCfg
 from isaaclab.sensors.frame_transformer import OffsetCfg
 from isaaclab.sim.schemas import RigidBodyPropertiesCfg
-from isaaclab.sim.spawners import UsdFileCfg
 from isaaclab.utils.configclass import configclass
 
 from isaaclab_tasks.utils import PresetCfg
@@ -146,6 +145,9 @@ class TrossenSpatulaLiftPhysicsCfg(PresetCfg):
     default: NewtonCfg = NewtonCfg(
         solver_cfg=_mjwarp_solver_cfg(),
         collision_cfg=_newton_collision_cfg(),
+        # 1 mm shape margin (2 mm per pair): the thin-shell runway from the G1
+        # spatula scene — force ramps in before true penetration of the raw meshes.
+        default_shape_cfg=NewtonShapeCfg(margin=0.001),
         simplify_meshes_exclude=_MESH_EXCLUDE,
         num_substeps=2,
         debug_mode=False,
@@ -154,6 +156,9 @@ class TrossenSpatulaLiftPhysicsCfg(PresetCfg):
     newton_mjwarp: NewtonCfg = NewtonCfg(
         solver_cfg=_mjwarp_solver_cfg(),
         collision_cfg=_newton_collision_cfg(),
+        # 1 mm shape margin (2 mm per pair): the thin-shell runway from the G1
+        # spatula scene — force ramps in before true penetration of the raw meshes.
+        default_shape_cfg=NewtonShapeCfg(margin=0.001),
         simplify_meshes_exclude=_MESH_EXCLUDE,
         num_substeps=2,
         debug_mode=False,
@@ -165,6 +170,9 @@ class TrossenSpatulaLiftPhysicsCfg(PresetCfg):
     newton_mjwarp_adaptive: NewtonCfg = NewtonCfg(
         solver_cfg=_mjwarp_solver_cfg(),
         collision_cfg=_newton_collision_cfg(),
+        # 1 mm shape margin (2 mm per pair): the thin-shell runway from the G1
+        # spatula scene — force ramps in before true penetration of the raw meshes.
+        default_shape_cfg=NewtonShapeCfg(margin=0.001),
         simplify_meshes_exclude=_MESH_EXCLUDE,
         num_substeps=1,
         debug_mode=False,
@@ -189,16 +197,24 @@ class TrossenSpatulaLiftSceneCfg(InteractiveSceneCfg):
         # rot is (x, y, z, w): identity = (0, 0, 0, 1). The wxyz-habit [1, 0, 0, 0]
         # is a 180-degree roll here and buries the handle grip in the tabletop.
         init_state=RigidObjectCfg.InitialStateCfg(pos=[_SPAWN_X, _SPAWN_Y, SPATULA_REST_Z], rot=[0, 0, 0, 1]),
-        spawn=UsdFileCfg(
+        # Thin-object contact authoring ported from the G1 spatula scene (same
+        # spatula asset, same lab-table dimensions): compliant contact on the two
+        # raw collision meshes so the force ramp is survivable at the march's
+        # step sizes, and a low depenetration cap so contact violations bleed
+        # out instead of catapulting the 66 g object.
+        spawn=sim_utils.UsdFileWithCompliantContactCfg(
             usd_path=SPATULA_USD_PATH,
             rigid_props=RigidBodyPropertiesCfg(
                 solver_position_iteration_count=16,
                 solver_velocity_iteration_count=1,
                 max_angular_velocity=1000.0,
                 max_linear_velocity=1000.0,
-                max_depenetration_velocity=5.0,
+                max_depenetration_velocity=0.5,
                 disable_gravity=False,
             ),
+            compliant_contact_stiffness=111000.0,
+            compliant_contact_damping=667.0,
+            physics_material_prim_path=["collisions_blade/mesh", "collisions_handle/mesh"],
         ),
     )
 
