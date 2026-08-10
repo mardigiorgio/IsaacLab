@@ -90,14 +90,14 @@ SPATULA_REST_Z = 0.025
 # handle-down tilt of a blade grip.
 LIFT_HEIGHT = 0.08
 
-# Constraint-row cap sized for exact-mesh GRASP-phase demand: hulled-era 400 and
-# a pre-grasp-sized 600 both overflow once policies engage (logged peak 1292
-# rows/world), and MuJoCo silently DROPS overflow rows — the spatula loses its
-# support, falls through the table, and the unconstrained state cascades to NaN.
-# 1600 covers the logged peak with headroom (G1's hand-dense scene validates
-# 1200). Memory: 1600 fits at 4096 worlds (the proven caps-A/B config) but hits
-# the 3.11 dense-layout wall at 8192 — size num_envs accordingly.
-_NEWTON_NJMAX = 1600
+# Constraint-row cap for exact-mesh contact under FORCEFUL policies. The demand
+# is policy-dependent and grows as policies engage harder (empirical ladder:
+# 436 pre-grasp, 1292 first contact, 2608 peak under aggressive mashing with
+# the 1 mm margin's speculative rows) — and per-world contact counts are NOT
+# bounded by nconmax, which pools globally. 3200 = 1.23x the worst logged peak.
+# Memory: nworld x njmax is the dense-layout driver; 2048 x 3200 equals the
+# proven 4096 x 1600 arena, so the experiment runs at 2048 worlds.
+_NEWTON_NJMAX = 3200
 _NEWTON_NCONMAX = 200
 
 
