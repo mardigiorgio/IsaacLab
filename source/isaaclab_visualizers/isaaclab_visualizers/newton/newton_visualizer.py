@@ -157,6 +157,22 @@ class NewtonViewerGL(ViewerGL):
         """Return whether simulation is paused by viewer controls."""
         return self._paused_training
 
+    def render_on_demand(self) -> bool:
+        """Whether this visualizer's per-step update may be skipped when no
+        consumer needs a frame.
+
+        Only a headless viewer qualifies: it has no interactive client, so its
+        scene redraw exists solely to feed frame capture, and it draws from
+        live state on every call (no incremental accumulation), making skipped
+        steps stateless. NEWTON_VIZ_ALWAYS_RENDER=1 restores unconditional
+        rendering.
+        """
+        import os
+
+        if os.environ.get("NEWTON_VIZ_ALWAYS_RENDER") == "1":
+            return False
+        return bool(self.cfg.headless)
+
     def is_rendering_paused(self) -> bool:
         """Return whether rendering is paused by viewer controls."""
         return self._paused_rendering

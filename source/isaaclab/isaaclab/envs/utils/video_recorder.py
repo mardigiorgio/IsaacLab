@@ -110,6 +110,23 @@ class VideoRecorder:
             if self._frames_step_count >= self.cfg.video_length:
                 self._close_clip()
 
+    def will_capture(self) -> bool:
+        """Whether the NEXT :meth:`step` call may append a frame.
+
+        Mirrors :meth:`step`'s trigger/recording logic one step ahead so the
+        caller can decide, before rendering, whether any visualizer frame will
+        actually be consumed this step. Erring on True is safe (one extra
+        rendered frame); erring on False would drop a clip frame, so the
+        trigger check uses the exact effective step the next call sees.
+        """
+        next_count = self._step_count + 1
+        if next_count <= self.cfg.step_offset:
+            return False
+        effective_step = next_count - self.cfg.step_offset
+        if self._check_trigger(effective_step):
+            return True
+        return self._recording
+
     def close(self) -> None:
         """Flush any buffered frames and close the current clip."""
         if self._recording and self._frames:

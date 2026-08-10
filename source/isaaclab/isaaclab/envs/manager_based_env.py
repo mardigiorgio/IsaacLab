@@ -561,6 +561,11 @@ class ManagerBasedEnv:
                 # When render_enabled is False, Kit visualizer (camera/GUI) is skipped
                 # but standalone visualizers (Newton, Rerun, Viser) still update.
                 if self._sim_step_counter % self.cfg.sim.render_interval == 0 and is_rendering:
+                    # Headless video runs: tell demand-gated visualizers whether any
+                    # recorder will actually consume a frame after this step, so the
+                    # fleet redraw only runs during (or one step ahead of) a clip.
+                    if self.video_recorders:
+                        self.sim.set_visualizer_frame_demand(any(r.will_capture() for r in self.video_recorders))
                     self.sim.render(skip_app_pumping=not self.render_enabled)
                 # update buffers at sim dt
                 self.scene.update(dt=self.physics_dt)

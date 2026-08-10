@@ -747,13 +747,25 @@ class SimulationContext:
                 Used by environment ``step()`` when ``render_enabled`` is False.
         """
         self.physics_manager.pre_render()
-        self.update_visualizers(self.get_rendering_dt(), skip_app_pumping=skip_app_pumping)
+        self.update_visualizers(
+            self.get_rendering_dt(), skip_app_pumping=skip_app_pumping, frame_demand=self._visualizer_frame_demand
+        )
         self.physics_manager.after_visualizers_render()
         for _, callback in sorted(self._render_callbacks.values(), key=lambda x: x[0]):
             callback(None)
         self._render_generation += 1
 
-    def update_visualizers(self, dt: float, skip_app_pumping: bool = False) -> None:
+    _visualizer_frame_demand: bool | None = None
+    """Per-step hint from the environment: False when no video recorder will
+    consume a frame this step, letting demand-gated visualizers skip their
+    update. None (default) means unknown, which preserves unconditional
+    rendering for callers that never set it."""
+
+    def set_visualizer_frame_demand(self, demand: bool | None) -> None:
+        """Set the frame-demand hint consumed by the next :meth:`render` call."""
+        self._visualizer_frame_demand = demand
+
+    def update_visualizers(self, dt: float, skip_app_pumping: bool = False, frame_demand: bool | None = None) -> None:
         """Update visualizers without triggering renderer/GUI.
 
         Args:
@@ -782,6 +794,16 @@ class SimulationContext:
             try:
                 # When skip_app_pumping is set, skip Kit-like visualizers that call app.update()
                 if skip_app_pumping and viz.pumps_app_update():
+                    continue
+                # Demand-gated rendering: a headless visualizer whose only
+                # consumer is frame capture skips its scene update entirely on
+                # steps where no recorder will take a frame. frame_demand=None
+                # (callers unaware of demand) preserves unconditional updates.
+                if (
+                    frame_demand is False
+                    and getattr(viz, "render_on_demand", None) is not None
+                    and viz.render_on_demand()
+                ):
                     continue
                 if viz.is_closed or not viz.is_running():
                     if viz.is_closed:
