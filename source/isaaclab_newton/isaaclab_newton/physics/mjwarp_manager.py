@@ -452,7 +452,11 @@ class NewtonMJWarpManager(NewtonManager):
         before this call), so one boundary call per tick suffices. SAP and fixed-step
         paths keep the stock per-substep loop.
         """
-        if cls._adaptive and not cls._sap:
+        # NEWTON_ADAPTIVE_SINGLE_BOUNDARY=0 routes the adaptive solver through the
+        # stock per-substep loop instead: shorter boundaries mean injected contacts
+        # are re-detected num_substeps times per tick, bounding how long the march
+        # integrates against a frozen contact set.
+        if cls._adaptive and not cls._sap and os.environ.get("NEWTON_ADAPTIVE_SINGLE_BOUNDARY", "1") == "1":
             cls._step_solver(cls._state_0, cls._state_0, cls._control, contacts, cls._solver_dt * cls._num_substeps)
             cls._state_0.clear_forces()
             return
