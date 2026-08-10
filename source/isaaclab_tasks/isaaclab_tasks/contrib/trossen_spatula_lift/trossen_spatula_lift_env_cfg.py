@@ -97,7 +97,7 @@ LIFT_HEIGHT = 0.08
 # bounded by nconmax, which pools globally. 3200 = 1.23x the worst logged peak.
 # Memory: nworld x njmax is the dense-layout driver; 2048 x 3200 equals the
 # proven 4096 x 1600 arena, so the experiment runs at 2048 worlds.
-_NEWTON_NJMAX = 3200
+_NEWTON_NJMAX = 4096
 _NEWTON_NCONMAX = 200
 
 
