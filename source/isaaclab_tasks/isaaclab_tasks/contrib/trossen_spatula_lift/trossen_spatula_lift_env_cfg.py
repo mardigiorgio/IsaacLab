@@ -32,6 +32,7 @@ from __future__ import annotations
 import os
 
 from isaaclab_newton.physics import MJWarpSolverCfg, NewtonCfg
+from isaaclab_newton.physics.newton_collision_cfg import NewtonCollisionPipelineCfg
 from isaaclab_physx.physics import PhysxCfg
 
 import isaaclab.sim as sim_utils
@@ -97,25 +98,34 @@ _NEWTON_NCONMAX = 200
 
 # ---------------------------------------------------------------------------- physics
 def _mjwarp_solver_cfg() -> MJWarpSolverCfg:
-    # MuJoCo's contact pipeline, deliberately. Measured on this asset: the fingers
-    # pinch ACROSS the blade width, and a convex hull is exact at its extremal points,
-    # so per-geom convexification (blade + handle are separate geoms) is faithful
-    # along the grasp direction; the 1.5x hull volume error is the scoop cavity
-    # nothing touches. The Newton CollisionPipeline path (use_mujoco_contacts=False)
-    # was probed and has two blocking defects with this solver lineage: reset-time
-    # depenetration EJECTS the 66 g blade (ballistic to 0.4 m), and contacts freeze
-    # per physics boundary while the solver substeps inside it, so the thin blade
-    # TUNNELS through the slab (and would tunnel through fingers) at ~2 m/s. MuJoCo
-    # re-detects contact every solver step; neither pathology exists there
-    # (probe-verified).
+    # Newton CollisionPipeline contacts, injected into MJWarp: the manipulated
+    # object must collide as its exact meshes (sim-to-real fidelity of the thin
+    # blade), and MuJoCo's internal pipeline convexifies every mesh. Both arms
+    # consume the same injected contacts, keeping the contact model out of the
+    # fixed-vs-adaptive comparison.
     return MJWarpSolverCfg(
         njmax=_NEWTON_NJMAX,
         nconmax=_NEWTON_NCONMAX,
         cone="pyramidal",
         impratio=1,
         integrator="implicitfast",
-        use_mujoco_contacts=True,
+        use_mujoco_contacts=False,
     )
+
+
+def _newton_collision_cfg() -> NewtonCollisionPipelineCfg:
+    # rigid_contact_max pinned explicitly: the auto-estimator can size the arena
+    # below MuJoCo's demand (nconmax x nworld), which breaks graph capture and
+    # corrupts the eager fallback. 2M covers nconmax=200 at 8192 worlds.
+    return NewtonCollisionPipelineCfg(
+        broad_phase="explicit",
+        rigid_contact_max=2_000_000,
+    )
+
+
+# The spatula's colliders stay RAW meshes (no convexification of the manipulated
+# object); every other collider keeps the default simplification.
+_MESH_EXCLUDE = [r".*/Object/collisions_.*"]
 
 
 @configclass
@@ -135,12 +145,16 @@ class TrossenSpatulaLiftPhysicsCfg(PresetCfg):
     # both the resting blade and the blade-squeeze contact.
     default: NewtonCfg = NewtonCfg(
         solver_cfg=_mjwarp_solver_cfg(),
+        collision_cfg=_newton_collision_cfg(),
+        simplify_meshes_exclude=_MESH_EXCLUDE,
         num_substeps=2,
         debug_mode=False,
         use_cuda_graph=True,
     )
     newton_mjwarp: NewtonCfg = NewtonCfg(
         solver_cfg=_mjwarp_solver_cfg(),
+        collision_cfg=_newton_collision_cfg(),
+        simplify_meshes_exclude=_MESH_EXCLUDE,
         num_substeps=2,
         debug_mode=False,
         use_cuda_graph=True,
@@ -150,6 +164,8 @@ class TrossenSpatulaLiftPhysicsCfg(PresetCfg):
     # :meth:`TrossenSpatulaLiftEnvCfg.validate_config`.
     newton_mjwarp_adaptive: NewtonCfg = NewtonCfg(
         solver_cfg=_mjwarp_solver_cfg(),
+        collision_cfg=_newton_collision_cfg(),
+        simplify_meshes_exclude=_MESH_EXCLUDE,
         num_substeps=1,
         debug_mode=False,
         use_cuda_graph=True,
