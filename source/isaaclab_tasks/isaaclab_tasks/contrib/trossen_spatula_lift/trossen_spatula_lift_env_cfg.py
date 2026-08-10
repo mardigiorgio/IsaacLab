@@ -170,7 +170,9 @@ class TrossenSpatulaLiftSceneCfg(InteractiveSceneCfg):
 
     object: RigidObjectCfg = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/Object",
-        init_state=RigidObjectCfg.InitialStateCfg(pos=[_SPAWN_X, _SPAWN_Y, SPATULA_REST_Z], rot=[1, 0, 0, 0]),
+        # rot is (x, y, z, w): identity = (0, 0, 0, 1). The wxyz-habit [1, 0, 0, 0]
+        # is a 180-degree roll here and buries the handle grip in the tabletop.
+        init_state=RigidObjectCfg.InitialStateCfg(pos=[_SPAWN_X, _SPAWN_Y, SPATULA_REST_Z], rot=[0, 0, 0, 1]),
         spawn=UsdFileCfg(
             usd_path=SPATULA_USD_PATH,
             rigid_props=RigidBodyPropertiesCfg(
