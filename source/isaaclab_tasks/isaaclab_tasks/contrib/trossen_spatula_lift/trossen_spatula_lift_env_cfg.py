@@ -313,16 +313,27 @@ class RewardsCfg:
     """The classic Franka cube-lift terms, weights unchanged; only minimal_height is
     re-based for the spatula's rest height."""
 
+    # Anti-flick ladder (pattern from the G1 spatula task, adapted to a
+    # parallel-jaw gripper): all income above reach is gated on POSSESSION —
+    # the object riding within 5 cm of the TCP — so batting the spatula toward
+    # the goal pays nothing. Holding is its own rung so the gated terms are
+    # reachable, and bare altitude is a cheap indicator rather than income
+    # (ballistic flight otherwise out-earns approaching the object).
     reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.1}, weight=1.0)
-    lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": LIFT_HEIGHT}, weight=15.0)
+    holding_object = RewTerm(func=mdp.object_held, params={"threshold": 0.05}, weight=2.0)
+    lifting_object = RewTerm(
+        func=mdp.object_lifted_held,
+        params={"minimal_height": LIFT_HEIGHT, "threshold": 0.05},
+        weight=1.0,
+    )
     object_goal_tracking = RewTerm(
-        func=mdp.object_goal_distance,
-        params={"std": 0.3, "minimal_height": LIFT_HEIGHT, "command_name": "object_pose"},
+        func=mdp.object_goal_distance_held,
+        params={"std": 0.3, "minimal_height": LIFT_HEIGHT, "command_name": "object_pose", "threshold": 0.05},
         weight=16.0,
     )
     object_goal_tracking_fine_grained = RewTerm(
-        func=mdp.object_goal_distance,
-        params={"std": 0.05, "minimal_height": LIFT_HEIGHT, "command_name": "object_pose"},
+        func=mdp.object_goal_distance_held,
+        params={"std": 0.05, "minimal_height": LIFT_HEIGHT, "command_name": "object_pose", "threshold": 0.05},
         weight=5.0,
     )
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)

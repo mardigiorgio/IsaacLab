@@ -82,6 +82,54 @@ def object_goal_distance(
     return (obj.data.root_pos_w.torch[:, 2] > minimal_height) * (1.0 - torch.tanh(distance / std))
 
 
+def object_held(
+    env: ManagerBasedRLEnv,
+    threshold: float = 0.05,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+) -> torch.Tensor:
+    """1.0 when the object rides within ``threshold`` [m] of the TCP.
+
+    Possession predicate for a parallel-jaw gripper: a grasped object moves
+    with the TCP, a batted one separates within a step, so gating income on
+    this indicator makes ballistic strategies unpayable.
+    """
+    obj = env.scene[object_cfg.name]
+    ee_frame = env.scene[ee_frame_cfg.name]
+    ee_pos_w = ee_frame.data.target_pos_w.torch[..., 0, :]
+    distance = torch.norm(obj.data.root_pos_w.torch - ee_pos_w, dim=1)
+    return torch.where(distance < threshold, 1.0, 0.0)
+
+
+def object_lifted_held(
+    env: ManagerBasedRLEnv,
+    minimal_height: float,
+    threshold: float = 0.05,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+) -> torch.Tensor:
+    """Lift indicator payable only while the object is possessed."""
+    return object_is_lifted(env, minimal_height, object_cfg) * object_held(
+        env, threshold, object_cfg, ee_frame_cfg
+    )
+
+
+def object_goal_distance_held(
+    env: ManagerBasedRLEnv,
+    std: float,
+    minimal_height: float,
+    command_name: str,
+    threshold: float = 0.05,
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+) -> torch.Tensor:
+    """Goal-tracking income payable only while the object is possessed."""
+    return object_goal_distance(env, std, minimal_height, command_name, robot_cfg, object_cfg) * object_held(
+        env, threshold, object_cfg, ee_frame_cfg
+    )
+
+
 def object_position_in_robot_root_frame(
     env: ManagerBasedRLEnv,
     robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
