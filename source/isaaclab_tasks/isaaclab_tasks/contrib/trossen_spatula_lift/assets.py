@@ -75,16 +75,7 @@ STATIONARY_AI_CFG = ArticulationCfg(
         },
     ),
     actuators={
-        "left_arm": ImplicitActuatorCfg(
-            joint_names_expr=["follower_left_joint_[0-5]"],
-            stiffness=80.0,
-            damping=4.0,
-            # Without a cap the kp=80 servo can press ~200+ N at the EE and shove
-            # the spatula through the tabletop. ~6 N*m holds the arm extended
-            # (2 kg x 0.3 m lever); x4 motion headroom. Estimate pending the
-            # real actuator spec.
-            effort_limit_sim=25.0,
-        ),
+        "left_arm": ImplicitActuatorCfg(joint_names_expr=["follower_left_joint_[0-5]"], stiffness=80.0, damping=4.0),
         # BOTH carriages are actuated explicitly. The right one is nominally driven by a
         # physxMimicJoint (gearing -1, frames absorb the sign: it tracks the left 1:1 in
         # joint coordinates -- measured under PhysX: open 0.0441/0.0440, closed

@@ -224,14 +224,8 @@ class TrossenSpatulaLiftSceneCfg(InteractiveSceneCfg):
                 max_depenetration_velocity=0.5,
                 disable_gravity=False,
             ),
-            # Sized to the CLAMP BOUNDARY of the slower arm: mjwarp clamps solref
-            # timeconst to 2*dt, so any stiffer material is silently softened for
-            # the fixed arm (dt 5 ms -> timeconst 10 ms -> ke ~9% of nominal) while
-            # the adaptive arm's ~1 ms steps feel it in full — an asymmetric
-            # material between the two arms of the experiment. timeconst 10 ms
-            # (ke ~11k / kd ~210) is what BOTH arms experience identically.
-            compliant_contact_stiffness=11000.0,
-            compliant_contact_damping=210.0,
+            compliant_contact_stiffness=111000.0,
+            compliant_contact_damping=667.0,
             physics_material_prim_path=["collisions_blade/mesh", "collisions_handle/mesh"],
         ),
     )
