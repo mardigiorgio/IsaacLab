@@ -90,8 +90,12 @@ SPATULA_REST_Z = 0.025
 # handle-down tilt of a blade grip.
 LIFT_HEIGHT = 0.08
 
-# Contact-dense bimanual rig: the cube task's validated Newton caps.
-_NEWTON_NJMAX = 400
+# Constraint-row cap sized for exact-mesh contacts: the cube task's 400 (hulled
+# contacts) overflows during grasping on raw spatula meshes — MuJoCo silently
+# DROPS overflow rows, which unloads the spatula's support and lets it fall
+# through the table. Peak demand logged at 8192 worlds was 436; 600 gives
+# headroom without tripping the 3.11 dense-layout memory wall.
+_NEWTON_NJMAX = 600
 _NEWTON_NCONMAX = 200
 
 
