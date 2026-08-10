@@ -327,6 +327,15 @@ class RewardsCfg:
     )
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
     joint_vel = RewTerm(func=mdp.joint_vel_l2, weight=-1e-4, params={"asset_cfg": SceneEntityCfg("robot")})
+    # Grip-force regularization (standard MuJoCo grasping practice): holding the
+    # 66 g spatula needs <1 N per finger, so the hold is effectively free, while
+    # crushing at the 20 N cap costs ~0.4/step — policies learn gentle grasps
+    # instead of exploiting constraint softness with maximum squeeze.
+    grip_force = RewTerm(
+        func=mdp.joint_torques_l2,
+        weight=-1e-3,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[GRIPPER_JOINT, GRIPPER_JOINT_R])},
+    )
 
 
 @configclass
