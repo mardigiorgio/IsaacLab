@@ -90,12 +90,14 @@ SPATULA_REST_Z = 0.025
 # handle-down tilt of a blade grip.
 LIFT_HEIGHT = 0.08
 
-# Constraint-row cap sized for exact-mesh contacts: the cube task's 400 (hulled
-# contacts) overflows during grasping on raw spatula meshes — MuJoCo silently
-# DROPS overflow rows, which unloads the spatula's support and lets it fall
-# through the table. Peak demand logged at 8192 worlds was 436; 600 gives
-# headroom without tripping the 3.11 dense-layout memory wall.
-_NEWTON_NJMAX = 600
+# Constraint-row cap sized for exact-mesh GRASP-phase demand: hulled-era 400 and
+# a pre-grasp-sized 600 both overflow once policies engage (logged peak 1292
+# rows/world), and MuJoCo silently DROPS overflow rows — the spatula loses its
+# support, falls through the table, and the unconstrained state cascades to NaN.
+# 1600 covers the logged peak with headroom (G1's hand-dense scene validates
+# 1200). Memory: 1600 fits at 4096 worlds (the proven caps-A/B config) but hits
+# the 3.11 dense-layout wall at 8192 — size num_envs accordingly.
+_NEWTON_NJMAX = 1600
 _NEWTON_NCONMAX = 200
 
 
