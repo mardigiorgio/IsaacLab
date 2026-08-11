@@ -101,9 +101,16 @@ STATIONARY_AI_CFG = ArticulationCfg(
             damping=60.0,
             effort_limit_sim=20.0,
         ),
-        "right_arm": ImplicitActuatorCfg(joint_names_expr=["follower_right_joint_[0-5]"], stiffness=None, damping=None),
+        # Right side mirrors the left's tuned gains. None here inherits the
+        # USD-baked PhysX drive (stiffness 217687) whose kp stability bound
+        # (dt < 1.22 ms) is violated at every experiment dt -- the same relay
+        # instability the left-gripper comment documents.
+        "right_arm": ImplicitActuatorCfg(joint_names_expr=["follower_right_joint_[0-5]"], stiffness=80.0, damping=4.0),
         "right_gripper": ImplicitActuatorCfg(
-            joint_names_expr=["follower_right_left_carriage_joint"], stiffness=None, damping=None
+            joint_names_expr=["follower_right_left_carriage_joint"],
+            stiffness=3000.0,
+            damping=60.0,
+            effort_limit_sim=20.0,
         ),
     },
     soft_joint_pos_limit_factor=1.0,
