@@ -29,17 +29,19 @@ def object_off_table(
     env: ManagerBasedRLEnv,
     x_bound: float,
     y_bound: float,
+    z_bound: float,
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
 ) -> torch.Tensor:
-    """Terminate envs whose object left the tabletop footprint (env-local xy).
+    """Terminate envs whose object left the workspace (env-local xy footprint or height).
 
-    The rig's tabletop slab rests directly on the ground plane, so an object knocked
-    off the table always ends up on the floor beyond the slab footprint; xy bounds
-    alone decide the condition, independent of lift height or reset settling.
+    xy bounds catch objects knocked sideways onto the floor. The height bound
+    catches near-vertical contact ejections, which keep the object inside the
+    xy footprint for the whole flight and would otherwise coast until timeout
+    while feeding the physics error norm ever-larger coordinates.
     """
     obj = env.scene[object_cfg.name]
-    pos_local = obj.data.root_pos_w.torch[:, :2] - env.scene.env_origins[:, :2]
-    return (pos_local[:, 0].abs() > x_bound) | (pos_local[:, 1].abs() > y_bound)
+    pos_local = obj.data.root_pos_w.torch[:, :3] - env.scene.env_origins[:, :3]
+    return (pos_local[:, 0].abs() > x_bound) | (pos_local[:, 1].abs() > y_bound) | (pos_local[:, 2] > z_bound)
 
 
 def object_is_lifted(
@@ -109,9 +111,7 @@ def object_lifted_held(
     ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
 ) -> torch.Tensor:
     """Lift indicator payable only while the object is possessed."""
-    return object_is_lifted(env, minimal_height, object_cfg) * object_held(
-        env, threshold, object_cfg, ee_frame_cfg
-    )
+    return object_is_lifted(env, minimal_height, object_cfg) * object_held(env, threshold, object_cfg, ee_frame_cfg)
 
 
 def object_goal_distance_held(

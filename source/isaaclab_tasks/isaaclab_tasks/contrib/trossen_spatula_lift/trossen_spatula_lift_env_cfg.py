@@ -362,7 +362,7 @@ class TerminationsCfg:
     )
     # Off the table is irrecoverable: end the episode instead of letting the policy
     # farm shaping next to a dead object. Bounds sit just outside the slab footprint.
-    object_off_table = DoneTerm(func=mdp.object_off_table, params={"x_bound": 0.40, "y_bound": 0.63})
+    object_off_table = DoneTerm(func=mdp.object_off_table, params={"x_bound": 0.40, "y_bound": 0.63, "z_bound": 1.0})
 
 
 @configclass
