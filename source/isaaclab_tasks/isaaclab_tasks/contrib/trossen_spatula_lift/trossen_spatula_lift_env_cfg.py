@@ -98,7 +98,11 @@ LIFT_HEIGHT = 0.08
 # Memory: nworld x njmax is the dense-layout driver; 2048 x 3200 equals the
 # proven 4096 x 1600 arena, so the experiment runs at 2048 worlds.
 _NEWTON_NJMAX = 4096
-_NEWTON_NCONMAX = 200
+# Injected-contact budget per world. The healthy contact population alone
+# runs near the old 200 budget (and past it at scale), so real manifold rows
+# were being dropped in routine operation; 400 covers the measured demand
+# with headroom.
+_NEWTON_NCONMAX = 400
 
 
 # ---------------------------------------------------------------------------- physics
@@ -121,7 +125,7 @@ def _mjwarp_solver_cfg() -> MJWarpSolverCfg:
 def _newton_collision_cfg() -> NewtonCollisionPipelineCfg:
     # rigid_contact_max pinned explicitly: the auto-estimator can size the arena
     # below MuJoCo's demand (nconmax x nworld), which breaks graph capture and
-    # corrupts the eager fallback. 2M covers nconmax=200 at 8192 worlds.
+    # corrupts the eager fallback. 3.5M covers nconmax=400 at 8192 worlds.
     # max_triangle_pairs is a GLOBAL cap across all worlds: raw-mesh narrowphase
     # candidates scale with world count, and overflow silently drops mesh
     # contacts (the spatula falls through the table). Logged demand at 8192
@@ -129,7 +133,7 @@ def _newton_collision_cfg() -> NewtonCollisionPipelineCfg:
     # headroom.
     return NewtonCollisionPipelineCfg(
         broad_phase="explicit",
-        rigid_contact_max=2_000_000,
+        rigid_contact_max=3_500_000,
         max_triangle_pairs=24_000_000,
     )
 
