@@ -12,6 +12,7 @@ import ctypes
 import gc
 import inspect
 import logging
+import os
 import re
 from abc import abstractmethod
 from collections.abc import Callable, Iterable, Sequence
@@ -513,6 +514,24 @@ class NewtonManager(PhysicsManager):
             sim_context: Parent simulation context.
         """
         super().initialize(sim_context)
+
+        # Keep warp's CUDA memory pool across synchronization points. The default
+        # release threshold of 0 returns all unused pool memory to the driver at
+        # every sync; solvers that allocate per step (MJWarp) then re-allocate
+        # from the driver each call, and driver-side fragmentation accumulated
+        # over thousands of steps turns those allocations into a hard slowdown
+        # that scales with process age, not physics. Threshold is a fraction of
+        # device memory; NEWTON_WARP_MEMPOOL_THRESHOLD overrides, "0" disables
+        # the override and keeps warp's default behavior.
+        try:
+            _thr = os.environ.get("NEWTON_WARP_MEMPOOL_THRESHOLD", "0.8")
+            if _thr != "0":
+                _dev = wp.get_device(str(PhysicsManager._device))
+                if _dev.is_cuda and wp.is_mempool_enabled(_dev):
+                    wp.set_mempool_release_threshold(_dev, float(_thr))
+                    logger.info("warp mempool release threshold set to %s on %s", _thr, _dev)
+        except Exception as _exc:
+            logger.warning("could not set warp mempool release threshold: %s", _exc)
 
         # Newton-specific setup: get gravity from SimulationCfg (not physics manager cfg)
         sim = PhysicsManager._sim
