@@ -115,8 +115,14 @@ def _mjwarp_solver_cfg() -> MJWarpSolverCfg:
     return MJWarpSolverCfg(
         njmax=_NEWTON_NJMAX,
         nconmax=_NEWTON_NCONMAX,
-        cone="pyramidal",
-        impratio=1,
+        # Elliptic cone with stiff friction impedance (MuJoCo's grasping guidance):
+        # pyramidal condim-3 contacts cannot resist the pinched blade's spin about
+        # the grasp axis, and the pyramid's corner directions feed a tangential
+        # flip-flop that ratchets object rotation until float32 overflows at coarse
+        # fixed steps. Applies to every arm so the contact model stays out of the
+        # fixed-vs-adaptive comparison.
+        cone="elliptic",
+        impratio=10.0,
         integrator="implicitfast",
         use_mujoco_contacts=False,
     )
