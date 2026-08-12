@@ -23,7 +23,7 @@ timeout 7200 ./isaaclab.sh train --rl_library rsl_rl \
   --task IsaacContrib-Lift-Spatula-Trossen-v0 --seed 42 --solver mujoco-adaptive \
   --num_envs 2048 --max_iterations $ITERS --resume \
   --load_run benchmark-contact-heavy --checkpoint model_150.pt \
-  --logger tensorboard --run_name bench-contact "$@" \
+  --logger wandb --log_project_name rubato-trossen --run_name bench-contact "$@" \
   physics=newton_mjwarp_adaptive > "$LOG" 2>&1
 echo "--- per-iteration collection times:"
 grep "Collection time" "$LOG" | awk '{print NR": "$3}'
