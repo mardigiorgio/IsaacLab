@@ -12,11 +12,11 @@ no-rails variant is the default: the rig's rail frame is a collision body a lift
 exploits by jamming the object against it instead of grasping. ``TROSSEN_RAILS=1``
 selects the full rig as a contact-rich ablation.
 
-Actuator gains follow the Isaac Lab manipulation reference (arm stiffness=80,
-damping=4, as Franka lift): the USD-baked gains are ~500x stiffer and reproduce the
-policy's command chatter as visible hold jitter. Both carriage joints of each gripper
-are actuated explicitly; the USD ``physxMimicJoint`` on the right carriages is
-PhysX-specific and not honored by other backends.
+Arm gains run 10x the Isaac Lab manipulation reference (stiffness=800, damping=40,
+20:1 ratio) for real force authority; the USD-baked gains are ~50x stiffer still and
+reproduce the policy's command chatter as visible hold jitter. Both carriage joints
+of each gripper are actuated explicitly; the USD ``physxMimicJoint`` on the right
+carriages is PhysX-specific and not honored by other backends.
 """
 
 from __future__ import annotations
@@ -83,7 +83,11 @@ STATIONARY_AI_CFG = ArticulationCfg(
         },
     ),
     actuators={
-        "left_arm": ImplicitActuatorCfg(joint_names_expr=["follower_left_joint_[0-5]"], stiffness=80.0, damping=4.0),
+        # High-bandwidth arm servo (10x the Isaac Lab manipulation reference, same
+        # 20:1 stiffness:damping ratio): the policy gets real force authority so the
+        # solver comparison is run under load instead of a sanitized low-gain regime.
+        # Still far below the USD-baked PhysX drive that chatters under MJWarp.
+        "left_arm": ImplicitActuatorCfg(joint_names_expr=["follower_left_joint_[0-5]"], stiffness=800.0, damping=40.0),
         # BOTH carriages are actuated explicitly. The right one is nominally driven by a
         # physxMimicJoint (gearing -1, frames absorb the sign: it tracks the left 1:1 in
         # joint coordinates -- measured under PhysX: open 0.0441/0.0440, closed
@@ -113,7 +117,9 @@ STATIONARY_AI_CFG = ArticulationCfg(
         # USD-baked PhysX drive (stiffness 217687) whose kp stability bound
         # (dt < 1.22 ms) is violated at every experiment dt -- the same relay
         # instability the left-gripper comment documents.
-        "right_arm": ImplicitActuatorCfg(joint_names_expr=["follower_right_joint_[0-5]"], stiffness=80.0, damping=4.0),
+        "right_arm": ImplicitActuatorCfg(
+            joint_names_expr=["follower_right_joint_[0-5]"], stiffness=800.0, damping=40.0
+        ),
         "right_gripper": ImplicitActuatorCfg(
             joint_names_expr=["follower_right_left_carriage_joint", "follower_right_right_carriage_joint"],
             stiffness=3000.0,

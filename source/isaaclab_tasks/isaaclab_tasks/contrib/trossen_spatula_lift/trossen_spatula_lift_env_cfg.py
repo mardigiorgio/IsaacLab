@@ -320,11 +320,11 @@ class ObservationsCfg:
 
 @configclass
 class RewardsCfg:
-    """The classic Franka cube-lift terms, functions and weights unchanged from the
-    reference lift task; only minimal_height is re-based for the spatula's rest
-    height."""
+    """The classic Franka cube-lift terms; minimal_height is re-based for the
+    spatula's rest height and reaching is weighted above the reference to speed
+    up reach acquisition. Lifting-conditioned income still dominates."""
 
-    reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.1}, weight=1.0)
+    reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.1}, weight=3.0)
     lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": LIFT_HEIGHT}, weight=15.0)
     object_goal_tracking = RewTerm(
         func=mdp.object_goal_distance,
