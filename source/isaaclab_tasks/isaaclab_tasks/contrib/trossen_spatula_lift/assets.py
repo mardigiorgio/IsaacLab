@@ -47,8 +47,16 @@ def rig_usd_path() -> str:
 
 
 STATIONARY_AI_CFG = ArticulationCfg(
-    spawn=sim_utils.UsdFileCfg(
+    # Contact pairs mix per-geom solver parameters (MuJoCo solmix-weighted average;
+    # analogous combination in the Newton pipeline), so the spatula's compliant
+    # contact authoring only holds if BOTH sides of the spatula-tabletop pair carry
+    # it: a default-material tabletop dilutes the pair toward the backend default.
+    # Values must stay identical to the spatula's (see the scene cfg's object spawn).
+    spawn=sim_utils.UsdFileWithCompliantContactCfg(
         usd_path=rig_usd_path(),
+        compliant_contact_stiffness=111000.0,
+        compliant_contact_damping=667.0,
+        physics_material_prim_path=["tabletop_link/collisions/tabletop_link/node_STL_BINARY_/collision_box"],
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,
             max_depenetration_velocity=5.0,
