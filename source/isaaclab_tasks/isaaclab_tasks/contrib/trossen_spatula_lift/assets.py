@@ -14,9 +14,9 @@ selects the full rig as a contact-rich ablation.
 
 Actuator gains follow the Isaac Lab manipulation reference (arm stiffness=80,
 damping=4, as Franka lift): the USD-baked gains are ~500x stiffer and reproduce the
-policy's command chatter as visible hold jitter. Each gripper actuates only its LEFT
-carriage; the right carriage is a USD ``physxMimicJoint`` mirroring it (the benign
-"14 != 16 actuators" warning at load).
+policy's command chatter as visible hold jitter. Both carriage joints of each gripper
+are actuated explicitly; the USD ``physxMimicJoint`` on the right carriages is
+PhysX-specific and not honored by other backends.
 """
 
 from __future__ import annotations
@@ -107,7 +107,7 @@ STATIONARY_AI_CFG = ArticulationCfg(
         # instability the left-gripper comment documents.
         "right_arm": ImplicitActuatorCfg(joint_names_expr=["follower_right_joint_[0-5]"], stiffness=80.0, damping=4.0),
         "right_gripper": ImplicitActuatorCfg(
-            joint_names_expr=["follower_right_left_carriage_joint"],
+            joint_names_expr=["follower_right_left_carriage_joint", "follower_right_right_carriage_joint"],
             stiffness=3000.0,
             damping=60.0,
             effort_limit_sim=20.0,
