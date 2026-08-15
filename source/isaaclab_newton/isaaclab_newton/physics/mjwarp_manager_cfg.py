@@ -216,6 +216,19 @@ class MJWarpSolverCfg(NewtonSolverCfg):
     sap_line_search: str = "armijo_decay"
     """SAP only: line-search variant (``"monotone_decay"`` | ``"armijo_decay"`` | ``"exact_root"``)."""
 
+    sap_solve_precision: str = "fp64"
+    """Adaptive SAP only: precision of the implicit SAP solve stack (``"fp64"`` | ``"fp32"``).
+
+    ``"fp64"`` (the default) passes no precision overrides: every precision knob stays
+    governed by ``sap_contact_preset``, whose contact solve is fp64 in all shipped
+    presets -- this is the exact pre-option behavior. ``"fp32"`` overrides the full
+    solve stack (free motion, contact weights, contact solve, contact linear solve) to
+    float32 on top of the preset's mode choices; the adaptive solver then also couples
+    its INTERNAL optimality target to the fp32-achievable analogue (see
+    ``SolverSAPAdaptive``) -- the integration tolerance ``adaptive_tol`` is unchanged
+    and remains the physics contract. Opt-in speed/accuracy trade. Overridable via
+    ``NEWTON_SAP_SOLVE_PRECISION``. The fixed-step SAP path ignores this field."""
+
     sap_contact_tau_d: float = 0.01
     """SAP only: fallback dissipation time scale [s]."""
 

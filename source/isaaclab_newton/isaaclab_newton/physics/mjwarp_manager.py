@@ -345,6 +345,9 @@ class NewtonMJWarpManager(NewtonManager):
                     contact_preset_variant=str(_env("NEWTON_SAP_PRESET", solver_cfg.sap_contact_preset)),
                     line_search_variant=str(_env("NEWTON_SAP_LINE_SEARCH", solver_cfg.sap_line_search)),
                     contact_tau_d=float(solver_cfg.sap_contact_tau_d),
+                    solve_precision=str(
+                        _env("NEWTON_SAP_SOLVE_PRECISION", getattr(solver_cfg, "sap_solve_precision", "fp64"))
+                    ),
                 )
             # Fixed-step SAP: Newton's CollisionPipeline feeds SapContacts each step
             # (converted in _step_solver).
@@ -441,7 +444,9 @@ class NewtonMJWarpManager(NewtonManager):
                 NewtonManager._needs_collision_pipeline = False
                 logger.info(
                     "NewtonMJWarpManager: SolverSAPAdaptive (SAP step-doubling; per-world adaptive dt; "
-                    "solver-internal substep-body CUDA-graph capture, set NEWTON_SAP_ADAPTIVE_GRAPH=0 to disable)"
+                    "solve precision %s; solver-internal substep-body CUDA-graph capture, "
+                    "set NEWTON_SAP_ADAPTIVE_GRAPH=0 to disable)",
+                    getattr(NewtonManager._solver, "solve_precision", "fp64"),
                 )
             else:
                 # SolverSAP stores the SapModel built in _create_solver as its .model.
