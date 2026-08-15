@@ -12,11 +12,12 @@ no-rails variant is the default: the rig's rail frame is a collision body a lift
 exploits by jamming the object against it instead of grasping. ``TROSSEN_RAILS=1``
 selects the full rig as a contact-rich ablation.
 
-Arm gains run 10x the Isaac Lab manipulation reference (stiffness=800, damping=40,
-20:1 ratio) for real force authority; the USD-baked gains are ~50x stiffer still and
-reproduce the policy's command chatter as visible hold jitter. Both carriage joints
-of each gripper are actuated explicitly; the USD ``physxMimicJoint`` on the right
-carriages is PhysX-specific and not honored by other backends.
+Actuator gains are the vendor's, verbatim from Trossen's official MuJoCo model
+(``trossen_arm_mujoco`` ``stationary_ai.xml``): per-joint kp/kv (stiff shoulders,
+soft wrists), vendor armature and joint friction, effort caps at the vendor
+forcerange. Both carriage joints of each gripper are actuated explicitly; the USD
+``physxMimicJoint`` on the right carriages is PhysX-specific and not honored by
+other backends.
 """
 
 from __future__ import annotations
@@ -31,10 +32,11 @@ _USD_DIR = os.path.join(os.path.dirname(__file__), "assets", "usd")
 
 STATIONARY_AI_USD = os.path.join(_USD_DIR, "stationary_ai.usd")
 STATIONARY_AI_NORAILS_USD = os.path.join(_USD_DIR, "stationary_ai_norails.usda")
-# Task overrides: zero the physxMimicJoint gearing on the passive right carriages. The
-# mimic is PhysX-specific; Newton maps it loosely (the passive finger overshot its
-# limits under the fixed solver and differed between solvers). Both carriages are
-# explicitly actuated instead, so the gripper is identical under every backend.
+# Task overrides: zero the physxMimicJoint gearing on the passive right carriages (the
+# mimic is PhysX-specific; Newton maps it loosely — both carriages are explicitly
+# actuated instead, so the gripper is identical under every backend) and DEACTIVATE
+# the entire follower_right arm: the task is single-arm, and the idle second arm
+# only adds bodies, contacts, and observation width.
 STATIONARY_AI_TASK_USD = os.path.join(_USD_DIR, "stationary_ai_task.usda")
 STATIONARY_AI_TASK_RAILS_USD = os.path.join(_USD_DIR, "stationary_ai_task_rails.usda")
 
@@ -47,16 +49,12 @@ def rig_usd_path() -> str:
 
 
 STATIONARY_AI_CFG = ArticulationCfg(
-    # Contact pairs mix per-geom solver parameters (MuJoCo solmix-weighted average;
-    # analogous combination in the Newton pipeline), so the spatula's compliant
-    # contact authoring only holds if BOTH sides of the spatula-tabletop pair carry
-    # it: a default-material tabletop dilutes the pair toward the backend default.
-    # Values must stay identical to the spatula's (see the scene cfg's object spawn).
-    spawn=sim_utils.UsdFileWithCompliantContactCfg(
+    # Plain upstream-style spawn: default materials everywhere — the contact
+    # model comes entirely from the shared physics preset, like the reference
+    # core/lift scene.
+    spawn=sim_utils.UsdFileCfg(
         usd_path=rig_usd_path(),
-        compliant_contact_stiffness=111000.0,
-        compliant_contact_damping=667.0,
-        physics_material_prim_path=["tabletop_link/collisions/tabletop_link/node_STL_BINARY_/collision_box"],
+        activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,
             max_depenetration_velocity=5.0,
@@ -75,56 +73,42 @@ STATIONARY_AI_CFG = ArticulationCfg(
         ),
     ),
     init_state=ArticulationCfg.InitialStateCfg(
+        # The Trossen CONTROLLER's home position, verbatim from the official
+        # demo scripts (trossen_arm demos move.py: home_positions = zeros with
+        # joints 1 and 2 at pi/2) — the pose the driver brings the arm to from
+        # sleep before any operation. Carriages start OPEN at 0.044 per the
+        # vendor's own sim episode convention (trossen_arm_mujoco
+        # START_ARM_POSE); the driver's home zeroes the gripper, but episodes
+        # on the rig begin with the gripper opened for the task.
         joint_pos={
-            "follower_left_joint_[0-5]": 0.0,
-            "follower_left_left_carriage_joint": 0.0,
-            "follower_right_joint_[0-5]": 0.0,
-            "follower_right_left_carriage_joint": 0.0,
+            "follower_left_joint_0": 0.0,
+            "follower_left_joint_1": 1.5707963267948966,
+            "follower_left_joint_2": 1.5707963267948966,
+            "follower_left_joint_[3-5]": 0.0,
+            "follower_left_left_carriage_joint": 0.044,
+            "follower_left_right_carriage_joint": 0.044,
         },
     ),
     actuators={
-        # High-bandwidth arm servo (10x the Isaac Lab manipulation reference, same
-        # 20:1 stiffness:damping ratio): the policy gets real force authority so the
-        # solver comparison is run under load instead of a sanitized low-gain regime.
-        # Still far below the USD-baked PhysX drive that chatters under MJWarp.
-        "left_arm": ImplicitActuatorCfg(joint_names_expr=["follower_left_joint_[0-5]"], stiffness=800.0, damping=40.0),
-        # BOTH carriages are actuated explicitly. The right one is nominally driven by a
-        # physxMimicJoint (gearing -1, frames absorb the sign: it tracks the left 1:1 in
-        # joint coordinates -- measured under PhysX: open 0.0441/0.0440, closed
-        # 0.0006/0.0002). Newton maps that PhysX-specific constraint loosely -- the
-        # passive finger overshot its limits under the fixed solver and landed
-        # differently under the adaptive one, giving the two experiment arms different
-        # effective grippers. Commanding both joints to the same targets removes the
-        # solver-sensitive DOF; the mimic (where honored) agrees with the command.
-        # Gains are SIZED TO THE MEASURED 0.0813 kg carriage+finger assembly, not the
-        # USD-baked PhysX drive (stiffness 217687, damping 10884, maxForce 400). Under
-        # MuJoCo the baked drive is a saturated bang-bang relay, not a servo: damping
-        # alone rails the 400 N clamp above 37 mm/s, closing on the 6.98 cm blade
-        # commands kp*err = 2340 N >> 400 N, and the explicit kp stability bound
-        # (dt < 2/sqrt(kp/m) = 1.22 ms) is violated at every experiment dt -- each
-        # pinch chatters at (400/0.0813)*dt per solver step and goes non-finite in
-        # float32 MJWarp (policy-driven grasp reproduced NaN at iter 13, 8192 envs,
-        # mj dt 0.005). stiffness 3000 -> omega*dt = 0.96 at mj dt 0.005 (stable),
-        # zeta = 1.92 (no ringing), 20 N cap = 31x the 66 g spatula's weight vs the
-        # ~2 N a mu 0.5 pinch grip needs (micro-repro settles fully at dt 0.005/0.002).
+        # Vendor gains, verbatim from Trossen's official MuJoCo model of this
+        # rig (trossen_arm_mujoco stationary_ai.xml): per-joint kp/kv with
+        # stiff shoulders and soft wrists, vendor armature and joint friction,
+        # effort caps equal to the vendor forcerange.
+        "left_shoulder": ImplicitActuatorCfg(
+            joint_names_expr=["follower_left_joint_[0-2]"],
+            stiffness=200.0, damping=10.0, armature=0.032, friction=0.1, effort_limit_sim=27.0,
+        ),
+        "left_wrist_pitch": ImplicitActuatorCfg(
+            joint_names_expr=["follower_left_joint_3"],
+            stiffness=100.0, damping=5.0, armature=0.0018, friction=0.1, effort_limit_sim=7.0,
+        ),
+        "left_wrist_distal": ImplicitActuatorCfg(
+            joint_names_expr=["follower_left_joint_[4-5]"],
+            stiffness=50.0, damping=5.0, armature=0.0018, friction=0.1, effort_limit_sim=7.0,
+        ),
         "left_gripper": ImplicitActuatorCfg(
             joint_names_expr=["follower_left_left_carriage_joint", "follower_left_right_carriage_joint"],
-            stiffness=3000.0,
-            damping=60.0,
-            effort_limit_sim=20.0,
-        ),
-        # Right side mirrors the left's tuned gains. None here inherits the
-        # USD-baked PhysX drive (stiffness 217687) whose kp stability bound
-        # (dt < 1.22 ms) is violated at every experiment dt -- the same relay
-        # instability the left-gripper comment documents.
-        "right_arm": ImplicitActuatorCfg(
-            joint_names_expr=["follower_right_joint_[0-5]"], stiffness=800.0, damping=40.0
-        ),
-        "right_gripper": ImplicitActuatorCfg(
-            joint_names_expr=["follower_right_left_carriage_joint", "follower_right_right_carriage_joint"],
-            stiffness=3000.0,
-            damping=60.0,
-            effort_limit_sim=20.0,
+            stiffness=1000.0, damping=50.0, armature=0.1, friction=0.1, effort_limit_sim=400.0,
         ),
     },
     soft_joint_pos_limit_factor=1.0,

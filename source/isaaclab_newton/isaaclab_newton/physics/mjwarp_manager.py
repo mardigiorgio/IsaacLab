@@ -159,6 +159,32 @@ def _apply_gravity_compensation(model: Model, mask: np.ndarray) -> None:
     gravcomp.assign(gravcomp_np)
 
 
+@wp.kernel(enable_backward=False)
+def _accumulate_diverged_pending(diverged: wp.array(dtype=wp.bool), pending: wp.array(dtype=wp.int32)):
+    """OR the solver's per-world divergence latch into the persistent pending mask.
+
+    The adaptive solvers clear (or same-step consume) their latch before the
+    env layer runs its termination terms, so the latch must be captured into a
+    mask that survives until a termination term reads it.
+    """
+    i = wp.tid()
+    if diverged[i]:
+        pending[i] = 1
+
+
+@wp.kernel(enable_backward=False)
+def _clear_diverged_pending(world_mask: wp.array(dtype=wp.bool), pending: wp.array(dtype=wp.int32)):
+    """Clear the pending divergence mask for worlds being reset.
+
+    A reset rebuilds the world's state, so the diverged episode the mask
+    reported is over; leaving the bit set would re-terminate the fresh episode
+    forever.
+    """
+    i = wp.tid()
+    if world_mask[i]:
+        pending[i] = 0
+
+
 class NewtonMJWarpManager(NewtonManager):
     """:class:`NewtonManager` specialization for the MuJoCo Warp solver.
 
@@ -182,6 +208,14 @@ class NewtonMJWarpManager(NewtonManager):
 
     _sap_model = None
     """The vendored ``SapModel`` wrapping the Newton model (fixed-step SAP path only)."""
+
+    _diverged_pending: wp.array | None = None
+    """Adaptive solvers only: per-world int32 mask, nonzero where the solver latched
+    ``diverged`` in some boundary since the world's last env reset. The solver-side latch is
+    transient (cleared at boundary open and, on the SAP-adaptive path, consumed same-step as
+    a controller reset mask), so this mask is the signal that survives for the env layer's
+    termination path (:meth:`get_diverged_env_mask`); :meth:`_reset_solver_internals` clears
+    it per reset world."""
 
     @classmethod
     def _resolve_solver_mode(cls, solver_cfg: MJWarpSolverCfg) -> tuple[str, bool]:
@@ -272,15 +306,41 @@ class NewtonMJWarpManager(NewtonManager):
                 # Error-controlled step-doubling SAP. Owns its own contact pipeline, so no
                 # manager-level collision pipeline; reuses the _adaptive step/reset/no-graph
                 # wiring (host-synced boundary, like SolverMuJoCoAdaptive).
+                # The solver's internal pipeline must carry the SCENE-SIZED caps:
+                # both are global pooled buffers whose overflow drops mesh
+                # contacts silently, so when the task authored a collision cfg
+                # its budgets win over the small per-world defaults.
+                _sap_contact_per_world = int(solver_cfg.sap_max_rigid_contact)
+                _sap_tri_pairs = 1_000_000
+                _ccfg = getattr(cls, "_collision_cfg", None)
+                if _ccfg is not None:
+                    _wc = max(int(getattr(model, "world_count", 1)), 1)
+                    # Per-world contact demand is scene-intrinsic: derive from the
+                    # global budget but clamp it, because global//world_count
+                    # explodes at small world counts while SAP's per-contact
+                    # structures are far heavier than the pipeline's rows.
+                    _sap_contact_per_world = max(
+                        _sap_contact_per_world,
+                        min(2048, int(_ccfg.rigid_contact_max) // _wc),
+                    )
+                    _sap_tri_pairs = max(_sap_tri_pairs, int(_ccfg.max_triangle_pairs))
                 return SolverSAPAdaptive(
                     model,
                     tol=float(_env("NEWTON_ADAPTIVE_TOL", getattr(solver_cfg, "adaptive_tol", 1e-3))),
                     dt_inner_init=float(_env("NEWTON_ADAPTIVE_DT_INIT", getattr(solver_cfg, "adaptive_dt_init", 0.01))),
-                    dt_inner_min=float(_env("NEWTON_ADAPTIVE_DT_MIN", getattr(solver_cfg, "adaptive_dt_min", 1e-6))),
+                    dt_inner_min=float(_env("NEWTON_ADAPTIVE_DT_MIN", getattr(solver_cfg, "adaptive_dt_min", 1e-12))),
                     max_substeps=int(
                         _env("NEWTON_ADAPTIVE_MAX_SUBSTEPS", getattr(solver_cfg, "adaptive_max_substeps", 256))
                     ),
-                    max_rigid_contact=int(solver_cfg.sap_max_rigid_contact),
+                    dt_histogram=str(
+                        _env(
+                            "NEWTON_ADAPTIVE_DT_HIST",
+                            "1" if getattr(solver_cfg, "adaptive_dt_histogram", False) else "0",
+                        )
+                    )
+                    not in ("0", "", "false", "False"),
+                    max_rigid_contact=_sap_contact_per_world,
+                    max_triangle_pairs=_sap_tri_pairs,
                     max_iterations=int(solver_cfg.sap_solver_iterations),
                     contact_preset_variant=str(_env("NEWTON_SAP_PRESET", solver_cfg.sap_contact_preset)),
                     line_search_variant=str(_env("NEWTON_SAP_LINE_SEARCH", solver_cfg.sap_line_search)),
@@ -321,7 +381,7 @@ class NewtonMJWarpManager(NewtonManager):
             tol=float(_env("NEWTON_ADAPTIVE_TOL", getattr(solver_cfg, "adaptive_tol", 1e-3))),
             dt_mode=str(_env("NEWTON_ADAPTIVE_DTMODE", getattr(solver_cfg, "adaptive_dt_mode", "per_world"))),
             dt_inner_init=float(_env("NEWTON_ADAPTIVE_DT_INIT", getattr(solver_cfg, "adaptive_dt_init", 0.01))),
-            dt_inner_min=float(_env("NEWTON_ADAPTIVE_DT_MIN", getattr(solver_cfg, "adaptive_dt_min", 1e-6))),
+            dt_inner_min=float(_env("NEWTON_ADAPTIVE_DT_MIN", getattr(solver_cfg, "adaptive_dt_min", 1e-12))),
             tiling=str(_env("NEWTON_ADAPTIVE_TILING", getattr(solver_cfg, "adaptive_tiling", "ragged"))),
             max_substeps=int(_env("NEWTON_ADAPTIVE_MAX_SUBSTEPS", getattr(solver_cfg, "adaptive_max_substeps", 256))),
             dt_histogram=str(
@@ -365,16 +425,23 @@ class NewtonMJWarpManager(NewtonManager):
         NewtonManager._use_single_state = True
         cls._adaptive = adaptive
         cls._sap = backend == "sap"
+        cls._diverged_pending = None
         if cls._adaptive:
             cls._adaptive_frame = 0
+            # Sized to the per-env worlds only: the trailing global-entities
+            # slot of the (world_count + 1,) reset masks has no env to
+            # terminate, so it has no pending bit.
+            cls._diverged_pending = wp.zeros(
+                int(model.world_count), dtype=wp.int32, device=PhysicsManager._device
+            )
 
         if cls._sap:
             if cls._adaptive:
                 NewtonManager._sap_model = None
                 NewtonManager._needs_collision_pipeline = False
                 logger.info(
-                    "NewtonMJWarpManager: SolverSAPAdaptive (SAP step-doubling; even+global; "
-                    "solver-internal per-N CUDA-graph capture, set NEWTON_SAP_ADAPTIVE_GRAPH=0 to disable)"
+                    "NewtonMJWarpManager: SolverSAPAdaptive (SAP step-doubling; per-world adaptive dt; "
+                    "solver-internal substep-body CUDA-graph capture, set NEWTON_SAP_ADAPTIVE_GRAPH=0 to disable)"
                 )
             else:
                 # SolverSAP stores the SapModel built in _create_solver as its .model.
@@ -411,11 +478,24 @@ class NewtonMJWarpManager(NewtonManager):
         """
         if cls._sap:
             if cls._adaptive:
-                # SAP-adaptive owns its inner even+global loop + its own contacts; updates state_0.
-                # step() is the boundary call (Newton signature: state_in, state_out, control,
-                # contacts, dt); the whole step-doubling + N-substep sequence is ONE single-level
-                # CUDA-graph capture owned INSIDE the solver, so the manager must NOT also wrap it.
+                # SAP-adaptive owns its inner per-world adaptive-dt loop + its own contacts;
+                # updates state_0. step() is the boundary call (Newton signature: state_in,
+                # state_out, control, contacts, dt); the substep body is CUDA-graph-captured
+                # INSIDE the solver and replayed per iteration, so the manager must NOT also
+                # wrap the call in its own capture.
                 cls._solver.step(state_0, state_1, control, contacts, substep_dt)
+                # The reset below consumes the solver's divergence latch as a
+                # controller reset mask AND clears it, so the latch is first
+                # accumulated into the pending mask the env-side termination
+                # term reads via get_diverged_env_mask -- otherwise the latch
+                # is gone before any termination term can see it.
+                if cls._diverged_pending is not None:
+                    wp.launch(
+                        _accumulate_diverged_pending,
+                        dim=cls._diverged_pending.shape[0],
+                        inputs=[cls._solver.diverged, cls._diverged_pending],
+                        device=cls._diverged_pending.device,
+                    )
                 cls._solver.reset(state_0, world_mask=cls._solver.diverged, flags=0)
             else:
                 from newton.solvers import (
@@ -442,21 +522,33 @@ class NewtonMJWarpManager(NewtonManager):
         # solver step() is the boundary call (it owns its inner step-doubling loop + its
         # own contacts).
         cls._solver.step(state_0, state_1, control, contacts, substep_dt)
+        if cls._adaptive and cls._diverged_pending is not None:
+            # Same pending accumulation as the SAP-adaptive branch, so both
+            # adaptive backends report divergence through the one
+            # manager-owned mask the termination term reads (the
+            # MuJoCo-adaptive latch itself persists until a reset clears it,
+            # but no termination term reads solver internals directly).
+            wp.launch(
+                _accumulate_diverged_pending,
+                dim=cls._diverged_pending.shape[0],
+                inputs=[cls._solver.diverged, cls._diverged_pending],
+                device=cls._diverged_pending.device,
+            )
 
     @classmethod
     def _run_solver_substeps(cls, contacts) -> None:
-        """MuJoCo-adaptive: march the whole control period in one boundary call.
+        """Adaptive: march the whole control period in one boundary call.
 
-        The adaptive solver is itself the substepper (error-controlled inner dt), and
-        control is constant across the decimation tick (actuators run once per tick,
-        before this call), so one boundary call per tick suffices. SAP and fixed-step
-        paths keep the stock per-substep loop.
+        The adaptive solver (MuJoCo or SAP step-doubling) is itself the substepper
+        (error-controlled inner dt), and control is constant across the decimation tick
+        (actuators run once per tick, before this call), so one boundary call per tick
+        suffices. Fixed-step paths keep the stock per-substep loop.
         """
-        # NEWTON_ADAPTIVE_SINGLE_BOUNDARY=0 routes the adaptive solver through the
+        # NEWTON_ADAPTIVE_SINGLE_BOUNDARY=0 routes the adaptive solvers through the
         # stock per-substep loop instead: shorter boundaries mean injected contacts
         # are re-detected num_substeps times per tick, bounding how long the march
         # integrates against a frozen contact set.
-        if cls._adaptive and not cls._sap and os.environ.get("NEWTON_ADAPTIVE_SINGLE_BOUNDARY", "1") == "1":
+        if cls._adaptive and os.environ.get("NEWTON_ADAPTIVE_SINGLE_BOUNDARY", "1") == "1":
             cls._step_solver(cls._state_0, cls._state_0, cls._control, contacts, cls._solver_dt * cls._num_substeps)
             cls._state_0.clear_forces()
             return
@@ -532,6 +624,16 @@ class NewtonMJWarpManager(NewtonManager):
                 cls._solver.reset_runtime_state()
             return
         if cls._adaptive:
+            if cls._diverged_pending is not None:
+                # A reset world's pending divergence is consumed here: the env
+                # rebuilds the world's state, so the diverged episode the mask
+                # reported is over and the fresh episode starts clean.
+                wp.launch(
+                    _clear_diverged_pending,
+                    dim=cls._diverged_pending.shape[0],
+                    inputs=[world_mask, cls._diverged_pending],
+                    device=cls._diverged_pending.device,
+                )
             cls._solver.reset(cls._state_0, world_mask=world_mask, flags=0)
             return
         if cls._solver.use_mujoco_cpu and not local_mask.numpy().any():
@@ -539,6 +641,26 @@ class NewtonMJWarpManager(NewtonManager):
         # flags=0 skips the joint-state reset to model defaults: IsaacLab owns
         # joint_q/joint_qd and has already written the authored reset pose.
         cls._solver.reset(cls._state_0, world_mask=world_mask, flags=0)
+
+    @classmethod
+    def get_diverged_env_mask(cls):
+        """Per-env divergence mask accumulated since each env's last reset.
+
+        Returns an int32 torch view (zero-copy) of the pending mask, nonzero
+        where the env's world latched the adaptive solver's ``diverged`` flag
+        in some boundary since that env last reset: a NaN/divergent state, or
+        (SAP containment) an inner solve still failing at the dt floor. A
+        latched world held its last committed finite state while its clock
+        skipped to the boundary, so no state-space check can detect it -- this
+        mask is the only signal the env layer gets, and a termination term
+        must consume it for the world to be recovered by an env reset (which
+        clears the env's bit via :meth:`_reset_solver_internals`).
+
+        Returns ``None`` when no adaptive solver is active.
+        """
+        if not cls._adaptive or cls._diverged_pending is None:
+            return None
+        return wp.to_torch(cls._diverged_pending)
 
     @classmethod
     def _supports_cuda_graph_capture(cls) -> bool:

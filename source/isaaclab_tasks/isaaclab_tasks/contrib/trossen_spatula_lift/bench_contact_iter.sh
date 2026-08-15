@@ -17,7 +17,9 @@
 set -u
 cd "$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
 export VIRTUAL_ENV="${VIRTUAL_ENV:-$HOME/Documents/code/IsaacLabRubato/.venv}"
-ITERS=$(( ${BENCH_LONG:-0} == 1 ? 300 : 158 ))
+# --max_iterations is ADDITIVE under --resume (verified: 158 resolved to 150+158=308),
+# so this is the count of ADDITIONAL iterations: 3 warmup + 5 measured.
+ITERS=$(( ${BENCH_LONG:-0} == 1 ? 300 : 8 ))
 LOG=$(mktemp /tmp/bench_contact_XXXX.log)
 timeout 7200 ./isaaclab.sh train --rl_library rsl_rl \
   --task IsaacContrib-Lift-Spatula-Trossen-v0 --seed 42 --solver mujoco-adaptive \

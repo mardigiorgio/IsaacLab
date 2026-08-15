@@ -139,7 +139,7 @@ class MJWarpSolverCfg(NewtonSolverCfg):
     adaptive_dt_init: float = 0.01
     """Adaptive only: initial inner timestep [s]. Set below ``sim.dt`` to give the controller room to subdivide."""
 
-    adaptive_dt_min: float = 1e-6
+    adaptive_dt_min: float = 1e-12
     """Adaptive only: minimum inner timestep [s] (must be < ``adaptive_dt_init``)."""
 
     adaptive_tiling: str = "ragged"

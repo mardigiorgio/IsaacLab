@@ -167,6 +167,19 @@ class NewtonCollisionPipelineCfg:
     Defaults to ``None`` (hydroelastic disabled, same as Newton's default).
     """
 
+    deterministic: bool = False
+    """Sort contacts by a canonical key after the narrow phase so contact
+    buffer ORDER is reproducible run-to-run (Newton's ``ContactSorter``);
+    without it, slot order follows atomic arrival order and downstream
+    floating-point summation order varies between runs.
+
+    Defaults to ``False`` (Newton's default) so the shared manager pipeline
+    keeps its established trajectories; the SAP-adaptive solver's internal
+    pipeline enables it independently (``NEWTON_SAP_DETERMINISTIC``). Set
+    True here to make consumers of THIS pipeline (MuJoCo-adaptive injected
+    contacts, sensors) reproducible as well.
+    """
+
     def to_pipeline_args(self) -> dict[str, Any]:
         """Build keyword arguments for :class:`newton.CollisionPipeline`.
 
