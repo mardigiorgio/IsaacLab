@@ -160,7 +160,7 @@ def _apply_gravity_compensation(model: Model, mask: np.ndarray) -> None:
     gravcomp.assign(gravcomp_np)
 
 
-_SAP_TRIANGLE_PAIRS_PER_WORLD = 16384
+_SAP_TRIANGLE_PAIRS_PER_WORLD = 65536
 """Per-world triangle-pair capacity the SAP arms size their collision pipeline to.
 
 The pair cap is a GLOBAL pooled buffer whose overflow drops mesh contacts
@@ -169,6 +169,18 @@ also carried by the global contact reducer, which allocates ~56 bytes per unit
 on top of the narrow phase's 12, so an oversized cap costs gigabytes that scale
 with nothing. This constant is the per-world budget the sizing rule below
 multiplies by the world count; ``tools/probes`` measures live demand.
+
+Demand must be measured under a TRAINED policy, not a scripted stream: a
+learned policy holds the object against the gripper in every world at once and
+generates several times the mesh proximity any scripted rig in this campaign
+reached, and per-world demand does not fall with world count.
+
+An upper bound also applies and is not a memory bound. The reducer's hashtable
+is sized to the next power of two above a quarter of this capacity, and the
+stock fill-ratio diagnostic compares ``hashtable_capacity * warn_percent``
+against an int32, which wraps once the hashtable passes 2**24 entries and then
+warns on every collide. That puts a hard ceiling of 2**26 pooled pairs on a
+quiet log, which at 1024 worlds is exactly this constant.
 """
 
 
