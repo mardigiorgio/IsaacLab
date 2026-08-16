@@ -302,28 +302,44 @@ class NewtonMJWarpManager(NewtonManager):
                 )
             from newton.solvers import SolverSAP, SolverSAPAdaptive, sap_model_from_newton
 
+            # Contact law and contact capacity are resolved ONCE, ABOVE the
+            # fixed/adaptive split. These two solvers are the two arms of a
+            # fixed-vs-adaptive comparison, so a knob read on one branch only
+            # would let a shell variable change one arm's physics and not the
+            # other's, and the comparison would no longer isolate timestepping.
+            # Every value below must reach both constructors.
+            _sap_preset = str(_env("NEWTON_SAP_PRESET", solver_cfg.sap_contact_preset))
+            _sap_line_search = str(_env("NEWTON_SAP_LINE_SEARCH", solver_cfg.sap_line_search))
+            _sap_solve_precision = str(
+                _env("NEWTON_SAP_SOLVE_PRECISION", getattr(solver_cfg, "sap_solve_precision", "fp64"))
+            )
+            # SCENE-SIZED contact capacity, for both arms. The per-world contact
+            # buffer drops contacts SILENTLY on overflow, and per-world demand is
+            # a property of the scene, not of the integrator -- so it must be
+            # derived from the task's authored global budget rather than left at
+            # the small per-world default. An arm that sheds contacts under load
+            # is no longer reporting anything about its timestepping.
+            _sap_contact_per_world = int(solver_cfg.sap_max_rigid_contact)
+            _sap_tri_pairs = 1_000_000
+            _ccfg = getattr(cls, "_collision_cfg", None)
+            if _ccfg is not None:
+                _wc = max(int(getattr(model, "world_count", 1)), 1)
+                # Clamped: global//world_count explodes at small world counts
+                # while SAP's per-contact structures are far heavier than the
+                # pipeline's rows.
+                _sap_contact_per_world = max(
+                    _sap_contact_per_world,
+                    min(2048, int(_ccfg.rigid_contact_max) // _wc),
+                )
+                _sap_tri_pairs = max(_sap_tri_pairs, int(_ccfg.max_triangle_pairs))
+
             if adaptive:
                 # Error-controlled step-doubling SAP. Owns its own contact pipeline, so no
                 # manager-level collision pipeline; reuses the _adaptive step/reset/no-graph
                 # wiring (host-synced boundary, like SolverMuJoCoAdaptive).
-                # The solver's internal pipeline must carry the SCENE-SIZED caps:
-                # both are global pooled buffers whose overflow drops mesh
-                # contacts silently, so when the task authored a collision cfg
-                # its budgets win over the small per-world defaults.
-                _sap_contact_per_world = int(solver_cfg.sap_max_rigid_contact)
-                _sap_tri_pairs = 1_000_000
-                _ccfg = getattr(cls, "_collision_cfg", None)
-                if _ccfg is not None:
-                    _wc = max(int(getattr(model, "world_count", 1)), 1)
-                    # Per-world contact demand is scene-intrinsic: derive from the
-                    # global budget but clamp it, because global//world_count
-                    # explodes at small world counts while SAP's per-contact
-                    # structures are far heavier than the pipeline's rows.
-                    _sap_contact_per_world = max(
-                        _sap_contact_per_world,
-                        min(2048, int(_ccfg.rigid_contact_max) // _wc),
-                    )
-                    _sap_tri_pairs = max(_sap_tri_pairs, int(_ccfg.max_triangle_pairs))
+                # Its internal pipeline carries the scene-sized caps resolved
+                # above: both are global pooled buffers whose overflow drops mesh
+                # contacts silently.
                 return SolverSAPAdaptive(
                     model,
                     tol=float(_env("NEWTON_ADAPTIVE_TOL", getattr(solver_cfg, "adaptive_tol", 1e-3))),
@@ -342,23 +358,35 @@ class NewtonMJWarpManager(NewtonManager):
                     max_rigid_contact=_sap_contact_per_world,
                     max_triangle_pairs=_sap_tri_pairs,
                     max_iterations=int(solver_cfg.sap_solver_iterations),
-                    contact_preset_variant=str(_env("NEWTON_SAP_PRESET", solver_cfg.sap_contact_preset)),
-                    line_search_variant=str(_env("NEWTON_SAP_LINE_SEARCH", solver_cfg.sap_line_search)),
+                    contact_preset_variant=_sap_preset,
+                    line_search_variant=_sap_line_search,
                     contact_tau_d=float(solver_cfg.sap_contact_tau_d),
-                    solve_precision=str(
-                        _env("NEWTON_SAP_SOLVE_PRECISION", getattr(solver_cfg, "sap_solve_precision", "fp64"))
-                    ),
+                    solve_precision=_sap_solve_precision,
                 )
             # Fixed-step SAP: Newton's CollisionPipeline feeds SapContacts each step
             # (converted in _step_solver).
             sap_model = sap_model_from_newton(model)
+            # SolverSAP takes the four precision knobs directly where
+            # SolverSAPAdaptive takes one solve_precision string and expands it;
+            # expand it the same way here so the same shell variable selects the
+            # same contact-solve arithmetic on both arms. fp64 passes NO
+            # overrides, leaving the preset's own defaults untouched.
+            _sap_precision_kwargs: dict[str, str] = {}
+            if _sap_solve_precision.strip().lower() in ("fp32", "f32"):
+                _sap_precision_kwargs = {
+                    "free_motion_solve_precision": "fp32",
+                    "contact_solve_precision": "fp32",
+                    "contact_linear_solve_precision": "fp32",
+                    "sap_contact_weight_precision": "fp32",
+                }
             return SolverSAP(
                 sap_model,
-                max_rigid_contact=int(solver_cfg.sap_max_rigid_contact),
+                max_rigid_contact=_sap_contact_per_world,
                 max_iterations=int(solver_cfg.sap_solver_iterations),
                 contact_tau_d=float(solver_cfg.sap_contact_tau_d),
-                contact_preset_variant=str(solver_cfg.sap_contact_preset),
-                line_search_variant=str(solver_cfg.sap_line_search),
+                contact_preset_variant=_sap_preset,
+                line_search_variant=_sap_line_search,
+                **_sap_precision_kwargs,
             )
 
         # Must run before SolverMuJoCo/SolverMuJoCoAdaptive construction below (see
