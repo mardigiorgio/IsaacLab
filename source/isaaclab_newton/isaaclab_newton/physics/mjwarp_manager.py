@@ -372,6 +372,12 @@ class NewtonMJWarpManager(NewtonManager):
             # same contact-solve arithmetic on both arms. fp64 passes NO
             # overrides, leaving the preset's own defaults untouched.
             _sap_precision_kwargs: dict[str, str] = {}
+            # The adaptive arm couples its optimality target to the solve
+            # precision (a target below the fp32 residual floor can never be met
+            # by any iteration budget); the fixed arm must resolve the SAME
+            # target by the SAME rule, or the two arms stop solving the same
+            # problem the moment fp32 is selected.
+            _sap_optimality_rel_tol = 1.0e-8
             if _sap_solve_precision.strip().lower() in ("fp32", "f32"):
                 _sap_precision_kwargs = {
                     "free_motion_solve_precision": "fp32",
@@ -379,6 +385,9 @@ class NewtonMJWarpManager(NewtonManager):
                     "contact_linear_solve_precision": "fp32",
                     "sap_contact_weight_precision": "fp32",
                 }
+                from newton._src.solvers.sap.solver_sap_adaptive import _FP32_OPTIMALITY_K
+
+                _sap_optimality_rel_tol = max(1.0e-8, float(_FP32_OPTIMALITY_K) * float(np.finfo(np.float32).eps))
             return SolverSAP(
                 sap_model,
                 max_rigid_contact=_sap_contact_per_world,
@@ -386,6 +395,18 @@ class NewtonMJWarpManager(NewtonManager):
                 contact_tau_d=float(solver_cfg.sap_contact_tau_d),
                 contact_preset_variant=_sap_preset,
                 line_search_variant=_sap_line_search,
+                # INNER-SOLVE TOLERANCES, matched to SolverSAPAdaptive's pinned
+                # values. Left at SolverSAP's ctor defaults the fixed arm would
+                # accept a contact-solve residual 100x looser (optimality_rel_tol
+                # 1e-6) and could exit on a cost plateau (1e-30/1e-15) where the
+                # adaptive arm structurally cannot -- so a difference between the
+                # arms would no longer isolate timestepping, which is the only
+                # thing the comparison is allowed to be about. The cost early
+                # exit is disabled by zeroing both cost tolerances, matching the
+                # adaptive arm's construction.
+                optimality_rel_tol=_sap_optimality_rel_tol,
+                cost_abs_tol=0.0,
+                cost_rel_tol=0.0,
                 **_sap_precision_kwargs,
             )
 
