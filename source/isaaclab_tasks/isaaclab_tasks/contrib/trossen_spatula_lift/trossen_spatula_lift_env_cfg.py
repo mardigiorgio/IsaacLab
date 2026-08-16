@@ -466,12 +466,18 @@ class TrossenSpatulaLiftEnvCfg(ManagerBasedRLEnvCfg):
 
         mj dt 0.01 sinks the resting blade into the tabletop and goes non-finite on
         first grasp; only the adaptive solver may own the full 0.01 boundary.
+
+        Adaptivity is latched by a different cfg field per backend --
+        ``adaptive`` for MuJoCo-Warp, ``sap_adaptive`` for SAP -- so both must be
+        consulted: testing only the MuJoCo latch rejects the SAP step-doubling
+        solver, which owns the boundary exactly as the MuJoCo adaptive one does.
         """
         solver_cfg = getattr(self.sim.physics, "solver_cfg", None)
         if solver_cfg is None:
             return
         num_substeps = getattr(self.sim.physics, "num_substeps", 1)
-        if not getattr(solver_cfg, "adaptive", False) and num_substeps < 2:
+        adaptive = getattr(solver_cfg, "adaptive", False) or getattr(solver_cfg, "sap_adaptive", False)
+        if not adaptive and num_substeps < 2:
             raise ValueError(
                 "The spatula task requires num_substeps >= 2 (mj dt <= 0.005) under the fixed"
                 " MJWarp solver: dt 0.01 sinks the resting blade into the tabletop and goes"
