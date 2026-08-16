@@ -210,6 +210,51 @@ def _accumulate_diverged_pending(diverged: wp.array(dtype=wp.bool), pending: wp.
 
 
 @wp.kernel(enable_backward=False)
+def _latch_sap_solve_failure(
+    converged_env: wp.array(dtype=wp.int32),
+    world_active: wp.array(dtype=wp.int32),
+    failed: wp.array(dtype=wp.int32),
+    pending: wp.array(dtype=wp.int32),
+):
+    """Fixed-step SAP convergence certificate: latch, isolate, report.
+
+    ``contact_solve.converged_env`` is 0 exactly where the inner Newton loop
+    left an env at its iteration cap without reaching the optimality (or cost)
+    test -- the same per-env array the adaptive solver folds into its own
+    solve-ok state. An env that was not participating this substep is
+    pre-converged by the solve's own entry kernel, so the ``world_active`` guard
+    only keeps a world that has already latched from re-reporting.
+
+    A failing world is excised from every later substep (``world_active`` 0),
+    which freezes its state, and its bit is raised in the pending mask the
+    ``physics_diverged`` termination consumes, so the episode is ended rather
+    than continued from a solve that never converged.
+    """
+    i = wp.tid()
+    if world_active[i] != 0 and converged_env[i] == 0:
+        failed[i] = 1
+        pending[i] = 1
+        world_active[i] = 0
+
+
+@wp.kernel(enable_backward=False)
+def _release_sap_failed(
+    world_mask: wp.array(dtype=wp.bool),
+    failed: wp.array(dtype=wp.int32),
+    world_active: wp.array(dtype=wp.int32),
+):
+    """Return reset worlds to the active set and drop their failure latch.
+
+    The env has rebuilt the world's state, so the solve that failed is no longer
+    the state being stepped and the world must participate again.
+    """
+    i = wp.tid()
+    if world_mask[i]:
+        failed[i] = 0
+        world_active[i] = 1
+
+
+@wp.kernel(enable_backward=False)
 def _clear_diverged_pending(world_mask: wp.array(dtype=wp.bool), pending: wp.array(dtype=wp.int32)):
     """Clear the pending divergence mask for worlds being reset.
 
@@ -246,8 +291,23 @@ class NewtonMJWarpManager(NewtonManager):
     _sap_model = None
     """The vendored ``SapModel`` wrapping the Newton model (fixed-step SAP path only)."""
 
+    _sap_failed: wp.array | None = None
+    """Fixed-step SAP only: per-world int32 latch, nonzero where the inner SAP solve
+    failed to converge since the world's last env reset. Drives world isolation via
+    :attr:`_sap_world_active`; cleared per reset world by :meth:`_reset_solver_internals`."""
+
+    _sap_world_active: wp.array | None = None
+    """Fixed-step SAP only: per-world int32 participation mask handed to
+    ``SolverSAP.step``. Zero for latched worlds, which keeps their state and their
+    contact-solve rows untouched for every later substep (the freeze)."""
+
+    _sap_strict: bool = False
+    """Fixed-step SAP only: ``NEWTON_SAP_CONTAINMENT=0`` selects strict converge-or-throw
+    instead of containment, mirroring the adaptive solver's own gate. Strict mode reads the
+    pending mask on the host every substep; containment (the default) never syncs."""
+
     _diverged_pending: wp.array | None = None
-    """Adaptive solvers only: per-world int32 mask, nonzero where the solver latched
+    """Adaptive solvers and the fixed-step SAP arm: per-world int32 mask, nonzero where the solver latched
     ``diverged`` in some boundary since the world's last env reset. The solver-side latch is
     transient (cleared at boundary open and, on the SAP-adaptive path, consumed same-step as
     a controller reset mask), so this mask is the signal that survives for the env layer's
@@ -515,12 +575,27 @@ class NewtonMJWarpManager(NewtonManager):
         cls._adaptive = adaptive
         cls._sap = backend == "sap"
         cls._diverged_pending = None
+        cls._sap_failed = None
+        cls._sap_world_active = None
+        cls._sap_strict = False
         if cls._adaptive:
             cls._adaptive_frame = 0
             # Sized to the per-env worlds only: the trailing global-entities
             # slot of the (world_count + 1,) reset masks has no env to
             # terminate, so it has no pending bit.
             cls._diverged_pending = wp.zeros(int(model.world_count), dtype=wp.int32, device=PhysicsManager._device)
+        elif backend == "sap":
+            # Fixed-step SAP gets the SEPARABLE half of the adaptive arm's
+            # containment: per-world failure detection, latch, state freeze,
+            # world isolation and the same termination signal. It does NOT get
+            # the dt shrink-retry -- a smaller step on rejection is what
+            # adaptivity IS, and handing it to the fixed arm would delete the
+            # comparison rather than make it fair.
+            _n = int(model.world_count)
+            cls._diverged_pending = wp.zeros(_n, dtype=wp.int32, device=PhysicsManager._device)
+            cls._sap_failed = wp.zeros(_n, dtype=wp.int32, device=PhysicsManager._device)
+            cls._sap_world_active = wp.ones(_n, dtype=wp.int32, device=PhysicsManager._device)
+            cls._sap_strict = os.environ.get("NEWTON_SAP_CONTAINMENT", "1") == "0"
 
         if cls._sap:
             if cls._adaptive:
@@ -605,7 +680,8 @@ class NewtonMJWarpManager(NewtonManager):
                 s0 = sap_state_from_newton(state_0)
                 c = sap_control_from_newton(control)
                 sc = sap_contacts_from_newton(contacts)
-                cls._solver.step(s0, s0, c, sc, substep_dt)
+                cls._solver.step(s0, s0, c, sc, substep_dt, world_active=cls._sap_world_active)
+                cls._certify_fixed_sap_solve()
             return
         # MuJoCo fixed and adaptive share the stock 5-positional call; for the adaptive
         # solver step() is the boundary call (it owns its inner step-doubling loop + its
@@ -622,6 +698,47 @@ class NewtonMJWarpManager(NewtonManager):
                 dim=cls._diverged_pending.shape[0],
                 inputs=[cls._solver.diverged, cls._diverged_pending],
                 device=cls._diverged_pending.device,
+            )
+
+    @classmethod
+    def _certify_fixed_sap_solve(cls) -> None:
+        """Consume the fixed-step SAP arm's per-env convergence result.
+
+        The solve's own status flag is not usable for this: ``SolverSAP`` reports
+        ``last_converged`` from a result the contact solve constructs with the
+        literal ``True``, so it carries no information. The decision lives per-env
+        in ``contact_solve.converged_env``, which is the array the adaptive solver
+        folds into its solve-ok state and turns into a rejection -- so both arms
+        certify the same quantity by the same arithmetic, and neither commits a
+        solve that never converged without saying so.
+
+        Containment (default) latches, freezes and reports on device with no host
+        sync. Strict mode (``NEWTON_SAP_CONTAINMENT=0``, the same gate the
+        adaptive solver reads) raises instead, which costs one host read per
+        substep and is therefore opt-in.
+        """
+        if cls._diverged_pending is None or cls._sap_world_active is None:
+            return
+        contact_solve = getattr(cls._solver, "contact_solve", None)
+        converged_env = getattr(contact_solve, "converged_env", None)
+        if converged_env is None:
+            return
+        n = cls._diverged_pending.shape[0]
+        if converged_env.shape[0] != n:
+            raise RuntimeError(
+                "NewtonMJWarpManager: fixed-step SAP convergence certificate expects one "
+                f"contact_solve env per world, got {converged_env.shape[0]} for {n} worlds."
+            )
+        wp.launch(
+            _latch_sap_solve_failure,
+            dim=n,
+            inputs=[converged_env, cls._sap_world_active, cls._sap_failed, cls._diverged_pending],
+            device=cls._diverged_pending.device,
+        )
+        if cls._sap_strict and int(cls._diverged_pending.numpy().sum()) > 0:
+            raise RuntimeError(
+                "SolverSAP inner SAP solve failed to converge to "
+                f"optimality_rel_tol={float(cls._solver.optimality_rel_tol):.3e}."
             )
 
     @classmethod
@@ -732,10 +849,13 @@ class NewtonMJWarpManager(NewtonManager):
           controller state does not leak into the post-reset dynamics; ``flags=0``
           again preserves the env's randomized post-reset joint state.
         * **Fixed-step SAP** — the vendored solver has no per-world reset; its
-          contact-solve warm-start is cleared globally via ``reset_runtime_state()``,
-          gated on at least one world actually being flagged.  With staggered
-          per-env resets, untouched envs pay a small re-convergence cost, measured
-          to be dynamically negligible (see ``test_mimic_state_seam.py``).
+          contact-solve warm-start is one global flag, cleared via
+          ``reset_runtime_state_masked()`` when the mask flags any world.  With
+          staggered per-env resets, untouched envs pay a small re-convergence
+          cost, measured to be dynamically negligible (see
+          ``test_mimic_state_seam.py``).  The manager's own per-world containment
+          state — the solve-failure latch, the participation mask and the pending
+          divergence bit — is cleared here for the reset worlds only.
 
         With ``use_mujoco_cpu=True`` the solver owns a single global ``MjData``
         and its reset path is not mask-aware — it clears the buffers for every
@@ -755,8 +875,27 @@ class NewtonMJWarpManager(NewtonManager):
         # global-entities slot); slice only for the host-side any() gates.
         local_mask = world_mask[: cls._model.world_count]
         if cls._sap and not cls._adaptive:
-            if local_mask.numpy().any():
-                cls._solver.reset_runtime_state()
+            if cls._sap_failed is not None:
+                # A reset world's failure latch is consumed here for the same
+                # reason the adaptive arm's is: the env rebuilt the world's
+                # state, so the failing solve is over and the world must both
+                # rejoin the active set and stop re-terminating a fresh episode.
+                wp.launch(
+                    _release_sap_failed,
+                    dim=cls._sap_failed.shape[0],
+                    inputs=[world_mask, cls._sap_failed, cls._sap_world_active],
+                    device=cls._sap_failed.device,
+                )
+                wp.launch(
+                    _clear_diverged_pending,
+                    dim=cls._diverged_pending.shape[0],
+                    inputs=[world_mask, cls._diverged_pending],
+                    device=cls._diverged_pending.device,
+                )
+            # Device-side equivalent of "reset the warm start if any world
+            # reset": the host test it replaces was a full device sync on every
+            # reset boundary, and most boundaries flag no world at all.
+            cls._solver.reset_runtime_state_masked(local_mask)
             return
         if cls._adaptive:
             if cls._diverged_pending is not None:
@@ -791,9 +930,15 @@ class NewtonMJWarpManager(NewtonManager):
         must consume it for the world to be recovered by an env reset (which
         clears the env's bit via :meth:`_reset_solver_internals`).
 
-        Returns ``None`` when no adaptive solver is active.
+        On the fixed-step SAP arm the same mask carries the inner solve's
+        convergence certificate: a world whose contact solve did not converge is
+        latched, frozen and reported here, so the ``physics_diverged`` term ends
+        that episode instead of training on a solve that never converged. The
+        MuJoCo fixed arm allocates no mask and still returns ``None``.
+
+        Returns ``None`` when the active solver has no divergence signal.
         """
-        if not cls._adaptive or cls._diverged_pending is None:
+        if cls._diverged_pending is None:
             return None
         return wp.to_torch(cls._diverged_pending)
 
