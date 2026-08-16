@@ -434,9 +434,7 @@ class NewtonMJWarpManager(NewtonManager):
             # Sized to the per-env worlds only: the trailing global-entities
             # slot of the (world_count + 1,) reset masks has no env to
             # terminate, so it has no pending bit.
-            cls._diverged_pending = wp.zeros(
-                int(model.world_count), dtype=wp.int32, device=PhysicsManager._device
-            )
+            cls._diverged_pending = wp.zeros(int(model.world_count), dtype=wp.int32, device=PhysicsManager._device)
 
         if cls._sap:
             if cls._adaptive:

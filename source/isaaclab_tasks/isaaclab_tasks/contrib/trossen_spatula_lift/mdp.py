@@ -207,9 +207,7 @@ def handle_ee_distance(
     axis = quat_apply(link_quat, torch.tensor((1.0, 0.0, 0.0), device=env.device).expand(env.num_envs, 3))
     handle = handle_pos_w(env, object_cfg)
     to_handle = handle - link_pos
-    align = torch.clamp(
-        (axis * to_handle).sum(dim=1) / to_handle.norm(dim=1).clamp_min(1e-6), min=0.0
-    )
+    align = torch.clamp((axis * to_handle).sum(dim=1) / to_handle.norm(dim=1).clamp_min(1e-6), min=0.0)
     ee_pos_w = env.scene[ee_frame_cfg.name].data.target_pos_w.torch[..., 0, :]
     distance = torch.norm(handle - ee_pos_w, dim=1)
     shaped = (1.0 - torch.tanh(distance / std)) * align

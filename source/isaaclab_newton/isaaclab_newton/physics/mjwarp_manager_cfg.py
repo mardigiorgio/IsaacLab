@@ -154,7 +154,6 @@ class MJWarpSolverCfg(NewtonSolverCfg):
     be ~dt_outer/dt_min ~ 1e4 and effectively hang the per-world fixed loop). Default 256 only bounds
     runaway; normal motion needs N ~ 1-60."""
 
-
     adaptive_dt_histogram: bool = False
     """Adaptive only, MuJoCo backend only (``backend="mujoco"``): accumulate a per-iteration
     histogram of the inner timestep, exposing how often the controller runs at the

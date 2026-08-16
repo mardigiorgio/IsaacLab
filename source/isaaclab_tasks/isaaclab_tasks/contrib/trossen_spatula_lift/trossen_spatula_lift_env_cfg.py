@@ -39,11 +39,11 @@ from isaaclab_physx.physics import PhysxCfg
 import isaaclab.sim as sim_utils
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
+from isaaclab.managers import CurriculumTermCfg as CurrTerm
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
-from isaaclab.managers import CurriculumTermCfg as CurrTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.markers.config import FRAME_MARKER_CFG
@@ -94,6 +94,7 @@ _SPAWN_Y = BASE_PLATE_ENV[1] - OBJECT_FORWARD_M
 OBJECT_REST_Z = 0.021
 # Root rest z is ~0.020; 0.08 demands unambiguous lift-off.
 LIFT_HEIGHT = 0.08
+
 
 # ---------------------------------------------------------------------------- physics
 def _mjwarp_solver_cfg() -> MJWarpSolverCfg:
@@ -477,6 +478,7 @@ class TrossenSpatulaLiftEnvCfg(ManagerBasedRLEnvCfg):
                 " non-finite on first grasp. Use the default/newton_mjwarp preset, or pair"
                 " physics=newton_mjwarp_adaptive with --solver mujoco-adaptive."
             )
+
     def __post_init__(self):
         # Upstream core/lift timing, verbatim: 120 Hz outer step, decimation 4
         # -> 30 Hz control; with the preset's 2 substeps the fixed tiers run

@@ -45,7 +45,9 @@ _LBM_MUG_DIRS = [
         "code/IsaacLab/source/isaaclab_tasks/isaaclab_tasks/contrib/trossen_spatula_lift/assets/lbm_src",
         "code",
     )
-] + ["/tmp/claude-1002/-home-mdigiorgio-Documents-code/fe8a844e-d1b0-4d64-833c-48934ee6d700/scratchpad/lbm_extract/lbm_eval_models/tableware/mugs/assets"]
+] + [
+    "/tmp/claude-1002/-home-mdigiorgio-Documents-code/fe8a844e-d1b0-4d64-833c-48934ee6d700/scratchpad/lbm_extract/lbm_eval_models/tableware/mugs/assets"
+]
 
 MUG_GLTF_NAME = "mug_inomata_white_mesh_collision.gltf"
 # from mug_inomata_white_mesh_collision.sdf
@@ -165,6 +167,7 @@ def main():
         verts = raw.vertices
         if len(verts) > 24:
             import numpy as _np
+
             sel = [int(_np.argmax(_np.linalg.norm(verts - verts.mean(0), axis=1)))]
             d = _np.linalg.norm(verts - verts[sel[0]], axis=1)
             for _ in range(23):
