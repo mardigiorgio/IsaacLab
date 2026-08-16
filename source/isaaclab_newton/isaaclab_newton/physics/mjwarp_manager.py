@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 import os
 import re
@@ -157,6 +158,42 @@ def _apply_gravity_compensation(model: Model, mask: np.ndarray) -> None:
     # disable_gravity=True always wins: forces gravcomp=1.0, overwriting any user-authored value.
     gravcomp_np[mask] = 1.0
     gravcomp.assign(gravcomp_np)
+
+
+_SAP_TRIANGLE_PAIRS_PER_WORLD = 16384
+"""Per-world triangle-pair capacity the SAP arms size their collision pipeline to.
+
+The pair cap is a GLOBAL pooled buffer whose overflow drops mesh contacts
+silently, so it must exceed live per-world demand times the world count; it is
+also carried by the global contact reducer, which allocates ~56 bytes per unit
+on top of the narrow phase's 12, so an oversized cap costs gigabytes that scale
+with nothing. This constant is the per-world budget the sizing rule below
+multiplies by the world count; ``tools/probes`` measures live demand.
+"""
+
+
+def _sap_triangle_pair_budget(authored: int, world_count: int) -> int:
+    """Scene-sized triangle-pair capacity, derived from the authored cap.
+
+    Takes the smaller of what the task authored and the per-world budget times
+    the world count, with the historical 1M floor. A cap authored for a
+    different world count (or sized blind against a clamp that no longer fires)
+    otherwise allocates a fixed multi-gigabyte block that does not shrink with
+    the scene and can exhaust the device at high world counts.
+    """
+    return max(1_000_000, min(int(authored), _SAP_TRIANGLE_PAIRS_PER_WORLD * max(int(world_count), 1)))
+
+
+def _clamp_deterministic_triangle_pairs(pairs: int) -> int:
+    """Clamp a triangle-pair capacity to the deterministic contact-id budget.
+
+    Deterministic contact packing indexes every buffered candidate with
+    ``CONTACT_ID_BITS`` bits and the reducer REJECTS a larger capacity outright,
+    so a deterministic run must not be handed one.
+    """
+    from newton._src.geometry.contact_reduction_global import CONTACT_ID_BITS
+
+    return min(int(pairs), 1 << int(CONTACT_ID_BITS))
 
 
 @wp.kernel(enable_backward=False)
@@ -331,7 +368,7 @@ class NewtonMJWarpManager(NewtonManager):
                     _sap_contact_per_world,
                     min(2048, int(_ccfg.rigid_contact_max) // _wc),
                 )
-                _sap_tri_pairs = max(_sap_tri_pairs, int(_ccfg.max_triangle_pairs))
+                _sap_tri_pairs = _sap_triangle_pair_budget(int(_ccfg.max_triangle_pairs), _wc)
 
             if adaptive:
                 # Error-controlled step-doubling SAP. Owns its own contact pipeline, so no
@@ -607,6 +644,51 @@ class NewtonMJWarpManager(NewtonManager):
         super()._run_solver_substeps(contacts)
 
     @classmethod
+    def _apply_fixed_sap_pipeline_overrides(cls) -> None:
+        """Resolve the manager collision pipeline the way the SAP-adaptive arm resolves its own.
+
+        The fixed-step SAP arm does not own a pipeline; it consumes the
+        manager's, which is built from the task's authored
+        :class:`NewtonCollisionPipelineCfg`. The adaptive arm builds its pipeline
+        itself and resolves two things there that the authored cfg does not
+        carry, so without this the two arms run different collision pipelines
+        for reasons that have nothing to do with timestepping:
+
+        * ``NEWTON_SAP_DETERMINISTIC`` — canonical post-narrow-phase contact
+          sort. Reaching one arm and not the other makes a determinism
+          comparison between the arms meaningless.
+        * the triangle-pair budget — sized to the scene rather than left at
+          whatever the cfg authored for a different world count.
+
+        Both are applied to a COPY, gated on the fixed SAP arm: the cfg object
+        is shared with the MuJoCo backend, whose established trajectories a
+        determinism flip would move.
+        """
+        if not (cls._sap and not cls._adaptive):
+            return
+        ccfg = getattr(cls, "_collision_cfg", None)
+        if ccfg is None:
+            return
+        deterministic = os.environ.get("NEWTON_SAP_DETERMINISTIC", "0") == "1"
+        world_count = max(int(getattr(cls._model, "world_count", 1)), 1) if cls._model is not None else 1
+        pairs = _sap_triangle_pair_budget(int(ccfg.max_triangle_pairs), world_count)
+        if deterministic:
+            pairs = _clamp_deterministic_triangle_pairs(pairs)
+        if bool(ccfg.deterministic) == deterministic and int(ccfg.max_triangle_pairs) == pairs:
+            return
+        resolved = copy.deepcopy(ccfg)
+        resolved.deterministic = deterministic
+        resolved.max_triangle_pairs = pairs
+        NewtonManager._collision_cfg = resolved
+        logger.info(
+            "NewtonMJWarpManager: fixed-step SAP collision pipeline resolved to deterministic=%s, "
+            "max_triangle_pairs=%d (task authored %d) to match the SAP-adaptive arm's own pipeline.",
+            deterministic,
+            pairs,
+            int(ccfg.max_triangle_pairs),
+        )
+
+    @classmethod
     def _initialize_contacts(cls) -> None:
         """Allocate contact buffers.
 
@@ -618,6 +700,7 @@ class NewtonMJWarpManager(NewtonManager):
         from MuJoCo data for contact-sensor reporting.
         """
         if cls._needs_collision_pipeline:
+            cls._apply_fixed_sap_pipeline_overrides()
             super()._initialize_contacts()
             return
         if cls._solver is not None:
