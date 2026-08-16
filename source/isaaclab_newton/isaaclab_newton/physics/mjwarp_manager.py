@@ -698,11 +698,24 @@ class NewtonMJWarpManager(NewtonManager):
         try:
             dt = cls._solver.dt.numpy()
             subs = int(cls._solver.cumulative_substeps())
+            # Demand + engagement counters exist on the SAP-adaptive solver
+            # only; appended AFTER cumulative_substeps so existing parsers
+            # keep matching. cumulative_accepted is the schedule-invariant
+            # per-world work axis (accepted substeps), which makes matched-
+            # demand wall comparisons readable from this file alone.
+            extra = ""
+            acc_fn = getattr(cls._solver, "cumulative_accepted_steps", None)
+            if acc_fn is not None:
+                extra += f" cumulative_accepted={int(acc_fn())}"
+            eng_fn = getattr(cls._solver, "runahead_engagement", None)
+            if eng_fn is not None:
+                ra_cross, ra_fires = eng_fn()
+                extra += f" ra_cross={int(ra_cross)} ra_fires={int(ra_fires)}"
             path = os.environ.get("NEWTON_ADAPTIVE_LOG", "/tmp/newton_adaptive.log")
             with open(path, "a") as f:
                 f.write(
                     f"frame={cls._adaptive_frame} inner_dt[min={dt.min():.3e} max={dt.max():.3e} "
-                    f"spread={float(dt.max() - dt.min()):.3e}] cumulative_substeps={subs}\n"
+                    f"spread={float(dt.max() - dt.min()):.3e}] cumulative_substeps={subs}{extra}\n"
                 )
         except Exception as exc:  # telemetry must never break the sim
             logger.debug(f"adaptive telemetry skipped: {exc}")
