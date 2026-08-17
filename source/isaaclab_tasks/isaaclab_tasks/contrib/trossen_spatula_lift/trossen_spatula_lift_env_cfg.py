@@ -29,6 +29,7 @@ bands) are the Stationary AI cube task's measured values, reused verbatim.
 
 from __future__ import annotations
 
+import math
 import os
 
 from isaaclab_newton.physics import MJWarpSolverCfg, NewtonCfg, NewtonShapeCfg
@@ -116,6 +117,7 @@ def _mjwarp_solver_cfg() -> MJWarpSolverCfg:
         ls_iterations=15,
         use_mujoco_contacts=False,
         ccd_iterations=35,
+        sap_contact_tau_d=6.6e-4,
     )
 
 
@@ -125,6 +127,30 @@ def _newton_collision_cfg() -> NewtonCollisionPipelineCfg:
     # silently. Doubled with the move to 4096 envs (pooled demand scales with
     # world count; the 2048-env demand already grazed the previous cap).
     return NewtonCollisionPipelineCfg(rigid_contact_max=8_000_000, max_triangle_pairs=192_000_000)
+
+
+# Contact material from the LBM asset's own drake:proximity_properties, which
+# reach neither solver: SAP reads no Drake properties and no mjc: attributes,
+# so both arms were running Newton's shape defaults (mu 1.0, ke 2.5e3).
+#
+# mu 0.2 is authored directly in the SDF. Friction combines harmonically, so an
+# equal-valued pair passes it through unchanged.
+#
+# ke follows Drake's own conversion k = A * E / H from the compliant-hydroelastic
+# modulus E = 1e8 Pa, evaluated on this asset's collision hulls. Stiffness
+# combines in series, so the softer body of a pair sets it; the mug's value is
+# authored here because every pair it takes part in is mug-limited.
+#
+# kd is not free: on MuJoCo-Warp (ke, kd) convert to solref as dampratio =
+# (kd/2)*sqrt(1/ke), so holding dampratio at 1.0 across the stiffness change
+# requires kd = 2*sqrt(ke). Leaving kd at its default would collapse the MuJoCo
+# arm's contact damping and make the engine comparison meaningless.
+_CONTACT_KE = 4.6e7
+_CONTACT_KD = 2.0 * math.sqrt(_CONTACT_KE)
+
+
+def _newton_shape_cfg() -> NewtonShapeCfg:
+    return NewtonShapeCfg(ke=_CONTACT_KE, kd=_CONTACT_KD, mu=0.2)
 
 
 @configclass
@@ -145,7 +171,7 @@ class TrossenSpatulaLiftPhysicsCfg(PresetCfg):
     default: NewtonCfg = NewtonCfg(
         solver_cfg=_mjwarp_solver_cfg(),
         collision_cfg=_newton_collision_cfg(),
-        default_shape_cfg=NewtonShapeCfg(),
+        default_shape_cfg=_newton_shape_cfg(),
         num_substeps=2,
         debug_mode=False,
         use_cuda_graph=True,
@@ -153,7 +179,7 @@ class TrossenSpatulaLiftPhysicsCfg(PresetCfg):
     newton_mjwarp: NewtonCfg = NewtonCfg(
         solver_cfg=_mjwarp_solver_cfg(),
         collision_cfg=_newton_collision_cfg(),
-        default_shape_cfg=NewtonShapeCfg(),
+        default_shape_cfg=_newton_shape_cfg(),
         num_substeps=2,
         debug_mode=False,
         use_cuda_graph=True,
@@ -164,7 +190,7 @@ class TrossenSpatulaLiftPhysicsCfg(PresetCfg):
     newton_mjwarp_adaptive: NewtonCfg = NewtonCfg(
         solver_cfg=_mjwarp_solver_cfg(),
         collision_cfg=_newton_collision_cfg(),
-        default_shape_cfg=NewtonShapeCfg(),
+        default_shape_cfg=_newton_shape_cfg(),
         num_substeps=1,
         debug_mode=False,
         use_cuda_graph=True,
