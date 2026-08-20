@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Classic Franka-cube-lift MDP terms for the Trossen spatula task.
+"""Classic Franka-cube-lift MDP terms for the Trossen mug task.
 
 The four functions are the reference lift task's reach / lift / goal-track terms and
 the object-position observation, implemented against the stable generic layer only
@@ -19,7 +19,7 @@ import torch
 
 from isaaclab.envs.mdp import *  # noqa: F401,F403
 from isaaclab.managers import ManagerTermBase, SceneEntityCfg, TerminationTermCfg
-from isaaclab.utils.math import combine_frame_transforms, quat_apply, subtract_frame_transforms
+from isaaclab.utils.math import combine_frame_transforms, quat_apply, sample_uniform, subtract_frame_transforms
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
@@ -40,6 +40,24 @@ def _finite(t: torch.Tensor) -> torch.Tensor:
 def action_rate_l2(env: ManagerBasedRLEnv) -> torch.Tensor:
     """NaN-safe action-rate penalty (see :func:`_finite`)."""
     return _finite(torch.sum(torch.square(env.action_manager.action - env.action_manager.prev_action), dim=1))
+
+
+def arm_action_rate_l2(env: ManagerBasedRLEnv, term_name: str = "arm_action") -> torch.Tensor:
+    """NaN-safe action-rate penalty over the ARM action dims only.
+
+    The binary gripper command is exempt: an open/close flip is exploration of
+    grasp timing, not jitter, and taxing it teaches the policy not to try
+    grasping. Relies on the action manager concatenating terms in declaration
+    order with the arm term declared first.
+    """
+    n = env.action_manager.get_term(term_name).action_dim
+    delta = env.action_manager.action[:, :n] - env.action_manager.prev_action[:, :n]
+    return _finite(torch.sum(torch.square(delta), dim=1))
+
+
+def action_l2(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """NaN-safe action-magnitude penalty (see :func:`_finite`)."""
+    return _finite(torch.sum(torch.square(env.action_manager.action), dim=1))
 
 
 def joint_vel_l2(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
@@ -214,9 +232,9 @@ def handle_ee_distance(
     if contact_sensor_name is not None:
         # Contact counts as distance zero: while the pads press the handle the
         # term pays its maximum, so attempting and holding contact strictly
-        # dominates hovering at the shaping optimum — without this, the dense
-        # reach income competes against the sparse touch it should lead into
-        # (measured: touch rate collapsed once the hover optimum was found).
+        # dominates hovering at the shaping optimum. Without this, the dense
+        # reach income competes against the sparse touch it should lead into,
+        # and the hover optimum wins.
         touching = handle_grasped(env, contact_sensor_name)
         shaped = torch.maximum(shaped, touching)
     return _finite(shaped)
@@ -329,6 +347,29 @@ def object_tipped(
     return torch.isfinite(up_z) & (up_z < min_up_cos)
 
 
+def mug_on_side(
+    env: ManagerBasedRLEnv,
+    min_up_cos: float = 0.5,
+    z_max: float = 0.06,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """1.0 while the mug rests on its WALL at table height — the knocked-over
+    state, penalizable without touching legitimate lifts.
+
+    A one-wall pinch tilts a held mug, so tilt alone must not be punished;
+    the conjunction with table height is what distinguishes "carried at an
+    angle" (airborne, no penalty) from "tipped onto the table" (leaning past
+    ``min_up_cos`` with the root still low — resting on wall or rim). Finite
+    inputs only, like every reward input in this task.
+    """
+    obj = env.scene[object_cfg.name]
+    quat = obj.data.root_quat_w.torch
+    up_z = 1.0 - 2.0 * (quat[:, 0] * quat[:, 0] + quat[:, 1] * quat[:, 1])
+    z_local = obj.data.root_pos_w.torch[:, 2] - env.scene.env_origins[:, 2]
+    finite = torch.isfinite(up_z) & torch.isfinite(z_local)
+    return _finite((finite & (up_z < min_up_cos) & (z_local < z_max)).float())
+
+
 def object_knocked_from_spot(
     env: ManagerBasedRLEnv,
     xy_tol: float,
@@ -358,18 +399,152 @@ def object_is_lifted(
     return _finite(torch.where(obj.data.root_pos_w.torch[:, 2] > minimal_height, 1.0, 0.0))
 
 
+def object_vertical_velocity_shaped(
+    env: ManagerBasedRLEnv,
+    up_scale: float,
+    down_scale: float,
+    clamp: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """Reward rising, penalize falling harder than rising pays.
+
+    A knock produces a rise then a fall of comparable magnitude; with
+    ``down_scale > up_scale`` the round trip nets negative, so only a
+    sustained hold (velocity near zero once aloft) is profitable -- a knock
+    can no longer pay for itself the way a flat height threshold does.
+    Clamped so one violent ejection cannot dominate the batch-mean advantage.
+    """
+    obj = env.scene[object_cfg.name]
+    vz = torch.clamp(obj.data.root_lin_vel_w.torch[:, 2], min=-clamp, max=clamp)
+    return _finite(torch.where(vz > 0.0, up_scale * vz, down_scale * vz))
+
+
 def object_ee_distance(
     env: ManagerBasedRLEnv,
     std: float,
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
     ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+    kernel: str = "tanh",
 ) -> torch.Tensor:
-    """Reach shaping ``1 - tanh(|object - ee| / std)`` using the ee_frame sensor's first target."""
+    """Reach shaping on |object - ee|, using the ee_frame sensor's first target.
+
+    ``kernel="tanh"`` (default) is ``1 - tanh(d/std)``; ``kernel="gaussian"`` is
+    ``exp(-(d/std)^2)``. The Gaussian is sharper near the target and decays far
+    faster far from it -- at d = 3*std it pays 1.2e-4 against tanh's 5e-3, so a
+    std sized for tanh starves a Gaussian of gradient at approach distances.
+    """
     obj = env.scene[object_cfg.name]
     ee_frame = env.scene[ee_frame_cfg.name]
     ee_pos_w = ee_frame.data.target_pos_w.torch[..., 0, :]
     distance = torch.norm(obj.data.root_pos_w.torch - ee_pos_w, dim=1)
+    if kernel == "gaussian":
+        return _finite(torch.exp(-((distance / std) ** 2)))
     return _finite(1.0 - torch.tanh(distance / std))
+
+
+def _mug_rim_decomposition(
+    env: ManagerBasedRLEnv,
+    rim_height: float,
+    object_cfg: SceneEntityCfg,
+    ee_frame_cfg: SceneEntityCfg,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """TCP position and its axial/planar split about the mug's rim circle.
+
+    Returns ``(tcp, center, axis, axial, planar_vec)`` in world frame, where
+    ``center`` is the rim-circle center, ``axis`` the mug's unit axis, and
+    ``tcp - center == axial * axis + planar_vec``.
+    """
+    obj = env.scene[object_cfg.name]
+    ee_frame = env.scene[ee_frame_cfg.name]
+    tcp = ee_frame.data.target_pos_w.torch[..., 0, :]
+    root = obj.data.root_pos_w.torch
+    quat = obj.data.root_quat_w.torch
+    axis = quat_apply(quat, torch.tensor([0.0, 0.0, 1.0], device=root.device).expand_as(root))
+    center = root + rim_height * axis
+    d = tcp - center
+    axial = (d * axis).sum(dim=-1)
+    planar_vec = d - axial.unsqueeze(-1) * axis
+    return tcp, center, axis, axial, planar_vec
+
+
+def mug_rim_ee_distance(
+    env: ManagerBasedRLEnv,
+    std: float,
+    rim_height: float,
+    rim_radius: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+    kernel: str = "tanh",
+) -> torch.Tensor:
+    """Reach shaping on the TCP's distance to the NEAREST point of the mug's
+    rim circle — the one-wall pinch target (one pad outside, one inside the
+    opening).
+
+    The root sits at the mug's bottom center, which the TCP can never reach
+    without penetrating the mug or the slab; every rim point IS reachable, so
+    the gradient's optimum is a graspable pose. The nearest-point form is
+    indifferent to which side the approach comes from and follows the mug's
+    orientation if it tips. Distance to a circle in 3D is the closed form
+    sqrt((|d_planar| - R)^2 + d_axial^2), exact on the axis as well.
+    """
+    _, _, _, axial, planar_vec = _mug_rim_decomposition(env, rim_height, object_cfg, ee_frame_cfg)
+    planar = torch.linalg.vector_norm(planar_vec, dim=-1)
+    distance = torch.sqrt((planar - rim_radius) ** 2 + axial**2)
+    shaped = torch.exp(-((distance / std) ** 2)) if kernel == "gaussian" else 1.0 - torch.tanh(distance / std)
+    return _finite(shaped)
+
+
+def mug_rim_look_at(
+    env: ManagerBasedRLEnv,
+    rim_height: float,
+    rim_radius: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+) -> torch.Tensor:
+    """Reward the finger axis pointing AT the nearest rim point.
+
+    The finger axis is the TCP frame's local +X (``EE_TCP_OFFSET`` is authored
+    along link-6 x). Reward is ``(1 + cos)/2`` between that axis and the
+    TCP-to-rim-point direction, so approaching the lip nose-first pays and
+    approaching side-on or backwards does not. Near-degenerate geometry (TCP
+    on the mug axis, or already at the rim point) yields a direction of zero
+    length; those envs take the neutral 0.5 rather than a spurious extreme.
+    """
+    tcp, center, _, _, planar_vec = _mug_rim_decomposition(env, rim_height, object_cfg, ee_frame_cfg)
+    planar = torch.linalg.vector_norm(planar_vec, dim=-1, keepdim=True)
+    rim_pt = center + rim_radius * planar_vec / planar.clamp_min(1e-6)
+    to_rim = rim_pt - tcp
+    to_rim_norm = torch.linalg.vector_norm(to_rim, dim=-1, keepdim=True)
+    ee_quat = env.scene[ee_frame_cfg.name].data.target_quat_w.torch[..., 0, :]
+    finger_axis = quat_apply(ee_quat, torch.tensor([1.0, 0.0, 0.0], device=tcp.device).expand_as(tcp))
+    cos = (finger_axis * to_rim).sum(dim=-1) / to_rim_norm.squeeze(-1).clamp_min(1e-6)
+    degenerate = (planar.squeeze(-1) < 1e-5) | (to_rim_norm.squeeze(-1) < 1e-5)
+    return _finite(torch.where(degenerate, torch.full_like(cos, 0.5), 0.5 * (1.0 + cos)))
+
+
+def close_near_rim(
+    env: ManagerBasedRLEnv,
+    dist_threshold: float,
+    rim_height: float,
+    rim_radius: float,
+    action_name: str = "gripper_action",
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+) -> torch.Tensor:
+    """1.0 while the gripper COMMANDS close with the TCP within
+    ``dist_threshold`` [m] of the nearest rim point.
+
+    The binary close channel earns nothing anywhere else in the reward, so
+    exploration on that dim dies once its mean drifts open and sigma hits the
+    floor. This pays for the action itself, exactly where closing is correct:
+    no contact is required (not a touch bonus) and closing away from the rim
+    pays nothing (not spammable).
+    """
+    tcp, _, _, axial, planar_vec = _mug_rim_decomposition(env, rim_height, object_cfg, ee_frame_cfg)
+    planar = torch.linalg.vector_norm(planar_vec, dim=-1)
+    distance = torch.sqrt((planar - rim_radius) ** 2 + axial**2)
+    closing = torch.any(env.action_manager.get_term(action_name).raw_actions < 0.0, dim=1)
+    return _finite((closing & (distance < dist_threshold)).float())
 
 
 def object_goal_distance(
@@ -379,15 +554,20 @@ def object_goal_distance(
     command_name: str,
     robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    kernel: str = "tanh",
 ) -> torch.Tensor:
-    """Goal-tracking shaping, gated on the object being lifted."""
+    """Goal-tracking shaping, gated on the object being lifted.
+
+    ``kernel``: ``"tanh"`` (default) or ``"gaussian"`` = ``exp(-(d/std)^2)``.
+    """
     robot = env.scene[robot_cfg.name]
     obj = env.scene[object_cfg.name]
     command = env.command_manager.get_command(command_name)
     des_pos_b = command[:, :3]
     des_pos_w, _ = combine_frame_transforms(robot.data.root_pos_w.torch, robot.data.root_quat_w.torch, des_pos_b)
     distance = torch.norm(des_pos_w - obj.data.root_pos_w.torch, dim=1)
-    return _finite((obj.data.root_pos_w.torch[:, 2] > minimal_height) * (1.0 - torch.tanh(distance / std)))
+    shaped = torch.exp(-((distance / std) ** 2)) if kernel == "gaussian" else 1.0 - torch.tanh(distance / std)
+    return _finite((obj.data.root_pos_w.torch[:, 2] > minimal_height) * shaped)
 
 
 def object_held(
@@ -434,6 +614,167 @@ def object_goal_distance_held(
     return object_goal_distance(env, std, minimal_height, command_name, robot_cfg, object_cfg) * object_held(
         env, threshold, object_cfg, ee_frame_cfg
     )
+
+
+def reset_arm_to_grasp_bank(
+    env: ManagerBasedRLEnv,
+    env_ids: torch.Tensor,
+    pose: dict[str, float],
+    bank_fraction: float,
+    noise: float,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+):
+    """Start a fraction of the resetting envs with the arm posed at the object;
+    the rest keep the home pose the default reset already wrote.
+
+    Runs after the scene reset, overwriting only the joints named in ``pose``
+    for the selected envs. The gripper carriages are not in ``pose``: they keep
+    the default open state, so closing the grasp stays the policy's own first
+    action. Which envs draw a bank start re-randomizes every reset, so every
+    env sees both the straddle regime and the full approach from home. The
+    action term's position targets stay referenced to the default pose, so a
+    bank start begins with a home-ward PD pull the policy must learn to
+    counter-hold — the bank teaches holding near the object, not a frozen
+    start state.
+    """
+    asset = env.scene[asset_cfg.name]
+    sel = torch.rand(env_ids.shape[0], device=env.device) < bank_fraction
+    if not sel.any():
+        return
+    ids = env_ids[sel]
+    joint_ids, resolved_names = asset.find_joints(list(pose.keys()), preserve_order=True)
+    target = torch.tensor([pose[name] for name in resolved_names], device=env.device, dtype=torch.float32)
+    joint_pos = target.unsqueeze(0).expand(ids.shape[0], -1).clone()
+    joint_pos += sample_uniform(-noise, noise, joint_pos.shape, joint_pos.device)
+    limits = asset.data.soft_joint_pos_limits.torch[ids[:, None], joint_ids]
+    joint_pos = joint_pos.clamp_(limits[..., 0], limits[..., 1])
+    asset.write_joint_position_to_sim_index(position=joint_pos, joint_ids=joint_ids, env_ids=ids)
+    asset.write_joint_velocity_to_sim_index(velocity=torch.zeros_like(joint_pos), joint_ids=joint_ids, env_ids=ids)
+
+
+def _pad_force_mags(env: ManagerBasedRLEnv, sensor_name: str) -> torch.Tensor:
+    """Per-pad filtered contact-force magnitude, shape ``(num_envs, num_pads)``.
+
+    Reduces over the filtered shapes only (their resolved order is not stable
+    across builds), keeping the sensor's body axis so opposed-grasp logic can
+    see each jaw separately. NaN-safe like every reward input in this task.
+    """
+    forces = env.scene.sensors[sensor_name].data.force_matrix_w
+    if forces is None:
+        return torch.zeros(env.num_envs, 1, device=env.device)
+    net = forces.torch.sum(dim=2)
+    return torch.linalg.vector_norm(net, dim=-1).nan_to_num(0.0)
+
+
+def opposed_grasp(env: ManagerBasedRLEnv, sensor_name: str, threshold: float) -> torch.Tensor:
+    """Bool per env: EVERY pad presses the object above ``threshold`` [N].
+
+    The parallel-jaw form of the dexsuite thumb-plus-opposing-finger gate: a
+    one-jaw push or brush cannot open it; only a closed clamp with the object
+    between both pads can.
+    """
+    return (_pad_force_mags(env, sensor_name) > threshold).all(dim=1)
+
+
+def fingers_to_object(
+    env: ManagerBasedRLEnv,
+    std: float,
+    sensor_name: str,
+    contact_threshold: float,
+    asset_cfg: SceneEntityCfg,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """Approach flow (dexsuite ``object_ee_distance`` shape): tanh kernel on the
+    WORST pad-to-object distance, paid at 10% without an opposed grasp and in
+    full with one.
+
+    The max over pads means both jaws must straddle the object for the kernel
+    to saturate, and the wide ``std`` keeps a usable gradient across the whole
+    workspace instead of dying at spawn distance.
+    """
+    asset = env.scene[asset_cfg.name]
+    obj = env.scene[object_cfg.name]
+    pad_pos_w = asset.data.body_pos_w.torch[:, asset_cfg.body_ids]
+    distance = torch.linalg.vector_norm(pad_pos_w - obj.data.root_pos_w.torch[:, None, :], dim=-1).max(dim=-1).values
+    scale = torch.where(opposed_grasp(env, sensor_name, contact_threshold), 1.0, 0.1)
+    return _finite((1.0 - torch.tanh(distance / std)) * scale)
+
+
+class position_command_progress(ManagerTermBase):
+    """Pay 1.0 per ``min_improvement`` [m] of NEW best object-to-goal distance,
+    creditable only while the object is held in an opposed grasp.
+
+    The bar is the smallest credited error this episode. It never retreats, so
+    ground given back cannot be re-earned by backing off and re-approaching,
+    and gains made while not holding (a batted flight) move nothing and pay
+    nothing. Seeded from the first step's error so holding the spawn pose
+    earns nothing; re-seeded whenever the command resamples, so credit never
+    carries across goals.
+    """
+
+    def __init__(self, cfg, env: ManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        self.best_error = torch.full((env.num_envs,), float("inf"), device=env.device)
+        self._prev_command: torch.Tensor | None = None
+
+    def reset(self, env_ids=None):
+        if env_ids is None:
+            env_ids = slice(None)
+        self.best_error[env_ids] = float("inf")
+
+    def __call__(
+        self,
+        env: ManagerBasedRLEnv,
+        command_name: str,
+        sensor_name: str,
+        contact_threshold: float = 0.1,
+        min_improvement: float = 0.0025,
+        robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+        object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    ) -> torch.Tensor:
+        robot = env.scene[robot_cfg.name]
+        obj = env.scene[object_cfg.name]
+        command = env.command_manager.get_command(command_name)
+        des_pos_w, _ = combine_frame_transforms(
+            robot.data.root_pos_w.torch, robot.data.root_quat_w.torch, command[:, :3]
+        )
+        # A non-finite state must not be creditable NOR allowed to poison the
+        # bar; +inf does neither.
+        error = torch.norm(des_pos_w - obj.data.root_pos_w.torch, dim=1).nan_to_num(
+            nan=float("inf"), posinf=float("inf"), neginf=float("inf")
+        )
+        cmd = command[:, :3]
+        if self._prev_command is None:
+            self._prev_command = cmd.clone()
+        else:
+            self.best_error[(self._prev_command != cmd).any(dim=1)] = float("inf")
+            self._prev_command.copy_(cmd)
+        unseeded = torch.isinf(self.best_error)
+        self.best_error[unseeded] = error[unseeded]
+        improved = opposed_grasp(env, sensor_name, contact_threshold) & (error < self.best_error - min_improvement)
+        self.best_error[improved] = error[improved]
+        return improved.float()
+
+
+def success_kernel(
+    env: ManagerBasedRLEnv,
+    pos_std: float,
+    command_name: str,
+    sensor_name: str,
+    contact_threshold: float = 0.01,
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """Success kernel at the commanded pose (dexsuite ``success_reward``,
+    position-only branch): squared tanh kernel on goal distance, paid only in
+    an opposed grasp — the object cannot be knocked into place for credit."""
+    robot = env.scene[robot_cfg.name]
+    obj = env.scene[object_cfg.name]
+    command = env.command_manager.get_command(command_name)
+    des_pos_w, _ = combine_frame_transforms(robot.data.root_pos_w.torch, robot.data.root_quat_w.torch, command[:, :3])
+    distance = torch.norm(des_pos_w - obj.data.root_pos_w.torch, dim=1)
+    gate = opposed_grasp(env, sensor_name, contact_threshold)
+    return _finite(((1.0 - torch.tanh(distance / pos_std)) ** 2) * gate.float())
 
 
 def object_position_in_robot_root_frame(

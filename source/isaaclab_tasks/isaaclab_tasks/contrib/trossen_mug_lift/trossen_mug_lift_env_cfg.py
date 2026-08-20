@@ -89,7 +89,7 @@ OBJECT_USD_PATH = os.path.join(os.path.dirname(__file__), "assets", "usd", "mug_
 #   33.0 cm forward of the base plate center (toward the opposite arm),
 #   lying flat, handle pointing to the operator's left, blade edge facing the arm.
 BASE_PLATE_ENV = (-0.020, 0.4575)
-OBJECT_FORWARD_M = 0.600
+OBJECT_FORWARD_M = 0.570
 OBJECT_LATERAL_M = 0.0
 _SPAWN_X = BASE_PLATE_ENV[0] + OBJECT_LATERAL_M
 _SPAWN_Y = BASE_PLATE_ENV[1] - OBJECT_FORWARD_M
@@ -98,6 +98,18 @@ _SPAWN_Y = BASE_PLATE_ENV[1] - OBJECT_FORWARD_M
 OBJECT_REST_Z = 0.021
 # Root rest z is ~0.020; 0.08 demands unambiguous lift-off.
 LIFT_HEIGHT = 0.08
+
+# Rim circle of the mug in its body frame, the one-wall pinch target for the
+# reach term. Height is the authored MUG_HEIGHT in assets/convert_mug.py
+# (mesh-asserted there); the radius is the mug body radius, bounded above by
+# that script's handle-classification threshold HANDLE_X_MIN = 0.043.
+MUG_RIM_HEIGHT = 0.097
+MUG_RIM_RADIUS = 0.040
+
+# Arm configuration hovering just short of the mug on a grasping approach
+# (200 ms before first pad contact): the grasp-bank reset pose. A hover, not
+# the contact pose itself, so reset noise cannot spawn the pads inside the mug
+# and the initial home-ward PD pull retreats along a collision-free path.
 
 
 # ---------------------------------------------------------------------------- physics
@@ -257,7 +269,16 @@ class TrossenMugLiftSceneCfg(InteractiveSceneCfg):
             activate_contact_sensors=True,
             collision_props=[
                 sim_utils.schemas.UsdPhysicsCollisionCfg(),
-                sim_utils.schemas.UsdPhysicsMeshCollisionCfg(mesh_approximation_name="none"),
+                # "none" = raw triangle meshes; MUG_COLLISION=hull hulls each
+                # pre-split near-convex piece instead — the asset's authored
+                # decomposition exists precisely so per-prim hulling preserves
+                # the rim and the handle opening, and hull-hull narrow phase
+                # replaces the per-triangle contact kernel. Any adoption of the
+                # hull path must revalidate rest penetration and the grip
+                # census, on BOTH solver arms together.
+                sim_utils.schemas.UsdPhysicsMeshCollisionCfg(
+                    mesh_approximation_name=("convexHull" if os.environ.get("MUG_COLLISION", "mesh") == "hull" else "none")
+                ),
                 # See the rig's collision_props: the contact response time is
                 # authored rather than derived from ke/kd, which would place it
                 # far below what a step of sim.dt can represent.
@@ -422,20 +443,40 @@ class ObservationsCfg:
 class RewardsCfg:
     """Classic Franka cube-lift shaping with transport-weighted tight tracking:
     reach / lift / goal-track / tight fine track / action penalties.
-    minimal_height re-based for this object."""
+    minimal_height re-based for this object. Serious income exists only AT the
+    commanded goal; the broad kernel keeps gradient far from the goal. The
+    grasp-discovery burden is carried by the reset bank, not by a touch term."""
 
-    # TIGHT-GAUSSIAN TRANSPORT (Marco + PI, 2026-08-20): the touch bonus is
-    # GONE — measured income under it was pad 17-20 vs goal-track 1.6 vs fine
-    # ~0 per step, a pinch-and-hover local optimum that out-paid transport
-    # ~10:1 and never carried the mug to the goal. Serious income now exists
-    # only AT the commanded goal (fine kernel tightened 0.05 -> 0.02 and
-    # weighted up to 16); the broad 0.3 kernel stays so the gradient reaches
-    # far from the goal. The anti-throw mechanism remains the economics
-    # itself — no failure terminations, so a batted mug wastes the episode's
-    # remaining income budget instead of buying a fresh one. The speed recipe
-    # (action scale 0.25) stays: the arm's motion is stable and rig-plausible
-    # with it. The pad_object_contact sensor stays in the scene as telemetry.
-    reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.1}, weight=1.0)
+    # Rim target, not the root: the root is the mug's bottom center, which the
+    # TCP cannot reach without penetration — its gradient optimum is a press
+    # into the lower wall. The nearest-rim-point target makes the optimum a
+    # one-wall pinch pose (pad outside, pad inside the opening).
+    reaching_object = RewTerm(
+        func=mdp.mug_rim_ee_distance,
+        params={"std": 0.1, "rim_height": MUG_RIM_HEIGHT, "rim_radius": MUG_RIM_RADIUS},
+        weight=1.0,
+    )
+    # Approach geometry, not just proximity: pays for the finger axis aiming
+    # at the same rim point reach pulls toward, so the pinch arrives
+    # nose-first with one pad either side of the wall.
+    looking_at_rim = RewTerm(
+        func=mdp.mug_rim_look_at,
+        params={"rim_height": MUG_RIM_HEIGHT, "rim_radius": MUG_RIM_RADIUS},
+        weight=0.5,
+    )
+    # Keeps the binary close channel alive: pays for COMMANDING close within
+    # 6 cm of the rim target — action-based (no contact needed, not a touch
+    # bonus) and proximity-gated (not spammable from afar).
+    close_at_rim = RewTerm(
+        func=mdp.close_near_rim,
+        params={"dist_threshold": 0.06, "rim_height": MUG_RIM_HEIGHT, "rim_radius": MUG_RIM_RADIUS},
+        weight=0.5,
+    )
+    # Heavy bleed while the mug lies knocked over on the table. Tilt alone is
+    # deliberately NOT punished — a one-wall pinch tilts a held mug — only the
+    # tipped-AND-at-table-height state, so flick-lifts that end with the mug
+    # on its side pay for it every remaining step.
+    mug_tipped_on_table = RewTerm(func=mdp.mug_on_side, weight=-5.0)
     lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": LIFT_HEIGHT}, weight=15.0)
     object_goal_tracking = RewTerm(
         func=mdp.object_goal_distance,
@@ -447,17 +488,20 @@ class RewardsCfg:
         params={"std": 0.02, "minimal_height": LIFT_HEIGHT, "command_name": "object_pose"},
         weight=16.0,
     )
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
-    # ARM_JOINTS only: the gripper is a BinaryJointPositionActionCfg (open/close
-    # target, not a tracked velocity), so a fast, full-force close reads as high
-    # joint_vel on the carriage joints and gets taxed the same as arm jitter --
-    # penalizing exactly the clamp-down motion a grasp needs.
-    joint_vel = RewTerm(func=mdp.joint_vel_l2, weight=-1e-4, params={"asset_cfg": SceneEntityCfg("robot")})
+    # Erratic-arm suppression, gripper exempt: the action-rate penalty covers
+    # the ARM dims only (a binary open/close flip is grasp-timing exploration,
+    # not jitter), and joint_vel covers the ARM joints only (a fast clamp-down
+    # reads as high carriage velocity and must not be taxed). Weights sized to
+    # outbid flail-scale motion, not exploration-scale motion.
+    action_rate = RewTerm(func=mdp.arm_action_rate_l2, weight=-1e-3)
+    joint_vel = RewTerm(
+        func=mdp.joint_vel_l2, weight=-5e-4, params={"asset_cfg": SceneEntityCfg("robot", joint_names=[ARM_JOINTS])}
+    )
 
 
 @configclass
 class CurriculumCfg:
-    """Penalty ramp on action_rate/joint_vel. Disabled: it taxes the only
+    """No curriculum. A penalty ramp would tax the only
     motion the policy has reward for without paying for a grasp instead."""
 
 
