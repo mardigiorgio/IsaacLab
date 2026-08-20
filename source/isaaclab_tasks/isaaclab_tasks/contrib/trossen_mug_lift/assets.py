@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Trossen Stationary AI rig articulation for the spatula-lift task.
+"""Trossen Stationary AI rig articulation for the mug-lift task.
 
 Fully self-contained: the rig USD (from Trossen's official
 https://github.com/TrossenRobotics/trossen_ai_isaac, zero external references) and its
@@ -27,6 +27,7 @@ import os
 import isaaclab.sim as sim_utils
 from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets import ArticulationCfg
+from isaaclab_newton.sim.schemas import MujocoCollisionCfg
 
 _USD_DIR = os.path.join(os.path.dirname(__file__), "assets", "usd")
 
@@ -49,24 +50,51 @@ def rig_usd_path() -> str:
 
 
 STATIONARY_AI_CFG = ArticulationCfg(
-    # Plain upstream-style spawn: default materials everywhere — the contact
-    # model comes entirely from the shared physics preset, like the reference
-    # core/lift scene.
     spawn=sim_utils.UsdFileCfg(
         usd_path=rig_usd_path(),
         activate_contact_sensors=True,
+        # The rig USD authors no friction on any collider, so every link falls
+        # back to the shared shape cfg. State the rubber pads' coefficient here
+        # instead, matching what the vendor-curated MuJoCo model of this arm
+        # authors on its colliders (mujoco_menagerie trossen_wxai,
+        # friction="1 5e-3 5e-4"); MuJoCo takes the element-wise maximum of a
+        # pair's coefficients at equal priority, so this governs the grasp
+        # rather than being averaged away against the mug's ceramic value.
+        physics_material=sim_utils.RigidBodyMaterialCfg(
+            static_friction=1.0,
+            dynamic_friction=1.0,
+            restitution=0.0,
+        ),
+        # Torsional and rolling friction rows on every contact this rig makes.
+        # At the default condim=3 a pinched object is free to spin about the
+        # fingertip contacts and works its way out of the grasp, no matter how
+        # high the sliding coefficient is. The vendor model scopes condim=6 to
+        # its gripper class; applied rig-wide here because the spawn addresses
+        # the articulation as a whole, which is a superset -- the arm links
+        # carry no other contacts once self-collisions are off. PhysX ignores
+        # the mjc: namespace, so this is inert on that backend.
+        #
+        # solref is the contact RESPONSE TIME, and it is authored rather than
+        # left to the ke/kd conversion: that conversion turns this scene's
+        # contact stiffness into a time constant far below what a step of
+        # sim.dt can represent, which a fixed step absorbs silently and an
+        # error-controlled step pays for by subdividing without bound. 0.02 s
+        # is MuJoCo's own default and equals the 2*dt floor at this timestep.
+        # Only the mjc: namespace is touched, so the SAP backend still reads
+        # the authored ke.
+        collision_props=MujocoCollisionCfg(condim=6, solref=(0.02, 1.0)),
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,
             max_depenetration_velocity=5.0,
         ),
         articulation_props=sim_utils.ArticulationRootPropertiesCfg(
             # Self-collisions OFF: under MuJoCo contacts every robot mesh is a convex
-            # hull, and the two finger assemblies' hulls overlap the grasp channel --
-            # measured free-air close stall at a 7.5 cm finger gap (blade is 6.98 cm),
-            # i.e. the fingers could never reach the blade. Finger-object and
-            # object-table contact are robot-external pairs and unaffected. Cost: the
-            # arm no longer collides with the rig tabletop (same articulation);
-            # restore via fitted pad collision boxes if that ever matters.
+            # hull, and the two finger assemblies' hulls overlap the grasp channel, so
+            # a free-air close stalls at a finger gap wider than the blade -- the
+            # fingers can never reach it. Finger-object and object-table contact are
+            # robot-external pairs and unaffected. Cost: the arm no longer collides
+            # with the rig tabletop (same articulation); restore via fitted pad
+            # collision boxes if that ever matters.
             enabled_self_collisions=False,
             solver_position_iteration_count=8,
             solver_velocity_iteration_count=0,

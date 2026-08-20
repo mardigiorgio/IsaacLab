@@ -23,12 +23,12 @@
 # the scene they were trained in.
 #
 # Usage (single line, from anywhere):
-#   ./source/isaaclab_tasks/isaaclab_tasks/contrib/trossen_spatula_lift/run_comparison.sh
+#   ./source/isaaclab_tasks/isaaclab_tasks/contrib/trossen_mug_lift/run_comparison.sh
 set -u
 cd "$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
 export VIRTUAL_ENV="${VIRTUAL_ENV:-$HOME/Documents/code/IsaacLabRubato/.venv}"
 
-COMMON=(--rl_library rsl_rl --task IsaacContrib-Lift-Spatula-Trossen-v0 --seed 42
+COMMON=(--rl_library rsl_rl --task IsaacContrib-Lift-Mug-Trossen-v0 --seed 42
   --num_envs 4096 --max_iterations 2000
   --logger wandb --log_project_name rubato-trossen
   --video --video_length 250 --video_interval 2000 --viz newton)

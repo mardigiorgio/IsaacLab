@@ -7,7 +7,7 @@
 # this measures solver cost, NOT the long-process cliff (see LONG mode).
 #
 # Usage (single line):
-#   ./source/isaaclab_tasks/isaaclab_tasks/contrib/trossen_spatula_lift/bench_contact_iter.sh
+#   ./source/isaaclab_tasks/isaaclab_tasks/contrib/trossen_mug_lift/bench_contact_iter.sh
 # Knobs pass through the environment, e.g.:
 #   NEWTON_ADAPTIVE_TAIL_COMPACT=1 ./source/.../bench_contact_iter.sh
 # Extra hydra overrides append as arguments, e.g.:
@@ -22,7 +22,7 @@ export VIRTUAL_ENV="${VIRTUAL_ENV:-$HOME/Documents/code/IsaacLabRubato/.venv}"
 ITERS=$(( ${BENCH_LONG:-0} == 1 ? 300 : 8 ))
 LOG=$(mktemp /tmp/bench_contact_XXXX.log)
 timeout 7200 ./isaaclab.sh train --rl_library rsl_rl \
-  --task IsaacContrib-Lift-Spatula-Trossen-v0 --seed 42 --solver mujoco-adaptive \
+  --task IsaacContrib-Lift-Mug-Trossen-v0 --seed 42 --solver mujoco-adaptive \
   --num_envs 2048 --max_iterations $ITERS --resume \
   --load_run benchmark-contact-heavy --checkpoint model_150.pt \
   --logger wandb --log_project_name rubato-trossen --run_name bench-contact "$@" \

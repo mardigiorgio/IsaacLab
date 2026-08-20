@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Articulation/actuation verification for IsaacContrib-Lift-Spatula-Trossen-v0.
+"""Articulation/actuation verification for IsaacContrib-Lift-Mug-Trossen-v0.
 
 Checks, under the (now default) Newton backend and optionally the adaptive solver:
   joints    all expected joints enumerate (both carriages included)
@@ -33,7 +33,7 @@ import torch  # noqa: E402
 import isaaclab_tasks  # noqa: F401,E402
 from isaaclab_tasks.utils import parse_env_cfg  # noqa: E402
 
-TASK = "IsaacContrib-Lift-Spatula-Trossen-v0"
+TASK = "IsaacContrib-Lift-Mug-Trossen-v0"
 ADAPTIVE = os.environ.get("CHECK_ADAPTIVE") == "1"
 res: dict = {"adaptive": ADAPTIVE}
 
@@ -43,11 +43,11 @@ try:
         env_cfg.sim.physics.solver_cfg.adaptive = True
         env_cfg.sim.physics.use_cuda_graph = False
     if os.environ.get("CHECK_PHYSX") == "1":
-        from isaaclab_tasks.contrib.trossen_spatula_lift.trossen_spatula_lift_env_cfg import (
-            TrossenSpatulaLiftPhysicsCfg,
+        from isaaclab_tasks.contrib.trossen_mug_lift.trossen_mug_lift_env_cfg import (
+            TrossenMugLiftPhysicsCfg,
         )
 
-        env_cfg.sim.physics = TrossenSpatulaLiftPhysicsCfg().physx
+        env_cfg.sim.physics = TrossenMugLiftPhysicsCfg().physx
     env = gym.make(TASK, cfg=env_cfg)
     u = env.unwrapped
     robot = u.scene["robot"]

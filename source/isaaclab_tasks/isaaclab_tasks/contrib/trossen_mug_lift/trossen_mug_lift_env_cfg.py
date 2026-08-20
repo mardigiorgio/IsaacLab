@@ -98,6 +98,9 @@ _SPAWN_Y = BASE_PLATE_ENV[1] - OBJECT_FORWARD_M
 OBJECT_REST_Z = 0.021
 # Root rest z is ~0.020; 0.08 demands unambiguous lift-off.
 LIFT_HEIGHT = 0.08
+# Airborne income pays only below this mug speed [m/s]: a deliberate carry
+# stays well under it, a fling exceeds it several-fold.
+CARRY_SPEED_MAX = 0.75
 
 # Rim circle of the mug in its body frame, the one-wall pinch target for the
 # reach term. Height is the authored MUG_HEIGHT in assets/convert_mug.py
@@ -456,6 +459,10 @@ class RewardsCfg:
         params={"std": 0.1, "rim_height": MUG_RIM_HEIGHT, "rim_radius": MUG_RIM_RADIUS},
         weight=1.0,
     )
+    # CARRY_SPEED_MAX gates every income term that pays while the mug is
+    # airborne: a deliberate carry stays well under it, a fling exceeds it by
+    # an order of magnitude — ballistic flight earns nothing, so the flick
+    # channel has no revenue and the tip penalty prices its landing.
     # Approach geometry, not just proximity: pays for the finger axis aiming
     # at the same rim point reach pulls toward, so the pinch arrives
     # nose-first with one pad either side of the wall.
@@ -477,15 +484,19 @@ class RewardsCfg:
     # tipped-AND-at-table-height state, so flick-lifts that end with the mug
     # on its side pay for it every remaining step.
     mug_tipped_on_table = RewTerm(func=mdp.mug_on_side, weight=-5.0)
-    lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": LIFT_HEIGHT}, weight=15.0)
+    lifting_object = RewTerm(
+        func=mdp.object_is_lifted,
+        params={"minimal_height": LIFT_HEIGHT, "max_speed": CARRY_SPEED_MAX},
+        weight=15.0,
+    )
     object_goal_tracking = RewTerm(
         func=mdp.object_goal_distance,
-        params={"std": 0.3, "minimal_height": LIFT_HEIGHT, "command_name": "object_pose"},
+        params={"std": 0.3, "minimal_height": LIFT_HEIGHT, "max_speed": CARRY_SPEED_MAX, "command_name": "object_pose"},
         weight=16.0,
     )
     object_goal_tracking_fine_grained = RewTerm(
         func=mdp.object_goal_distance,
-        params={"std": 0.02, "minimal_height": LIFT_HEIGHT, "command_name": "object_pose"},
+        params={"std": 0.02, "minimal_height": LIFT_HEIGHT, "max_speed": CARRY_SPEED_MAX, "command_name": "object_pose"},
         weight=16.0,
     )
     # Erratic-arm suppression, gripper exempt: the action-rate penalty covers

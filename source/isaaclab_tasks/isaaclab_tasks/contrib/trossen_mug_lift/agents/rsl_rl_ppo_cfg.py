@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""PPO runner for the Trossen spatula lift.
+"""PPO runner for the Trossen mug lift.
 
 The Stationary AI cube task's rig-validated recipe (which itself mirrors the reference
 Franka lift PPO), with the reference single-observation-group layout: no privileged /
@@ -17,11 +17,15 @@ from isaaclab_rl.rsl_rl import RslRlMLPModelCfg, RslRlOnPolicyRunnerCfg, RslRlPp
 
 
 @configclass
-class TrossenSpatulaLiftPPORunnerCfg(RslRlOnPolicyRunnerCfg):
+class TrossenMugLiftPPORunnerCfg(RslRlOnPolicyRunnerCfg):
+    # NaN observations are the object of study here, not a bug to abort on:
+    # a fixed step that cannot resolve this contact drives joint state
+    # non-finite, and the run has to survive that to record what it looks like.
+    check_for_nan = False
     num_steps_per_env = 24
     max_iterations = 10000
     save_interval = 50
-    experiment_name = "trossen_spatula_lift"
+    experiment_name = "trossen_mug_lift"
 
     obs_groups = {"actor": ["policy"], "critic": ["policy"]}
 
@@ -30,8 +34,8 @@ class TrossenSpatulaLiftPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         activation="elu",
         obs_normalization=False,
         # std floor keeps the effectively-binary gripper dim from collapsing sigma to
-        # zero (log-prob blowup); the cap bounds exploration drift (measured 1.83 and
-        # climbing before the runaway).
+        # zero (log-prob blowup); the cap bounds exploration drift, which is otherwise
+        # unbounded and runs away.
         distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=1.0, std_type="log", std_range=(0.05, 3.0)),
     )
     critic = RslRlMLPModelCfg(

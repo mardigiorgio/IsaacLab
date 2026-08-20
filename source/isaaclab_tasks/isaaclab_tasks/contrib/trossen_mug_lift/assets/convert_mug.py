@@ -8,7 +8,7 @@
 The USD is authored directly with ``pxr`` from the glTF geometry (loaded via
 trimesh), following ``g1_spatula_lift/assets/convert_assets.py``. Run once:
 
-    ./isaaclab.sh -p source/isaaclab_tasks/isaaclab_tasks/contrib/trossen_spatula_lift/assets/convert_mug.py
+    ./isaaclab.sh -p source/isaaclab_tasks/isaaclab_tasks/contrib/trossen_mug_lift/assets/convert_mug.py
 
 Writes ``usd/mug_inomata_white.usd`` next to this script.
 
@@ -42,7 +42,7 @@ from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics, Vt
 _LBM_MUG_DIRS = [
     os.path.expanduser(f"~/Documents/{d}")
     for d in (
-        "code/IsaacLab/source/isaaclab_tasks/isaaclab_tasks/contrib/trossen_spatula_lift/assets/lbm_src",
+        "code/IsaacLab/source/isaaclab_tasks/isaaclab_tasks/contrib/trossen_mug_lift/assets/lbm_src",
         "code",
     )
 ] + [

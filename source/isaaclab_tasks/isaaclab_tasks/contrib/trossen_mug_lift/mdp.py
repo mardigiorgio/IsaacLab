@@ -391,12 +391,31 @@ def object_knocked_from_spot(
     return finite & (pos_local[:, 2] < z_max) & (disp.abs().amax(dim=-1) > xy_tol)
 
 
-def object_is_lifted(
-    env: ManagerBasedRLEnv, minimal_height: float, object_cfg: SceneEntityCfg = SceneEntityCfg("object")
-) -> torch.Tensor:
-    """1.0 when the object root is above ``minimal_height`` [m] (world z)."""
+def _object_calm(env: ManagerBasedRLEnv, max_speed: float, object_cfg: SceneEntityCfg) -> torch.Tensor:
+    """Bool per env: the object moves at carry speed, not ballistically.
+
+    ``inf`` disables the gate. A deliberate carry stays well under any sane
+    bound; a flick crosses it by an order of magnitude, so gating income on
+    this removes the fling channel's revenue without taxing transport.
+    """
+    if max_speed == float("inf"):
+        return torch.ones(env.num_envs, dtype=torch.bool, device=env.device)
     obj = env.scene[object_cfg.name]
-    return _finite(torch.where(obj.data.root_pos_w.torch[:, 2] > minimal_height, 1.0, 0.0))
+    speed = torch.linalg.vector_norm(obj.data.root_lin_vel_w.torch, dim=-1)
+    return torch.isfinite(speed) & (speed < max_speed)
+
+
+def object_is_lifted(
+    env: ManagerBasedRLEnv,
+    minimal_height: float,
+    max_speed: float = float("inf"),
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """1.0 when the object root is above ``minimal_height`` [m] (world z),
+    moving no faster than ``max_speed`` [m/s] (see :func:`_object_calm`)."""
+    obj = env.scene[object_cfg.name]
+    lifted = obj.data.root_pos_w.torch[:, 2] > minimal_height
+    return _finite((lifted & _object_calm(env, max_speed, object_cfg)).float())
 
 
 def object_vertical_velocity_shaped(
@@ -552,11 +571,14 @@ def object_goal_distance(
     std: float,
     minimal_height: float,
     command_name: str,
+    max_speed: float = float("inf"),
     robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
     kernel: str = "tanh",
 ) -> torch.Tensor:
-    """Goal-tracking shaping, gated on the object being lifted.
+    """Goal-tracking shaping, gated on the object being lifted and moving at
+    carry speed (see :func:`_object_calm` — a flicked object passing the goal
+    ballistically earns nothing).
 
     ``kernel``: ``"tanh"`` (default) or ``"gaussian"`` = ``exp(-(d/std)^2)``.
     """
@@ -567,7 +589,8 @@ def object_goal_distance(
     des_pos_w, _ = combine_frame_transforms(robot.data.root_pos_w.torch, robot.data.root_quat_w.torch, des_pos_b)
     distance = torch.norm(des_pos_w - obj.data.root_pos_w.torch, dim=1)
     shaped = torch.exp(-((distance / std) ** 2)) if kernel == "gaussian" else 1.0 - torch.tanh(distance / std)
-    return _finite((obj.data.root_pos_w.torch[:, 2] > minimal_height) * shaped)
+    lifted_calm = (obj.data.root_pos_w.torch[:, 2] > minimal_height) & _object_calm(env, max_speed, object_cfg)
+    return _finite(lifted_calm * shaped)
 
 
 def object_held(
