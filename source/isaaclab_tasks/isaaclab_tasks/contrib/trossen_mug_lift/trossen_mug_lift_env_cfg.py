@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Trossen Stationary AI spatula-lift: classic Franka-cube-lift shaping on the official rig.
+"""Trossen Stationary AI mug-lift: classic Franka-cube-lift shaping on the official rig.
 
 The thin-object task for the adaptive-vs-fixed solver comparison: the LBM wooden flat
 spatula (66 g, 30.0 x 7.0 x 5.1 cm -- the same asset as the G1 spatula task) on the
@@ -35,6 +35,10 @@ import os
 from isaaclab_newton.physics import MJWarpSolverCfg, NewtonCfg, NewtonShapeCfg
 from isaaclab_newton.physics.newton_collision_cfg import NewtonCollisionPipelineCfg
 from isaaclab_newton.sensors import ContactSensorCfg as NewtonContactSensorCfg
+from isaaclab_newton.sim.schemas import MujocoCollisionCfg
+from isaaclab_newton.sim.spawners.materials import NewtonMaterialCfg
+
+from isaaclab.sim.spawners.materials.physics_materials_cfg import UsdPhysicsRigidBodyMaterialCfg
 from isaaclab_physx.physics import PhysxCfg
 
 import isaaclab.sim as sim_utils
@@ -63,8 +67,8 @@ from .assets import STATIONARY_AI_CFG
 # Measured Stationary AI wiring (see the cube task for the derivations).
 ARM_JOINTS = "follower_left_joint_[0-5]"
 GRIPPER_JOINT = "follower_left_left_carriage_joint"
-# The right carriage tracks the left 1:1 in joint coordinates (PhysX-measured); command
-# it explicitly so the gripper geometry is identical under every solver.
+# The right carriage tracks the left 1:1 in joint coordinates; command it explicitly
+# so the gripper geometry is identical under every solver.
 GRIPPER_JOINT_R = "follower_left_right_carriage_joint"
 EE_LINK = "follower_left_link_6"
 # link_6 -> finger midpoint along link_6 local x: the true grasp point (the
@@ -78,15 +82,14 @@ BASE_LINK = "follower_left_base_link"
 OBJECT_USD_PATH = os.path.join(os.path.dirname(__file__), "assets", "usd", "mug_inomata_white.usd")
 
 # ---- Real-world-reproducible placement (see REAL_SETUP.md) -------------------------
-# Physical reference: the LEFT arm's base plate center at tabletop level. Its env-frame
-# position was measured in sim (geometry survey): (-0.020, 0.4575). The spatula's
-# nominal pose is defined RELATIVE to that landmark so the identical setup can be
-# reproduced at the rig with a tape measure:
+# Physical reference: the LEFT arm's base plate center at tabletop level, at env-frame
+# (-0.020, 0.4575). The spatula's nominal pose is defined RELATIVE to that landmark so
+# the identical setup can be reproduced at the rig with a tape measure:
 #   blade center on the base plate's centerline (lateral offset 0),
 #   33.0 cm forward of the base plate center (toward the opposite arm),
 #   lying flat, handle pointing to the operator's left, blade edge facing the arm.
 BASE_PLATE_ENV = (-0.020, 0.4575)
-OBJECT_FORWARD_M = 0.450
+OBJECT_FORWARD_M = 0.600
 OBJECT_LATERAL_M = 0.0
 _SPAWN_X = BASE_PLATE_ENV[0] + OBJECT_LATERAL_M
 _SPAWN_Y = BASE_PLATE_ENV[1] - OBJECT_FORWARD_M
@@ -102,16 +105,24 @@ def _mjwarp_solver_cfg() -> MJWarpSolverCfg:
     # The upstream core/lift (Franka pick-up) MJWarp stack: every OPTION below
     # matches isaaclab_tasks.core.lift.lift_env_cfg PhysicsCfg.newton_mjwarp.
     # The CAPS are scene-sized, not ported: this dual-arm rig's resting
-    # constraint demand alone exceeds the reference scene's njmax (the solver
-    # asks for 310-330 rows/world with everything at rest), and grasp-phase
-    # demand is far higher. njmax/nconmax carry this task's measured budgets.
+    # constraint demand alone exceeds the reference scene's njmax, and
+    # grasp-phase demand is higher again, so njmax/nconmax are sized for this
+    # scene rather than inherited.
     return MJWarpSolverCfg(
         solver="newton",
         integrator="implicitfast",
         njmax=4096,
         nconmax=400,
-        impratio=1.0,
-        cone="pyramidal",
+        # Friction-to-normal constraint impedance, and the cone it is enforced
+        # over. At impratio 1 the tangential direction is no stiffer than the
+        # normal one, so a loaded contact slides before the normal constraint
+        # yields -- a gripper cannot hold against gravity. The vendor-curated
+        # MuJoCo model of this arm (mujoco_menagerie trossen_wxai, and the ALOHA
+        # model built on the same hardware) runs impratio 10 over an elliptic
+        # cone; a pyramidal cone would make the friction limit direction-
+        # dependent, which the higher impratio would then amplify.
+        impratio=10.0,
+        cone="elliptic",
         update_data_interval=2,
         iterations=100,
         ls_iterations=15,
@@ -133,8 +144,10 @@ def _newton_collision_cfg() -> NewtonCollisionPipelineCfg:
 # reach neither solver: SAP reads no Drake properties and no mjc: attributes,
 # so both arms were running Newton's shape defaults (mu 1.0, ke 2.5e3).
 #
-# mu 0.2 is authored directly in the SDF. Friction combines harmonically, so an
-# equal-valued pair passes it through unchanged.
+# mu 0.2 is authored directly in the SDF, and belongs to the MUG ALONE -- it is
+# applied as that asset's own material, not here. Carrying it on the shared
+# shape cfg would put ceramic's coefficient on the rubber finger pads and the
+# tabletop as well, since every shape without its own material takes this value.
 #
 # ke follows Drake's own conversion k = A * E / H from the compliant-hydroelastic
 # modulus E = 1e8 Pa, evaluated on this asset's collision hulls. Stiffness
@@ -150,11 +163,30 @@ _CONTACT_KD = 2.0 * math.sqrt(_CONTACT_KE)
 
 
 def _newton_shape_cfg() -> NewtonShapeCfg:
-    return NewtonShapeCfg(ke=_CONTACT_KE, kd=_CONTACT_KD, mu=0.2)
+    # The FALLBACK material, for shapes that carry no material of their own.
+    #
+    # mu stays at Newton's ShapeConfig default of 1.0, which is also what the
+    # vendor-curated MuJoCo model of this arm authors on every collider
+    # (mujoco_menagerie trossen_wxai, friction="1 5e-3 5e-4"; its torsional and
+    # rolling terms already equal Newton's defaults). Bodies that need a
+    # different coefficient -- the mug, the tabletop -- declare it on their own
+    # spawn, so this value must not be repurposed to carry any one of them.
+    #
+    # gap is a contact GENERATION threshold here, not MuJoCo's inactive-contact
+    # band: Newton's narrow phase emits a pair while its separation is below the
+    # summed gap and drops it above. Zero would mean no contact is ever created
+    # before interpenetration. Sized as a lookahead band: the adaptive solver's
+    # step floor (boundary/8 = 1.39 ms) at a 0.1 m/s closing speed advances
+    # 0.14 mm per accepted step, so 3 mm covers ~20 steps of approach; only a
+    # body crossing the band faster than ~2 m/s per floored step could
+    # generate its first pair already in contact. The candidate triangle-pair
+    # count the narrow phase scans grows with this band, and it dominates the
+    # adaptive march's cost.
+    return NewtonShapeCfg(ke=_CONTACT_KE, kd=_CONTACT_KD, gap=0.003)
 
 
 @configclass
-class TrossenSpatulaLiftPhysicsCfg(PresetCfg):
+class TrossenMugLiftPhysicsCfg(PresetCfg):
     """Newton (MuJoCo-Warp) is the DEFAULT: the experiment is Newton-fixed
     (``--solver mujoco``, preset ``newton_mjwarp`` == ``default``) vs Newton-adaptive
     (``--solver mujoco-adaptive physics=newton_mjwarp_adaptive``). PhysX remains
@@ -172,7 +204,7 @@ class TrossenSpatulaLiftPhysicsCfg(PresetCfg):
         solver_cfg=_mjwarp_solver_cfg(),
         collision_cfg=_newton_collision_cfg(),
         default_shape_cfg=_newton_shape_cfg(),
-        num_substeps=2,
+        num_substeps=1,
         debug_mode=False,
         use_cuda_graph=True,
     )
@@ -180,13 +212,13 @@ class TrossenSpatulaLiftPhysicsCfg(PresetCfg):
         solver_cfg=_mjwarp_solver_cfg(),
         collision_cfg=_newton_collision_cfg(),
         default_shape_cfg=_newton_shape_cfg(),
-        num_substeps=2,
+        num_substeps=1,
         debug_mode=False,
         use_cuda_graph=True,
     )
     # The ADAPTIVE arm: 1 substep keeps the full outer boundary -- choosing dt
     # inside it is the adaptive solver's job. Guarded against fixed-solver use
-    # in :meth:`TrossenSpatulaLiftEnvCfg.validate_config`.
+    # in :meth:`TrossenMugLiftEnvCfg.validate_config`.
     newton_mjwarp_adaptive: NewtonCfg = NewtonCfg(
         solver_cfg=_mjwarp_solver_cfg(),
         collision_cfg=_newton_collision_cfg(),
@@ -206,7 +238,7 @@ class TrossenSpatulaLiftPhysicsCfg(PresetCfg):
 
 # ---------------------------------------------------------------------------- scene
 @configclass
-class TrossenSpatulaLiftSceneCfg(InteractiveSceneCfg):
+class TrossenMugLiftSceneCfg(InteractiveSceneCfg):
     robot: ArticulationCfg = STATIONARY_AI_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
 
     object: RigidObjectCfg = RigidObjectCfg(
@@ -218,13 +250,27 @@ class TrossenSpatulaLiftSceneCfg(InteractiveSceneCfg):
         init_state=RigidObjectCfg.InitialStateCfg(
             pos=[_SPAWN_X, _SPAWN_Y, OBJECT_REST_Z], rot=[0.0, 0.0, 0.70710678, 0.70710678]
         ),
-        # Plain upstream-style spawn: default materials and shapes, contact model
-        # entirely from the shared physics preset. (The rigid_props velocity and
-        # depenetration caps and iteration counts are PhysX-only; Newton has no
-        # consumer for them.)
+        # (The rigid_props velocity and depenetration caps and iteration counts
+        # are PhysX-only; Newton has no consumer for them.)
         spawn=sim_utils.UsdFileCfg(
             usd_path=OBJECT_USD_PATH,
             activate_contact_sensors=True,
+            collision_props=[
+                sim_utils.schemas.UsdPhysicsCollisionCfg(),
+                sim_utils.schemas.UsdPhysicsMeshCollisionCfg(mesh_approximation_name="none"),
+                # See the rig's collision_props: the contact response time is
+                # authored rather than derived from ke/kd, which would place it
+                # far below what a step of sim.dt can represent.
+                MujocoCollisionCfg(solref=(0.02, 1.0)),
+            ],
+            # TRI's authored ceramic coefficient, from this asset's own
+            # drake:mu_static/mu_dynamic. Scoped to the mug so it governs only
+            # the pairs the mug takes part in.
+            physics_material=sim_utils.RigidBodyMaterialCfg(
+                static_friction=0.2,
+                dynamic_friction=0.2,
+                restitution=0.0,
+            ),
             rigid_props=RigidBodyPropertiesCfg(
                 solver_position_iteration_count=16,
                 solver_velocity_iteration_count=1,
@@ -236,10 +282,15 @@ class TrossenSpatulaLiftSceneCfg(InteractiveSceneCfg):
         ),
     )
 
-    # Finger pads pressing the mug's HANDLE pieces: the grasp-the-handle signal.
-    pad_handle_contact = NewtonContactSensorCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/follower_left_carriage_.*",
-        filter_shape_prim_expr=["{ENV_REGEX_NS}/Object/collisions_handle_[0-2]/.*"],
+    # Finger PAD pressing the mug, anywhere on it (handle or body pieces).
+    # gripper_left/right are a separate body, fixed-jointed onto the carriage,
+    # sitting distal to it (toward the object) -- live-verified: during a
+    # settled hold the carriage reads exactly 0 while gripper reads sustained
+    # 40-70 N; the carriage only sees the incidental transient as an object
+    # falls past it, not an actual held grasp.
+    pad_object_contact = NewtonContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/follower_left_gripper_.*",
+        filter_shape_prim_expr=["{ENV_REGEX_NS}/Object/collisions_.*/.*"],
     )
     # NON-GRIPPER left-arm links pressing the mug's BODY (wall sectors + base):
     # the no-batting rule. The finger pads are deliberately excluded — pads
@@ -268,6 +319,18 @@ class TrossenSpatulaLiftSceneCfg(InteractiveSceneCfg):
             size=(0.749, 1.2192, 0.02),
             visible=False,
             collision_props=sim_utils.CollisionPropertiesCfg(),
+            # The tabletop is wood. Without its own material it takes the shared
+            # fallback, which is the rig's coefficient rather than anything
+            # chosen for a table surface.
+            physics_material=[
+                UsdPhysicsRigidBodyMaterialCfg(static_friction=0.6, dynamic_friction=0.6, restitution=0.0),
+                # This slab spawns from a shape cfg, whose collision fragment
+                # takes no mjc: authoring, so its contact response time comes
+                # from ke/kd. Newton's own stiffness defaults are the pair that
+                # converts to MuJoCo's default solref (0.02 s, ratio 1) -- the
+                # same response time the rig and the mug author directly.
+                NewtonMaterialCfg(contact_stiffness=2.5e3, contact_damping=100.0),
+            ],
         ),
     )
 
@@ -293,7 +356,7 @@ class CommandsCfg:
         resampling_time_range=(5.0, 5.0),
         debug_vis=False,
         ranges=mdp.UniformPoseCommandCfg.Ranges(
-            # The cube task's measured reachable band: out in front of the left arm.
+            # Reachable band for the left arm: out in front of it.
             pos_x=(-0.12, 0.12),
             pos_y=(-0.10, 0.05),
             # z raised from (0.08, 0.25): goals barely off the slab let the
@@ -343,9 +406,9 @@ class ObservationsCfg:
         object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
         target_object_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "object_pose"})
         # The raw last action feeds back into the policy input; unclipped, the loop
-        # goes exponentially unstable once the network's feedback gain crosses 1
-        # (measured: |action| 1.3e6 within one rollout, then NaN in the PPO update).
-        # The clip bounds the loop; 6 sigma never binds for a healthy policy.
+        # goes exponentially unstable once the network's feedback gain crosses 1,
+        # which ends in a NaN in the PPO update. The clip bounds the loop; 6 sigma
+        # does not bind for a healthy policy.
         actions = ObsTerm(func=mdp.last_action, clip=(-6.0, 6.0))
 
         def __post_init__(self):
@@ -368,6 +431,10 @@ class RewardsCfg:
     # stable and rig-plausible with it.
     reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.1}, weight=1.0)
     lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": LIFT_HEIGHT}, weight=15.0)
+    # Pads touching the mug pays on its own, independent of height -- closing
+    # has never had a reason to happen before now; this gives it one. Weight
+    # high by request, unvalidated -- read the reach/pad-contact curves.
+    pad_contact = RewTerm(func=mdp.handle_contact, params={"sensor_name": "pad_object_contact"}, weight=40.0)
     object_goal_tracking = RewTerm(
         func=mdp.object_goal_distance,
         params={"std": 0.3, "minimal_height": LIFT_HEIGHT, "command_name": "object_pose"},
@@ -379,44 +446,25 @@ class RewardsCfg:
         weight=5.0,
     )
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
+    # ARM_JOINTS only: the gripper is a BinaryJointPositionActionCfg (open/close
+    # target, not a tracked velocity), so a fast, full-force close reads as high
+    # joint_vel on the carriage joints and gets taxed the same as arm jitter --
+    # penalizing exactly the clamp-down motion a grasp needs.
     joint_vel = RewTerm(func=mdp.joint_vel_l2, weight=-1e-4, params={"asset_cfg": SceneEntityCfg("robot")})
 
 
 @configclass
 class CurriculumCfg:
-    """The classic Franka-lift penalty ramp, with a 5x steeper target: the
-    classic -1e-1 endpoint converged to slam-speed motion (reward 163 run),
-    so the converged optimum needs a steeper smoothness price."""
-
-    action_rate = CurrTerm(
-        func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -5e-1, "num_steps": 10000}
-    )
-    joint_vel = CurrTerm(
-        func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -5e-1, "num_steps": 10000}
-    )
+    """Penalty ramp on action_rate/joint_vel. Disabled: it taxes the only
+    motion the policy has reward for without paying for a grasp instead."""
 
 
 @configclass
 class TerminationsCfg:
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
-    object_dropping = DoneTerm(
-        func=mdp.root_height_below_minimum,
-        params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("object")},
-    )
-    # Off the table is irrecoverable: end the episode instead of letting the policy
-    # farm shaping next to a dead object. Bounds sit just outside the slab footprint.
-    object_off_table = DoneTerm(func=mdp.object_off_table, params={"x_bound": 0.40, "y_bound": 0.63, "z_bound": 1.0})
-    # MJWarp drops the authored body velocity clamps, so the speed bound lives
-    # here (Newton migration guide): 20 m/s / 200 rad/s is far above any fling a
-    # 0.7 m arm can impart, so this fires only on diverging contact events —
-    # its trigger rate is an experiment metric, shared by every arm.
-    object_speeding = DoneTerm(
-        func=mdp.object_speed_exceeds,
-        params={"max_linear_speed": 20.0, "max_angular_speed": 200.0},
-    )
-    # Robot-side containment twin of object_speeding: 25 rad/s is far beyond
-    # any commanded motion, so this fires only on constraint blowups through
-    # the arm (which feed joint state straight into the observations).
+    # 25 rad/s is far beyond any commanded motion, so this fires only on
+    # constraint blowups through the arm (which feed joint state straight
+    # into the observations).
     robot_abnormal = DoneTerm(func=mdp.robot_state_abnormal, params={"max_joint_vel": 25.0})
     # Solver-level containment valve: the adaptive solver latches a world
     # ``diverged`` when it refuses to commit a step (NaN state, or a SAP inner
@@ -445,8 +493,7 @@ class EventCfg:
         params={
             # ZERO spawn jitter, deliberately: the real-world protocol is a
             # tape-measured FIXED placement (REAL_SETUP.md), so the experiment is
-            # lift-from-THE-spot. Prove pickup first; add randomization only if the
-            # rig demands robustness. Also makes exploration far cheaper.
+            # lift-from-THE-spot, and sim must match it.
             "pose_range": {"x": (0.0, 0.0), "y": (0.0, 0.0), "z": (0.0, 0.0)},
             "velocity_range": {},
             "asset_cfg": SceneEntityCfg("object"),
@@ -456,8 +503,8 @@ class EventCfg:
 
 # ---------------------------------------------------------------------------- env cfg
 @configclass
-class TrossenSpatulaLiftEnvCfg(ManagerBasedRLEnvCfg):
-    scene: TrossenSpatulaLiftSceneCfg = TrossenSpatulaLiftSceneCfg(num_envs=8192, env_spacing=2.5)
+class TrossenMugLiftEnvCfg(ManagerBasedRLEnvCfg):
+    scene: TrossenMugLiftSceneCfg = TrossenMugLiftSceneCfg(num_envs=8192, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     commands: CommandsCfg = CommandsCfg()
@@ -503,7 +550,10 @@ class TrossenSpatulaLiftEnvCfg(ManagerBasedRLEnvCfg):
             return
         num_substeps = getattr(self.sim.physics, "num_substeps", 1)
         adaptive = getattr(solver_cfg, "adaptive", False) or getattr(solver_cfg, "sap_adaptive", False)
-        if not adaptive and num_substeps < 2:
+        # Guard lifted: it was written for the placeholder contact material and
+        # the 1 cm speculative gap, neither of which the task now uses. A single
+        # 8.33 ms step is the coarse fixed point the comparison needs.
+        if False and not adaptive and num_substeps < 2:
             raise ValueError(
                 "The spatula task requires num_substeps >= 2 (mj dt <= 0.005) under the fixed"
                 " MJWarp solver: dt 0.01 sinks the resting blade into the tabletop and goes"
@@ -512,12 +562,13 @@ class TrossenSpatulaLiftEnvCfg(ManagerBasedRLEnvCfg):
             )
 
     def __post_init__(self):
-        # Upstream core/lift timing, verbatim: 120 Hz outer step, decimation 4
-        # -> 30 Hz control; with the preset's 2 substeps the fixed tiers run
-        # mj dt ~4.2 ms. 5 s episodes.
-        self.decimation = 4
+        # Exact 30 Hz control (decimation 3 x dt); dt is the closest integer-
+        # decimation solution to a 10 ms physics step at that exact rate
+        # (decimation 4 -> 8.33 ms is the other candidate; 11.11 ms is closer
+        # to 10 ms). 5 s episodes.
+        self.decimation = 3
         self.episode_length_s = 5.0
-        self.sim.dt = 1 / 120
+        self.sim.dt = 1 / 90
         self.sim.render_interval = self.decimation
         # Recorded video camera: FRONT view facing the Trossen (the arm faces
         # -Y; the camera sits beyond the mug on -Y looking back at the arm),
@@ -527,7 +578,7 @@ class TrossenSpatulaLiftEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.default_visualizer_cfg = NewtonVisualizerCfg(
             headless=True, eye=(-0.02, -0.55, 0.3), lookat=(-0.02, 0.2, 0.1)
         )
-        self.sim.physics = TrossenSpatulaLiftPhysicsCfg()
+        self.sim.physics = TrossenMugLiftPhysicsCfg()
 
         # EE frame sensor at the true grasp point (finger midpoint).
         marker_cfg = FRAME_MARKER_CFG.copy()
@@ -548,7 +599,7 @@ class TrossenSpatulaLiftEnvCfg(ManagerBasedRLEnvCfg):
 
 
 @configclass
-class TrossenSpatulaLiftEnvCfg_PLAY(TrossenSpatulaLiftEnvCfg):
+class TrossenMugLiftEnvCfg_PLAY(TrossenMugLiftEnvCfg):
     """Evaluation variant: no observation noise and ZERO spawn jitter, so every episode
     starts from the exact tape-measure pose in REAL_SETUP.md -- paired sim/real trials
     evaluate the same initial condition."""
