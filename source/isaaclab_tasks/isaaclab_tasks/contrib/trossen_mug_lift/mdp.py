@@ -800,6 +800,37 @@ def success_kernel(
     return _finite(((1.0 - torch.tanh(distance / pos_std)) ** 2) * gate.float())
 
 
+def object_goal_distance_on_table(
+    env: ManagerBasedRLEnv,
+    std: float,
+    command_name: str,
+    z_max: float = 0.06,
+    min_up_cos: float = 0.87,
+    max_speed: float = float("inf"),
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """Slide-task transport shaping: pays while the mug approaches the
+    commanded position UPRIGHT, ON the table, at push speed.
+
+    The upright gate (default 30 degrees) and table-height gate make a tipped
+    or airborne mug worthless — sliding A to B without tipping IS the task —
+    and the speed gate closes the smack-it-across-the-table channel the same
+    way the lift task's carry gate does. Planar (xy) distance only: the
+    commanded z is not the mug's to control while it stays on the slab.
+    """
+    robot = env.scene[robot_cfg.name]
+    obj = env.scene[object_cfg.name]
+    command = env.command_manager.get_command(command_name)
+    des_pos_w, _ = combine_frame_transforms(robot.data.root_pos_w.torch, robot.data.root_quat_w.torch, command[:, :3])
+    distance = torch.norm(des_pos_w[:, :2] - obj.data.root_pos_w.torch[:, :2], dim=1)
+    quat = obj.data.root_quat_w.torch
+    up_z = 1.0 - 2.0 * (quat[:, 0] * quat[:, 0] + quat[:, 1] * quat[:, 1])
+    z_local = obj.data.root_pos_w.torch[:, 2] - env.scene.env_origins[:, 2]
+    gate = (up_z > min_up_cos) & (z_local < z_max) & _object_calm(env, max_speed, object_cfg)
+    return _finite(gate * (1.0 - torch.tanh(distance / std)))
+
+
 def object_position_in_robot_root_frame(
     env: ManagerBasedRLEnv,
     robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),

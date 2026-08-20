@@ -102,6 +102,19 @@ LIFT_HEIGHT = 0.08
 # stays well under it, a fling exceeds it several-fold.
 CARRY_SPEED_MAX = 0.75
 
+# Pre-grasp reset pose: open gripper hovering at the mug, probe-validated for
+# zero spawn contact and millimeter mug drift under the worst-case retreat
+# (scripts/probes/probe_bank_sanity.py). Interim values pending a
+# teleop-authored pose; regenerate or replace rather than hand-edit.
+GRASP_BANK_POSE = {
+    "follower_left_joint_0": -0.1017,
+    "follower_left_joint_1": 2.4731,
+    "follower_left_joint_2": 2.0438,
+    "follower_left_joint_3": -0.2029,
+    "follower_left_joint_4": -0.4480,
+    "follower_left_joint_5": -0.3167,
+}
+
 # Rim circle of the mug in its body frame, the one-wall pinch target for the
 # reach term. Height is the authored MUG_HEIGHT in assets/convert_mug.py
 # (mesh-asserted there); the radius is the mug body radius, bounded above by
@@ -556,6 +569,20 @@ class EventCfg:
             "asset_cfg": SceneEntityCfg("object"),
         },
     )
+    # Pre-grasp initialization (standard fix for grasp-discovery failure —
+    # far-start exploration cannot find the close/lift income): half the
+    # episodes begin with the arm at GRASP_BANK_POSE inside the close gate,
+    # half from home so the approach stays in the data.
+    reset_arm_grasp_bank = EventTerm(
+        func=mdp.reset_arm_to_grasp_bank,
+        mode="reset",
+        params={
+            "pose": GRASP_BANK_POSE,
+            "bank_fraction": 0.5,
+            "noise": 0.01,
+            "asset_cfg": SceneEntityCfg("robot"),
+        },
+    )
 
 
 # ---------------------------------------------------------------------------- env cfg
@@ -671,3 +698,5 @@ class TrossenMugLiftEnvCfg_PLAY(TrossenMugLiftEnvCfg):
             "y": (0.0, 0.0),
             "z": (0.0, 0.0),
         }
+        # Eval is the rig protocol: every episode approaches from home.
+        self.events.reset_arm_grasp_bank.params["bank_fraction"] = 0.0
