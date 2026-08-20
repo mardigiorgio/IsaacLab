@@ -420,21 +420,23 @@ class ObservationsCfg:
 
 @configclass
 class RewardsCfg:
-    """The classic Franka cube-lift reward, verbatim: reach / lift / goal-track /
-    fine track / action penalties. minimal_height re-based for this object."""
+    """Classic Franka cube-lift shaping with transport-weighted tight tracking:
+    reach / lift / goal-track / tight fine track / action penalties.
+    minimal_height re-based for this object."""
 
-    # FRANKA-FAITHFUL (Marco, 2026-08-13 ~21:00): the classic terms verbatim
-    # and NOTHING else. The anti-throw mechanism is the classic economics
+    # TIGHT-GAUSSIAN TRANSPORT (Marco + PI, 2026-08-20): the touch bonus is
+    # GONE — measured income under it was pad 17-20 vs goal-track 1.6 vs fine
+    # ~0 per step, a pinch-and-hover local optimum that out-paid transport
+    # ~10:1 and never carried the mug to the goal. Serious income now exists
+    # only AT the commanded goal (fine kernel tightened 0.05 -> 0.02 and
+    # weighted up to 16); the broad 0.3 kernel stays so the gradient reaches
+    # far from the goal. The anti-throw mechanism remains the economics
     # itself — no failure terminations, so a batted mug wastes the episode's
     # remaining income budget instead of buying a fresh one. The speed recipe
-    # (action scale 0.25 + the -5e-1 penalty ramp) stays: the arm's motion is
-    # stable and rig-plausible with it.
+    # (action scale 0.25) stays: the arm's motion is stable and rig-plausible
+    # with it. The pad_object_contact sensor stays in the scene as telemetry.
     reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.1}, weight=1.0)
     lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": LIFT_HEIGHT}, weight=15.0)
-    # Pads touching the mug pays on its own, independent of height -- closing
-    # has never had a reason to happen before now; this gives it one. Weight
-    # high by request, unvalidated -- read the reach/pad-contact curves.
-    pad_contact = RewTerm(func=mdp.handle_contact, params={"sensor_name": "pad_object_contact"}, weight=40.0)
     object_goal_tracking = RewTerm(
         func=mdp.object_goal_distance,
         params={"std": 0.3, "minimal_height": LIFT_HEIGHT, "command_name": "object_pose"},
@@ -442,8 +444,8 @@ class RewardsCfg:
     )
     object_goal_tracking_fine_grained = RewTerm(
         func=mdp.object_goal_distance,
-        params={"std": 0.05, "minimal_height": LIFT_HEIGHT, "command_name": "object_pose"},
-        weight=5.0,
+        params={"std": 0.02, "minimal_height": LIFT_HEIGHT, "command_name": "object_pose"},
+        weight=16.0,
     )
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
     # ARM_JOINTS only: the gripper is a BinaryJointPositionActionCfg (open/close
