@@ -71,9 +71,9 @@ ARM_JOINTS = (
     "right_wrist_yaw_joint",
 )
 READY = (-0.60, -0.15, -0.10, 0.70, 0.30, -0.20, -0.30)
-# vertical-curl grip for the approach (the frame-verified caging grip):
-# wrist roll -1.87 = knuckles up, fingers hooking straight DOWN — tips
-# descend vertically astride the handle instead of plowing it forward
+# vertical-curl caging grip for the approach: wrist roll -1.87 = knuckles up,
+# fingers hooking straight DOWN, so the tips descend vertically astride the
+# handle instead of plowing it forward
 VC_BASE = (-0.60, -0.15, -0.10, 0.70, -1.87, 0.30, 0.70)
 # descend: fold the elbow and drop the shoulder so the finger aperture
 # reaches handle height, wrist pitching to keep the claw level (tuned for

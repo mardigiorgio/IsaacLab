@@ -1,0 +1,74 @@
+#!/bin/bash
+# Three-arm Trossen mug-lift comparison, run SEQUENTIALLY.
+#
+#   arm 1  --solver mujoco        fixed-step MuJoCo-Warp
+#   arm 2  --solver icf           fixed-step ICF (Irrotational Contact Fields)
+#   arm 3  --solver icf-adaptive  ICF under the CENIC per-world step-doubling controller
+#
+# Everything except --solver is identical: task, physics preset, seed, num_envs,
+# iterations, reward, W&B project and run group, video settings, and every ICF
+# knob (the MuJoCo arm ignores the ICF ones). Arm 2 vs arm 3 is the only
+# single-variable contrast in the design -- same solver, same contact law, same
+# code path, only the stepping scheme differs. Arm 1 vs arm 2 is a
+# solver + contact-model + friction-model + joint-dissipation contrast and must
+# never be reported as "solver only"; see docs/three_arm_protocol.md.
+#
+# Sequential on purpose: two 1024-env runs do not co-reside in 32 GB.
+#
+# Override anything from the shell, e.g.
+#   SEED=7 ENVS=512 ITERS=300 ./run_three_arm.sh
+#   ARMS="icf icf-adaptive" ./run_three_arm.sh
+cd /home/mdigiorgio/Documents/code/IsaacLab || exit 1
+export VIRTUAL_ENV=$HOME/Documents/code/IsaacLabRubato/.venv
+# The Newton viewer falls back to EGL offscreen when DISPLAY is unset, so no
+# window opens. :2 is the active seat0 graphical session on this machine.
+export DISPLAY="${DISPLAY:-:2}"
+
+SEED="${SEED:-42}"
+ENVS="${ENVS:-1024}"
+ITERS="${ITERS:-1000}"
+GROUP="${GROUP:-three-arm-s${SEED}}"
+ARMS="${ARMS:-mujoco icf icf-adaptive}"
+
+# ---- ICF contact law: identical on BOTH ICF arms ---------------------------
+# k is the one coefficient that cannot be identical to MuJoCo's by construction
+# (MuJoCo's compliance is mass-normalized and acceleration-space, ICF's is a flat
+# N/m spring), so it is matched by measurement at the mug-on-slab reference
+# contact. Re-derive it with scripts/probes/probe_contact_compliance.py; do not
+# change it without re-running that probe and quoting the new verdict.
+export ICF_CONTACT_STIFFNESS="${ICF_CONTACT_STIFFNESS:-289.2}"
+export ICF_HC_DISSIPATION="${ICF_HC_DISSIPATION:-10.0}"
+# Per-world contact budget. ICF drops contacts past it instead of failing, which
+# changes the physics silently, so it must exceed the scene's grasp-phase peak.
+export ICF_MAX_RIGID_CONTACT="${ICF_MAX_RIGID_CONTACT:-512}"
+
+# ---- ICF adaptive controller: arm 3 only -----------------------------------
+# dt_inner_init is NOT set here: the manager seeds it with the outer boundary dt,
+# which is exactly arm 2's step, so arm 3 starts where arm 2 sits and subdivides
+# only where the error controller demands it. Setting it here would break that.
+export NEWTON_ADAPTIVE_TOL="${NEWTON_ADAPTIVE_TOL:-1e-3}"
+export NEWTON_ADAPTIVE_MAX_SUBSTEPS="${NEWTON_ADAPTIVE_MAX_SUBSTEPS:-64}"
+export ICF_ADAPTIVE_DT_MIN="${ICF_ADAPTIVE_DT_MIN:-1e-12}"
+export ICF_ADAPTIVE_RTOL="${ICF_ADAPTIVE_RTOL:-2e-6}"
+# Adaptive telemetry reads solver.dt.numpy(), a full device sync. Harmless for a
+# training run, fatal for a wall-time measurement -- keep it off by default.
+export NEWTON_ADAPTIVE_LOG_EVERY="${NEWTON_ADAPTIVE_LOG_EVERY:-0}"
+
+COMMON="--rl_library rsl_rl --task IsaacContrib-Lift-Spatula-Trossen-v0 --num_envs $ENVS --seed $SEED --max_iterations $ITERS --logger wandb --log_project_name rubato-trossen --run_group $GROUP --viz newton --video --video_length 200 --video_interval 600 physics=newton"
+
+echo "=== three-arm run: seed $SEED, $ENVS envs, $ITERS iters, group $GROUP ==="
+echo "=== arms: $ARMS ==="
+echo "=== ICF k=$ICF_CONTACT_STIFFNESS d=$ICF_HC_DISSIPATION max_contacts=$ICF_MAX_RIGID_CONTACT ==="
+echo "=== adaptive tol=$NEWTON_ADAPTIVE_TOL rtol=$ICF_ADAPTIVE_RTOL dt_min=$ICF_ADAPTIVE_DT_MIN max_substeps=$NEWTON_ADAPTIVE_MAX_SUBSTEPS ==="
+
+for ARM in $ARMS; do
+  case "$ARM" in
+    mujoco)       NAME="mujoco-fixed-s${SEED}" ;;
+    icf)          NAME="icf-fixed-k${ICF_CONTACT_STIFFNESS}-s${SEED}" ;;
+    icf-adaptive) NAME="icf-adaptive-k${ICF_CONTACT_STIFFNESS}-tol${NEWTON_ADAPTIVE_TOL}-s${SEED}" ;;
+    *) echo "unknown arm '$ARM'"; exit 1 ;;
+  esac
+  echo "=== ARM $ARM -> run_name $NAME ==="
+  ./isaaclab.sh train $COMMON --run_name "$NAME" --solver "$ARM" || { echo "=== ARM $ARM FAILED ==="; exit 1; }
+done
+echo "=== all arms done: group $GROUP ==="

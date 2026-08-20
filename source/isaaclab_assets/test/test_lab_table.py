@@ -25,7 +25,7 @@ from isaaclab_assets.props.lab_table import (
 
 
 def test_constants_match_real_table():
-    # measured: 122 cm long, 30 in wide, 7 cm thick top, tabletop 83 cm off the floor
+    # 122 cm long, 30 in wide, 7 cm thick top, tabletop 83 cm off the floor
     assert pytest.approx(1.22) == LAB_TABLE_LENGTH
     assert pytest.approx(0.762) == LAB_TABLE_WIDTH
     assert pytest.approx(0.83) == LAB_TABLE_HEIGHT

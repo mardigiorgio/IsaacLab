@@ -250,6 +250,15 @@ class ManagerBasedRLEnv(ManagerBasedEnv, gym.Env):
         self.reset_buf = self.termination_manager.compute()
         self.reset_terminated = self.termination_manager.terminated
         self.reset_time_outs = self.termination_manager.time_outs
+        # -- environments the physics backend could not advance to this step's
+        # boundary. Their state is not a valid transition, so they are reset
+        # regardless of the task's own termination terms: validity of the
+        # integration is a property of the backend, not of the task, and a task
+        # cannot be expected to declare a term for it.
+        invalid = self.sim.physics_manager.invalid_env_mask()
+        if invalid is not None:
+            self.reset_buf = self.reset_buf | invalid
+            self.reset_terminated = self.reset_terminated | invalid
         # -- reward computation
         self.reward_buf = self.reward_manager.compute(dt=self.step_dt)
 

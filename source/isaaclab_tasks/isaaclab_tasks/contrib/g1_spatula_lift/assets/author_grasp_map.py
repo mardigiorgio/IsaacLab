@@ -101,21 +101,18 @@ VALIDATE_STEPS = 60
 MAX_OBJECT_DISPLACEMENT = 0.005  # [m] validation gate (5 mm)
 SEARCH_ENVS = 64
 
-# search grid: wrist roll fixed at the measured vertical-curl 1.87, wrist
-# pitch at the raised-unfold -0.30; yaw candidates rotate the thumb-finger
-# opposition axis across the handle's width axis. Round-2 grid centered on
-# the round-1 near-miss "-0.4,-0.2,0,0.5,...,-0.6" (palm over the handle,
-# tips landing far-side — needs a -y shift and a curl split).
+# search grid: wrist roll fixed at the vertical-curl value and wrist pitch at
+# the raised-unfold value, so the free axis is yaw -- it rotates the
+# thumb-finger opposition axis across the handle's width axis.
 SEARCH_GRID = {
-    # PRONATED vertical curl (frame-verified knuckles-up, fingers hooking
-    # DOWN over the handle): wrist roll -1.87, pitch +0.30 — the +1.87 roll
-    # is supinated (fingers curl UP; video-verified dead end). Keep the tips
-    # bracketing the handle just above contact so the zero-action arm sag
-    # slides them through air (a tip in contact drags the spatula past the
-    # 5 mm validation gate).
-    # Round-3 grid, re-centered for the 83 cm table + raised ready pose
-    # (shoulder -0.60/elbow 0.70 hover; descend region below it). The old
-    # grid was authored for the 73 cm table and lands 30-40 cm short now.
+    # PRONATED vertical curl (knuckles up, fingers hooking DOWN over the
+    # handle): negative wrist roll. The positive roll is supinated and curls
+    # the fingers UP, which cannot cage the handle. Keep the tips bracketing
+    # the handle just above contact so the zero-action arm sag slides them
+    # through air -- a tip already in contact drags the spatula past the 5 mm
+    # validation gate.
+    # The grid must be centred on the ready pose for the CURRENT table height;
+    # one authored for a different table lands short.
     "sh_pitch": (-0.76, -0.72),
     "sh_roll": (-0.15, -0.08),
     "sh_yaw": (0.0,),

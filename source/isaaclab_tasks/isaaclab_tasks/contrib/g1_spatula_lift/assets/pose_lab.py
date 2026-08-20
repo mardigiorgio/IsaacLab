@@ -81,18 +81,18 @@ RIGHT_ARM = [
     "right_wrist_yaw_joint",
 ]
 ARM_RESET_TOL = 3e-2
-"""Post-reset right arm/hand tolerance [rad], sized from measurement: the
-residual one frame after the write is ~1.5e-3 from the free-space hover and
-~6.5e-3 from the claw poses, whose thumb is pressed into the tabletop. A reset
-that never reached the solver reads the full ~3e-1 displacement, so this gate
-sits ~5x above the worst true residual and ~10x below a dead reset.
+"""Post-reset right arm/hand tolerance [rad].
 
-Deliberately NOT measured over all 43 joints: the robot is fixed-base, its legs
-dangle, and the right knee falls ~4e-1 rad within a fifth of a second -- folding
-that in made a working reset report FAIL."""
+Must sit above the residual a successful write leaves one frame later (larger
+for the claw poses, whose thumb is pressed into the tabletop) and below the
+displacement a reset that never reached the solver would read.
+
+Deliberately scoped to the right arm/hand rather than all 43 joints: the robot
+is fixed-base and its legs dangle, so a whole-body tolerance fails a working
+reset on knee droop alone."""
 ARM_DISPLACED_TOL = 1.5e-1
 """Selftest gate [rad]: how far the arm must visibly move before a reset is
-asked to undo it. Measured displacement is ~3e-1."""
+asked to undo it. Must sit below :data:`ARM_DISPLACE_BY`."""
 ARM_DISPLACE_BY = 3e-1
 """Selftest: how far off the start pose to drive each right-arm joint [rad]."""
 MAX_TARGET_SPEED_DEFAULT = 2.0
@@ -101,20 +101,16 @@ MAX_TARGET_SPEED_DEFAULT = 2.0
 Every control surface writes an authored pose into ``vals``; the loop walks the
 *commanded* target toward it at this rate rather than stepping straight to it.
 
-A step change in a position target is a force impulse. Measured on this scene: a
-0.3 rad step on the seven right-arm joints drives the arm at ~12 rad/s -- and the
-peak scales with the step, reaching ~16 rad/s at 0.5 rad and 62 rad/s on a full
-limit-to-limit jump (see :data:`RUNAWAY_JOINT_SPEED`) -- while
-the light spatula leaves the resulting contact at 50-190 m/s -- far more energy
-than the strike carried, i.e. an under-converged contact solve injecting energy
-rather than dissipating it. Driven through 25 perturb/reset cycles of that step
-input the scene reached a non-finite state within 2 cycles (and 6 cycles with
-the solver's iteration budget doubled, so convergence alone does not fix it).
-Rate limited, 25/25 cycles stayed finite and the first cycle's count of frames
-above 10 m/s fell from 175 to 6.
+A step change in a position target is a force impulse, and the peak arm speed it
+produces scales with the step size (see :data:`RUNAWAY_JOINT_SPEED`). The light
+spatula leaves the resulting contact carrying more energy than the strike did --
+an under-converged contact solve injecting energy rather than dissipating it --
+and repeated step inputs drive the scene non-finite. Raising the solver's
+iteration budget delays that but does not prevent it, so the rate limit, not
+convergence, is what keeps the scene finite.
 
-2 rad/s is about the speed this arm moves in manipulation. It is only ever felt
-on a large jump -- a slider drag moves far less than this per frame."""
+The default is about the speed this arm moves in manipulation, so it is only
+ever felt on a large jump -- a slider drag moves far less than this per frame."""
 CONTROL_RATE_HZ = 240.0
 """Physics rate of this scene [Hz]. Used only to derive :data:`MIN_TARGET_SPEED`.
 
@@ -125,10 +121,10 @@ TARGET_MAGNITUDE_BOUND = 4.0
 """Bound on |commanded PD target| [rad] over the editable joints.
 
 Every authored value is clamped into its joint limits before it reaches the
-limiter, so this bounds the joint limits themselves. Widest editable stop
-measured on this robot: 3.089 rad (``right_shoulder_pitch_joint``). Rounded UP
-to the next binade, which makes :data:`MIN_TARGET_SPEED` conservative rather
-than marginal, because ULP is monotone in magnitude."""
+limiter, so this bounds the joint limits themselves. Must exceed the widest
+editable stop on this robot, rounded UP to the next binade: ULP is monotone in
+magnitude, so rounding up makes :data:`MIN_TARGET_SPEED` conservative rather
+than marginal."""
 MIN_TARGET_SPEED = math.ulp(TARGET_MAGNITUDE_BOUND) * CONTROL_RATE_HZ
 """Smallest non-zero rate the parser accepts [rad/s]; 2.132e-13 at 240 Hz.
 
@@ -181,53 +177,26 @@ a future floor is not required to keep the division finite for the cap to work."
 RUNAWAY_JOINT_SPEED = 200.0
 """Runaway gate on |joint_vel| [rad/s] over the watched (non-finger) joints.
 
-3.2x the worst LEGITIMATE transient measured on this scene. "Legitimate" is
-decided WITHOUT consulting this gate, or the sizing would be circular: a sample
-counts only if its whole 150-frame hold window stayed finite AND kept the spatula
-inside :data:`RUNAWAY_OBJECT_SPEED` and :data:`RUNAWAY_OBJECT_RANGE`, i.e. nothing
-else said the scene had blown up. Every jump below is a limit-to-limit snap under
-``--max_target_speed 0`` -- the snap behaviour a user can select, which makes each
-authored jump a step input -- from the hover start, restored between samples.
-Peak watched joint speed [rad/s]:
+Must sit above the worst LEGITIMATE transient this scene can produce and below
+the state :func:`run_selftest` asserts must still classify as a runaway, which
+pins it from both sides. "Legitimate" has to be decided WITHOUT consulting this
+gate or the sizing is circular: a sample counts only if its whole hold window
+stayed finite AND kept the spatula inside :data:`RUNAWAY_OBJECT_SPEED` and
+:data:`RUNAWAY_OBJECT_RANGE`, i.e. nothing else said the scene had blown up. The
+worst legitimate case is a limit-to-limit snap of all seven arm sliders at once
+under ``--max_target_speed 0``, which is a step input a user can select.
 
-* all seven right-arm sliders to their far stops at once, 3.27 rad on the widest
-  joint and the largest pose any control surface can author: **62.3**;
-* one arm slider limit-to-limit: 36.0 wrist_yaw, 28.4 elbow, 25.3 shoulder_roll,
-  23.1 wrist_pitch, 15.7 shoulder_yaw, 1.6 shoulder_pitch;
-* any finger slider alone, and all seven fingers together: under 0.3;
-* the selftest's own 0.3 rad arm step, which it prints every run: 11.2.
-
-62.3 rad/s is the number this gate is sized from, and the previous 40.0 sat below
-it. In that clean full-amplitude sample the watched speed crossed 40 on frame 13
-and spent 37 of its 150 frames above it, while the spatula never exceeded 11.4 m/s
-and no value ever went non-finite -- so 40.0 fired SIMULATION RUNAWAY 37 times on
-motion produced by an advertised feature, on a scene that was fine. That misfire
-is not harmless: a recovery overwrites ``vals`` and ``cmd`` with the start pose
-and teleports the spatula, destroying the pose the user was authoring.
-
-The detection cost of 40 -> 200, stated plainly. Four samples DID diverge, and on
-three of them the watched joints never reached even 40 (peaks 47.5, 36.5, 11.8
-while finite): :data:`RUNAWAY_OBJECT_SPEED` caught all three, on frames 37, 80 and
-22, with the joints reading 28.2, 7.6 and 6.2 rad/s. The failure mode of this
-scene is an ejected spatula, not a spinning arm, and the object gate is what sees
-it. The fourth sample is the same all-seven-arm snap as above, re-run: it crossed
-40 on frame 13 again, but this time went on to trip the object gate on frame 49,
-200 rad/s on frame 93 and non-finite on frame 125, peaking at 579.8 rad/s. So 40
-would have flagged that one 36 frames before the object gate did -- on a
-trajectory whose first 13 frames are indistinguishable from the clean run's. A
-gate at 40 cannot buy that 0.15 s without also destroying the pose in the clean
-case; 200 still fires on the same divergence, and this gate is not dead.
-
-200 is also 5x below the 1000 rad/s state :func:`run_selftest` asserts must still
-classify as a runaway, which pins the constant from both sides: 62.3 must stay
-healthy, 1000 must not. Under the default 2 rad/s limit the arm tracks the
-commanded target and the selftest's own peak is 2.6-2.8 rad/s across its four
-modes -- ~70x under this gate, so nothing routine comes near it.
+Sizing it below that misfires on an advertised feature, and a misfire is not
+harmless: a recovery overwrites ``vals`` and ``cmd`` with the start pose and
+teleports the spatula, destroying the pose the user was authoring. The cost of
+the loose gate is accepted deliberately -- this scene's failure mode is an
+ejected spatula, not a spinning arm, and :data:`RUNAWAY_OBJECT_SPEED` is what
+sees that first in most divergences.
 
 Fingers are excluded for the reason the task's own ``TerminationsCfg.robot_exploded``
 excludes them -- their tiny links spike legitimately on contact. Nothing is lost:
 a finger runaway shows up on :data:`RUNAWAY_OBJECT_SPEED`, because it is the
-66 g spatula that gets ejected, and it reaches the arm within a few frames."""
+spatula that gets ejected, and it reaches the arm within a few frames."""
 RUNAWAY_JOINT_NAMES = ["waist_.*_joint", ".*_shoulder_.*_joint", ".*_elbow_joint", ".*_wrist_.*_joint"]
 """Joints the speed gate watches, copied from ``TerminationsCfg.robot_exploded``.
 
@@ -236,28 +205,26 @@ runs no manager, so the pose lab needs its own copy of the guard."""
 RUNAWAY_OBJECT_SPEED = 50.0
 """Runaway gate on the spatula's linear speed [m/s].
 
-The bottom of the measured ejection band: a step target change ejects the spatula
-at 50-190 m/s (see :data:`MAX_TARGET_SPEED_DEFAULT`), and from there the state
-reached non-finite within two perturb/reset cycles. The trace this gate exists
-for read 5.9e7 m/s WHILE STILL FINITE three frames before overflow -- six decades
-above this bound -- so the trip lands with a large margin rather than three frames.
+Sits at the bottom of the ejection band a step target change produces (see
+:data:`MAX_TARGET_SPEED_DEFAULT`), from which the state reaches non-finite
+within a few perturb/reset cycles. A diverging spatula runs decades above this
+bound while still finite, so the trip lands with a large margin rather than in
+the last few frames before overflow.
 
-The healthy side is bounded from below, not pinned: rate limited, the first cycle
-still spends 6 frames above 10 m/s and that run's PEAK was never recorded. 50 is
-the lowest value the evidence rules out as healthy, not a tight gate. The selftest
-now prints the measured peak so the next run can tighten this to ~3x the real
-healthy maximum."""
+The healthy side is bounded from below, not pinned: this is the lowest value
+ruled out as healthy, not a tight gate. The selftest prints the observed peak so
+it can be tightened against a real healthy maximum."""
 RUNAWAY_OBJECT_RANGE = 10.0
 """Runaway gate on the spatula's distance from spawn [m].
 
 Catches a body that has already left the world on a frame whose sampled speed
-happens to be small, and catches the overflow case in the frame it happens: at
-5.9e7 m/s the spatula covers 2.5e5 m in one 1/240 s step.
+happens to be small, and catches the overflow case in the frame it happens: a
+diverging spatula covers an enormous distance in a single step.
 
-~14x the task's own out-of-bounds box (``TerminationsCfg.spatula_dropped``:
-x in [-0.7, 0.7], y in [-0.43, 0.43]) so it cannot fire on a spatula merely
-knocked off the 1.22 x 0.762 m table -- legitimate here, since the pose lab runs
-no termination manager and no episode reset."""
+Must stay well outside the task's own out-of-bounds box
+(``TerminationsCfg.spatula_dropped``) so it cannot fire on a spatula merely
+knocked off the table -- legitimate here, since the pose lab runs no termination
+manager and no episode reset."""
 RECOVERY_MUTE_FRAMES = 12
 """Frames the health gate is muted after a recovery, ~0.05 s at 240 Hz.
 
@@ -521,10 +488,10 @@ def health_report(
 ) -> tuple[str | None, str, tuple[float, float, float]]:
     """Classify the simulation state as healthy, runaway, or non-finite.
 
-    ``isfinite`` alone is not enough. In a measured trace the spatula reached
-    5.9e7 m/s while every value was still finite, three frames before the state
-    overflowed; a selftest that ended inside that window printed ALL CHECKS
-    PASSED on a scene that was already destroyed.
+    ``isfinite`` alone is not enough: the spatula can reach an absurd speed while
+    every value is still finite, some frames before the state overflows, and a
+    selftest that ends inside that window reports PASSED on a scene that is
+    already destroyed.
 
     The two kinds are reported separately because only one of them is
     recoverable: at ``"runaway"`` the state is numerically clean and a teleport
@@ -886,13 +853,11 @@ def run_selftest(env, eid, dev, start_q, idx, lab: LabHooks) -> int:  # noqa: C9
 
     # -- the health gate itself: a gate that can never fire also "passes" -------
     # Pure-function positive control, no simulation involved: feed
-    # :func:`health_report` states it MUST classify, including the exact 5.9e7 m/s
-    # pre-overflow reading the old isfinite-only latch let through while printing
-    # ALL CHECKS PASSED, the legitimate 12 rad/s this selftest itself produces, and
-    # the 62.3 rad/s peak measured on a full-amplitude snap that stayed clean for
-    # its whole window -- that last case pins RUNAWAY_JOINT_SPEED above the worst
-    # legitimate transient, so lowering the gate back under it fails here instead
-    # of in a user's session.
+    # :func:`health_report` states it MUST classify -- a large pre-overflow
+    # object speed that is still finite, the legitimate transient this selftest
+    # itself produces, and a full-amplitude arm snap. The snap case pins
+    # RUNAWAY_JOINT_SPEED above the worst legitimate transient, so lowering the
+    # gate under it fails here instead of in a user's session.
     ids = [0, 1, 2, 3]
     ok_q = torch.zeros(1, 4, device=dev)
     ok_p = torch.tensor([list(SPATULA_SPAWN_POS)], device=dev)
@@ -1023,22 +988,12 @@ def main():  # noqa: C901
     # authoring tool; throughput is irrelevant. PhysicsCfg() deep-copies its
     # members (configclass post-init), so this cannot reach a training run.
     #
-    # SCOPE (measured, not inferred -- see the probes referenced below). This is
-    # NOT a pose-lab bug and this line does not fix it anywhere else:
-    #   * It is a SOLVER-level fault, not an event-level one. Manager resets
-    #     (``reset_scene_to_default``, ``reset_root_state_uniform``,
-    #     ``reset_joints_by_offset``) and bare ``write_*_to_sim_index`` calls with
-    #     no manager involved were ALL measured dead, so direct-workflow
-    #     ``_reset_idx``, ``env.reset_to()`` and teleop teleports are dead too.
-    #   * It bites exactly the GUI path: ``--visualizer kit`` (play, record,
-    #     teleop, any interactive tool). Headless, ``--visualizer newton`` and
-    #     ``--video`` training were each measured UNAFFECTED -- they capture
-    #     eagerly at ``_step == 0``, where the sync is recorded at any interval.
-    #   * 12 configs in this repo ship ``update_data_interval = 2``, including
-    #     this task's own preset (which is why the override is needed here). Only
-    #     the spatula task was measured; the other 11 share the code path.
-    #   * Under CUDA-graph capture the setting is binary, not a frequency: sync
-    #     every step (even capture parity) or never (odd parity).
+    # Scope: this is a solver-level fault on the CUDA-graph capture path, not a
+    # pose-lab bug, and this line does not fix it anywhere else. It bites the
+    # Kit visualizer path, which warms up one step before capturing; headless
+    # and eager-capture paths land on ``_step == 0``, where the sync is recorded
+    # at any interval. Under capture the setting is binary, not a frequency:
+    # sync every step or never, decided by capture parity.
     # The durable fix is upstream in ``isaaclab_newton``: make the Kit warm-up in
     # ``NewtonManager._capture_relaxed_graph`` step-count-neutral so capture always
     # lands on ``_step == 0``. That is an out-of-scope change for an authoring tool.
@@ -1319,9 +1274,9 @@ def main():  # noqa: C901
                 if not getattr(viewer.gui, "is_available", True):
                     # The gui OBJECT existing is not enough: ViewerGui marks
                     # itself unavailable when the imgui_bundle import fails
-                    # inside it (measured: a Wayland-only GLFW loaded by the
-                    # sim stack leaves ``glfwGetX11Window`` unresolved), and
-                    # then registration "succeeds" into a UI that never draws.
+                    # inside it (e.g. a Wayland-only GLFW loaded by the sim
+                    # stack leaves ``glfwGetX11Window`` unresolved), and then
+                    # registration "succeeds" into a UI that never draws.
                     panel["reason"] = (
                         f"{type(viz).__name__}'s ImGui layer failed to initialize (see the"
                         " 'imgui_bundle UI unavailable' warning above); use the pose file below"
@@ -1565,11 +1520,11 @@ def main():  # noqa: C901
         # loop spinning forever with nothing on screen.
         had_visualizers = bool(env.sim.visualizers)
         # Take SIGINT back before entering the loop. App startup installs its own
-        # disposition, which left the banner's "Ctrl+C to exit" simply untrue:
-        # measured, an interrupt aimed at the process died at exit 130 with the
-        # `except KeyboardInterrupt` below never entered (so `--save` never ran),
-        # and one aimed at the process GROUP was swallowed outright -- the run
-        # kept going. `default_int_handler` is what a plain Python program has:
+        # disposition, under which the banner's "Ctrl+C to exit" is untrue: an
+        # interrupt aimed at the process exits without entering the
+        # `except KeyboardInterrupt` below (so `--save` never runs), and one
+        # aimed at the process GROUP is swallowed outright.
+        # `default_int_handler` is what a plain Python program has:
         # it raises KeyboardInterrupt in the main thread, which is exactly the
         # exception this loop is already written to catch and save from. Set here
         # rather than at startup so the selftest, which must not be interruptible

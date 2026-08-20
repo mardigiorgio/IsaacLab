@@ -184,10 +184,10 @@ BLADE_FORCE_THRESHOLD = 1.0
 """Hand-on-blade force [N] that ends the episode — feather grazes forgiven."""
 
 DEFAULT_ARM_JOINT_POS = {
-    # left arm STRAIGHT DOWN by the side, inert. G1 elbow convention
-    # (probe-measured): elbow 0 = forearm horizontal FORWARD, positive folds
-    # DOWN — hanging the forearm needs elbow ~+1.45; modest splay clears the
-    # thigh
+    # left arm straight down by the side, inert. G1 elbow convention: elbow 0
+    # is forearm horizontal FORWARD and positive folds DOWN, so hanging the
+    # forearm needs a positive elbow; the shoulder roll splays enough to clear
+    # the thigh.
     "left_shoulder_pitch_joint": 0.0,
     "left_shoulder_roll_joint": 0.28,
     "left_shoulder_yaw_joint": 0.0,
@@ -195,26 +195,12 @@ DEFAULT_ARM_JOINT_POS = {
     "left_wrist_roll_joint": 0.0,
     "left_wrist_pitch_joint": 0.0,
     "left_wrist_yaw_joint": 0.0,
-    # right arm: hovering over the table, hand over the spatula handle in the
-    # PRONATED vertical-curl grip (wrist roll -1.87: knuckles up, fingers
-    # hooking down over the handle, thumb opposing on the near face —
-    # frame-verified; the +1.87 roll is supinated, fingers curl UP).
-    # Probe-tuned as a set around the roll (author_grasp_map.py --view)
-    # right arm: the ORIGINAL palm-down claw hover (probe-verified
-    # palm->grasp 0.0836): palm facing the tabletop, OPEN fingers pointing
-    # down at the handle — the claw approach in the user's TriHand photos.
-    # Fingers are OPEN by default (no right-hand joint entries = zeros):
-    # the pick is approach -> press digits to the table around the handle ->
-    # close the claw horizontally -> lever up
-    # raised for the 83 cm table (the 73 cm-table pose put the forearm inside
-    # the taller slab at reset): more shoulder lift, straighter elbow, roll
-    # tucked in. Wrist pitch is re-tuned WITH the flatter forearm: negative
-    # pitch is EXTENSION (hand tips back), and the old -0.90 only read as a
-    # claw because the folded elbow pointed the forearm steeply down — on the
-    # raised arm it faced the palm at the ceiling (frame-verified). -0.20
-    # restores palm straight down over the handle: palm arrow world-z -0.98,
-    # palm->grasp 0.074 m, fingers level pointing across the handle.
-    # This is the REACH-START half of the reset mixture: the hand hovers clear
+    # right arm: palm-down hover over the spatula handle, clear of the blade.
+    # Wrist pitch is negative = EXTENSION (hand tips back); it must be set
+    # against the shoulder/elbow lift so the palm faces the tabletop rather
+    # than the ceiling. Fingers are open by default (no right-hand entries =
+    # zeros).
+    # This is the reach-start half of the reset mixture: the hand hovers clear
     # of the spatula and the policy has to bring it down itself. The other half
     # starts already in PREGRASP_JOINT_POS (see EventCfg.reset_pregrasp).
     "right_shoulder_pitch_joint": -0.60,
@@ -231,12 +217,9 @@ handle with the fingers open (no right-hand entries = zeros = open)."""
 DEFAULT_LEG_JOINT_POS = {
     # Symmetric flat-foot stance sized to the FIXED 0.75 m pelvis: hip and
     # ankle at -knee/2 keeps the sole level and the foot directly under the
-    # pelvis. knee=0.75 is the straightest stance whose reach matches that
-    # pelvis height — measured over a 2 s zero-action hold, it drifts 0.004
-    # rad while every straighter candidate has the feet penetrating the floor
-    # at reset, and the contact buckles the legs into a feet-behind,
-    # hips-pitched-back crouch (the asset's stock -0.1/+0.3/-0.2 crouch
-    # buckled to knee 0.70 this way; it was sized for a floating base).
+    # pelvis. The knee angle must be the straightest stance whose reach still
+    # matches the pelvis height — a straighter one penetrates the floor at
+    # reset, and the contact buckles the legs into a hips-pitched-back crouch.
     # Same REGEX keys as the asset's own init_state, so the dict merge in
     # __post_init__ REPLACES those entries — explicit joint names alongside
     # the patterns would double-match and fail articulation init.
@@ -248,13 +231,11 @@ DEFAULT_LEG_JOINT_POS = {
 pelvis, knees bent forward only as much as the 0.75 m pelvis height demands."""
 
 PREGRASP_JOINT_POS = {
-    # AUTHORED IN THE GUI (user, pose_lab session 2026-08-05), read back out of
-    # the saved ``pregrasp.pt`` stage by joint name: fingers straddling the
-    # handle with the tips down at the tabletop — thumb one side, index+middle
-    # the other. This is the claw an instant before it closes, so an env
-    # starting here only has to learn close+lift. Settle-verified against
-    # SPATULA_SPAWN_POS/QUAT from the same stage: 0.0000 m spatula
-    # displacement over a 2 s zero-action hold.
+    # Fingers straddling the handle with the tips down at the tabletop — thumb
+    # one side, index+middle the other. This is the claw an instant before it
+    # closes, so an env starting here only has to learn close+lift. Must stay
+    # consistent with SPATULA_SPAWN_POS/QUAT or the hand starts posed for a
+    # spatula that is not there.
     # Kept as a plain dict, NOT a grasp_map .pt: *.pt is routed through git-lfs
     # in this repo and arrives unsmudged on some machines, which would silently
     # disable the stage.
@@ -319,15 +300,11 @@ class G1SpatulaLiftSceneCfg(InteractiveSceneCfg):
                 solver_velocity_iteration_count=0,
                 max_depenetration_velocity=0.5,
             ),
-            # CONTACT STIFFNESS: research-validated pinch regime — ManipTrans
-            # grasp tuning uses solref (0.003 s, 1.0), i.e. ke ~1.1e5 /
-            # kd ~667 through this fork's ke/kd -> solref conversion. History:
-            # stage-1 softness (625/50, 0.04 s) let PPO discover the pick via
-            # a penetration weld (~300 N pinch on a 0.65 N object, autopsy-
-            # measured, run jvf7cph4); 2500/100 (0.02 s) was stage 2. The
-            # scripted-pick existence proof is the gate for this value: a
-            # scripted close-and-lift must hold with <= 10x object weight and
-            # release the spatula below 0.5 m/s
+            # Contact stiffness for the pinch. Too soft and PPO can discover
+            # the pick as a penetration weld instead of a grasp, so the gate
+            # on this value is the scripted-pick existence proof: a scripted
+            # close-and-lift must hold with <= 10x object weight and release
+            # the spatula below 0.5 m/s.
             compliant_contact_stiffness=111000.0,
             compliant_contact_damping=667.0,
             physics_material_prim_path=["collisions_blade/mesh", "collisions_handle/mesh"],
@@ -541,21 +518,14 @@ class EventCfg:
             )
         },
     )
-    # BOTH reset randomizations are OFF (user call): make this the easiest
-    # possible training first, then add difficulty once something works. The
-    # spatula jitter was the harmful one — it moved the object up to 5 cm in x
-    # and 3 cm in y, including on pregrasp resets, so half the envs started with
-    # the hand posed for a spatula that was no longer there.
-    # Reset diversity now comes from the pregrasp/hover MIXTURE below rather
-    # than from noise. Re-enable by restoring these two terms:
-    #   randomize_right_arm    reset_joints_by_offset, position_range (-0.15, 0.15)
-    #   randomize_spatula_pose reset_root_state_uniform, x (-0.05, 0.05),
-    #                          y (-0.03, 0.03), yaw (-0.15, 0.15)
-    # THE RESET MIXTURE: half the envs start in the authored pregrasp (digits
-    # already around the spatula, so only close+lift is left to learn), half at
-    # the hover so the reach is still learned. Declared LAST so the teleport
-    # survives the default resets and the jitter above (event terms run in
-    # declaration order).
+    # Both reset randomizations are off. Spatula jitter in particular is
+    # incompatible with the pregrasp half of the mixture below: moving the
+    # object leaves those envs posed for a spatula that is no longer there.
+    # Reset diversity comes from the pregrasp/hover mixture instead of noise.
+    # The mixture: half the envs start in the authored pregrasp (digits already
+    # around the spatula, so only close+lift is left to learn), half at the
+    # hover so the reach is still learned. Declared LAST so the teleport
+    # survives the default resets (event terms run in declaration order).
     reset_pregrasp = EventTerm(
         func=mdp.reset_to_joint_pose,
         mode="reset",
@@ -589,16 +559,12 @@ class RewardsCfg:
         },
         weight=1.0,
     )
-    # pure height indicator: 1/60 = 0.0167/step for every step off the table.
-    # Bare altitude is worth no more than being near the handle; the reason to
-    # lift is that crossing this gate unlocks `track`. At the old weight 5.0
-    # this term alone paid 0.083/step for an UNPOSSESSED object, which made a
-    # ballistic hop (0.121/step for ~7 steps, discounted 0.84) beat hovering by
-    # the handle to timeout (0.0126/step for 300 steps, discounted 0.63) — so
-    # batting the spatula off the table was the best-paying action in the MDP
-    # and the policy found it (run 2026-08-03_17-56-16: 72% spatula_dropped,
-    # 18.2-step episodes, 41% of every episode spent airborne). At 1.0 the
-    # ordering is hold 3.58 >> hover 0.63 > fling 0.38.
+    # Pure height indicator. Bare altitude must be worth no more than being
+    # near the handle: the reason to lift is that crossing this gate unlocks
+    # `track`. Weighting it above that inverts the ordering — a ballistic hop
+    # on an unpossessed object out-earns hovering by the handle to timeout, and
+    # batting the spatula off the table becomes the best-paying action in the
+    # MDP. The invariant this weight has to satisfy is hold >> hover > fling.
     lift = RewTerm(
         func=mdp.object_lifted_in_cage,
         params={
@@ -636,16 +602,14 @@ class RewardsCfg:
         },
         weight=10.0,
     )
-    # THE MISSING LADDER RUNG. Run 2026-08-04_00-26-43 gated lift+track on the
-    # cage and both read EXACTLY 0.0000 from iteration 50 to 1499: with the only
-    # income being `reach`, the policy parked ~16 cm from the handle and farmed
-    # it (97% timeouts, drop 0.017) rather than ever closing on the spatula.
-    # The ladder was reach (dense) -> lift+track (cage AND height, simultaneously)
-    # with nothing between. This pays for the cage ALONE, ungated by height:
-    # 2/60 = 0.033/step, ~3x the reach rate at its observed level, so closing the
-    # claw strictly beats hovering and carrying strictly beats closing.
-    # It is payable from step 1 for the pregrasp half of the batch (the predicate
-    # fires on 100% of pregrasp resets at these radii, measured over 512 envs).
+    # Intermediate rung between `reach` (dense) and `lift`+`track` (which need
+    # the cage AND height simultaneously). Without something in between, the
+    # only income is `reach` and the policy can park short of the handle and
+    # farm it forever. This pays for the cage ALONE, ungated by height, and its
+    # rate must exceed the rate `reach` pays at its converged distance so that
+    # closing the claw beats hovering and carrying beats closing. It has to be
+    # payable from step 1 on the pregrasp half of the batch, so the radii must
+    # admit the authored pregrasp pose.
     cage = RewTerm(
         func=mdp.grasp_handle,
         params={
@@ -659,25 +623,18 @@ class RewardsCfg:
         },
         weight=2.0,
     )
-    # THE STEP NOBODY ASKED FOR. The operator reproduced this pick on the real
-    # G1 by hand: from the pregrasp, push the fingertips DOWN INTO the table,
-    # THEN close — the press is what scoops a thin flat object into the palm,
-    # with the tabletop as the opposing surface. At the authored pregrasp the
-    # tips instead float above the tabletop (measured over 512 envs: thumb_2
-    # +5.01 cm, index_1 +6.50, middle_1 +6.76), i.e. unloaded, so nothing in the
-    # MDP ever asked them down. FORCE-based, not height-based: the tip link
-    # origins sit at the knuckles, so a tip pad genuinely loaded on the slab
-    # still reads 4-6 cm of link-origin altitude (probe-measured at 33 N) — a
-    # height kernel calibrated on link origins cannot tell pressing from hovering.
-    # SELF-EXTINGUISHING: multiplied by (1 - lifted), so it is worth at most
-    # 0.5/60 = 0.0083/step, and only while the spatula is still down — EXACTLY
-    # 0.0 once it is up. Camping on it forfeits `lift` (1.0) and `track` (10.0),
-    # which is what keeps it a rung and not an attractor.
-    # PAYABILITY VERIFIED (the lesson of run 2026-08-04_00-26-43, where a gated
-    # lift+track read 0.0000 for 1450 iterations): scripted probe over 4 envs —
-    # 0.000000 at the pregrasp reset, peak 1.000000 (all three tips loaded) during
-    # a scripted descent into the slab, and exactly 0.000000 with the spatula
-    # teleported +30 cm while the tips still carried 375 N.
+    # Pressing the fingertips down into the table is what scoops a thin flat
+    # object into the palm, with the tabletop as the opposing surface. At the
+    # authored pregrasp the tips are unloaded, so nothing else in the MDP asks
+    # them down.
+    # Force-based, not height-based: the tip link origins sit at the knuckles,
+    # so a tip pad genuinely loaded on the slab still reads several cm of
+    # link-origin altitude — a height kernel calibrated on link origins cannot
+    # separate pressing from hovering.
+    # Self-extinguishing: multiplied by (1 - lifted), so it pays only while the
+    # spatula is still down and exactly 0.0 once it is up. Its weight must stay
+    # far below `lift` and `track` so camping on it is a loss, which is what
+    # keeps it a rung and not an attractor.
     table_press = RewTerm(
         func=mdp.fingertip_table_press,
         params={
@@ -687,11 +644,11 @@ class RewardsCfg:
         },
         weight=0.5,
     )
-    # start at franka-scale ~zero: pre-contact these penalties are the ONLY
-    # gradient finger dimensions ever sample (zero income, guaranteed tax),
-    # which measurably drove finger actions and noise to zero in run
-    # 2026-08-01_18-03-39. The curriculum brings real penalties in after
-    # competence — never author fear from step 0
+    # Start at franka-scale ~zero: pre-contact these penalties are the only
+    # gradient the finger dimensions ever sample (zero income, guaranteed tax),
+    # so a meaningful weight here drives finger actions and exploration noise
+    # to zero before contact is ever made. The curriculum raises them after
+    # competence.
     action_rate_l2 = RewTerm(func=mdp.action_rate_l2_clamped, weight=-0.0001)
     joint_vel_l2 = RewTerm(
         func=mdp.joint_vel_l2_clamped,
@@ -803,13 +760,14 @@ class PhysicsCfg(PresetCfg):
             impratio=10.0,
             cone="elliptic",
             update_data_interval=2,
-            # 50/10: measured throughput lever; dexsuite's 100/15 is conservative
+            # Iteration budget: lower than dexsuite's 100/15, which is
+            # conservative for this scene's contact count.
             iterations=50,
             ls_iterations=10,
             ls_parallel=False,
             use_mujoco_contacts=False,
-            # fixed-step: the adaptive solver is an ~11x tax on this scene
-            # (855 vs 9700 steps/s at 1024 envs, measured)
+            # fixed-step: the adaptive solver's step-doubling costs far more
+            # throughput than this scene's contact difficulty justifies
             adaptive=False,
             ccd_iterations=35,
             sap_solver_iterations=64,
@@ -827,10 +785,9 @@ class PhysicsCfg(PresetCfg):
         # penetration of the 7 mm-thin raw spatula meshes; margins sum per
         # pair, so resting contacts stand off ~2 mm
         default_shape_cfg=NewtonShapeCfg(margin=0.001),
-        # 1 substep: +54% throughput measured at 4096 envs (10.9k -> 16.9k
-        # env-steps/s). The 2-substep setting predated the compliant spatula
-        # contacts (solref 0.04 s >> the 1/240 step), which are what actually
-        # tamed the finger/table impact pops
+        # 1 substep: the spatula contacts are compliant enough (solref well
+        # above the step) to tame the finger/table impact pops on their own, so
+        # a second substep buys nothing but throughput cost.
         num_substeps=1,
         debug_mode=False,
     )
@@ -863,8 +820,9 @@ class G1SpatulaLiftEnvCfg(ManagerBasedRLEnvCfg):
         # spatula pops airborne from finger/table impacts at 120 Hz —
         # halving the step stabilizes the contact dynamics the lever relies on
         self.decimation = 4
-        # 5 s (300 steps at 60 Hz): the hold income needs runway — the value
-        # of a grasp is the flow it pays until timeout (proven lifts run 5-6 s)
+        # 5 s (300 steps at 60 Hz): the hold income needs runway — the value of
+        # a grasp is the flow it pays until timeout, so the episode must be
+        # long enough for a completed lift to out-earn any transient.
         self.episode_length_s = 5.0
         self.sim.dt = 1 / 240
         self.sim.render_interval = self.decimation

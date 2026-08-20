@@ -22,13 +22,12 @@ class G1SpatulaLiftPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         hidden_dims=[512, 256, 128],
         activation="elu",
         obs_normalization=True,
-        # init 0.4 inside a HARD (0.15, 0.5) range. The FLOOR fixes the collapse
-        # measured in run 2026-08-01_18-03-39, where per-dim stds fell to ~0.075
-        # the moment reach converged and finger exploration stopped. The CAP is
-        # the new half: with entropy_coef 0 removed as a counterweight, std
-        # ballooned to 0.98 and the resulting flail drove the arm into the blade
-        # (94% blade_contact terminations). rsl_rl 5.4.1 clamps std_param to this
-        # range on every update, so both bounds are enforced by the library.
+        # init 0.4 inside a hard (0.15, 0.5) range. The floor stops per-dim std
+        # collapsing once reach converges, which would end finger exploration.
+        # The cap is needed because entropy_coef is 0 here, so nothing else
+        # bounds std growth, and an inflated std flails the arm into the blade.
+        # rsl_rl clamps std_param to this range on every update, so both bounds
+        # are enforced by the library.
         distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=0.4, std_range=(0.15, 0.5)),
     )
     critic = RslRlMLPModelCfg(

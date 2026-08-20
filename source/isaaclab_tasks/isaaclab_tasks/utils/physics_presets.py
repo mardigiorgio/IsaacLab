@@ -24,6 +24,15 @@ PHYSICS_SOLVER_CHOICES: dict[str, dict] = {
     "mujoco-adaptive": {"backend": "mujoco", "adaptive": True, "sap_adaptive": False},
     "sap": {"backend": "sap", "adaptive": False, "sap_adaptive": False},
     "sap-adaptive": {"backend": "sap", "adaptive": False, "sap_adaptive": True},
+    # ICF (Irrotational Contact Fields, Castro et al. 2023) -- SAP's successor,
+    # from icf_warp. Fixed-step; compliant contact with a lagged Hunt & Crossley
+    # dissipation law.
+    "icf": {"backend": "icf", "adaptive": False, "sap_adaptive": False},
+    # ICF under the CENIC per-world step-doubling controller. Same contact law,
+    # same code path and the same IcfParams as "icf" -- the stepping scheme is
+    # the only difference, which is what makes the icf/icf-adaptive pair the
+    # single-variable contrast of the three-arm comparison.
+    "icf-adaptive": {"backend": "icf", "adaptive": True, "sap_adaptive": False},
 }
 
 

@@ -11,7 +11,7 @@
 #   * adaptive boundary-loop iterations (solver.cumulative_iterations delta)
 #   * derived: ms per env.step, ms per adaptive iteration, iterations per boundary
 #
-# Usage (from IsaacLab root; see PROTOCOL_5090_adaptive_solver.md for the full run matrix):
+# Usage (from IsaacLab root):
 #   NEWTON_ADAPTIVE_LOG_EVERY=0 ./isaaclab.sh -p scripts/benchmarks/bench_adaptive_allegro.py \
 #       --headless --num_envs 8192 --warmup 64 --steps 256 --label baseline
 # Results append as JSON lines to bench_results.jsonl next to this script (untracked).

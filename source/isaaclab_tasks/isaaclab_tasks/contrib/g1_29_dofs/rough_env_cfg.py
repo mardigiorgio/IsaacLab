@@ -201,9 +201,9 @@ class G1_29_DOFs_RoughEnvCfg(LocomotionVelocityRoughEnvCfg):
     rewards: G1_29_DOFs_Rewards = G1_29_DOFs_Rewards()
     observations: G1_29_DOFs_ObservationsCfg = G1_29_DOFs_ObservationsCfg()
     terminations: G1_29_DOFs_TerminationsCfg = G1_29_DOFs_TerminationsCfg()
-    # r3 contract: shoulder-pitch + elbow joined the action space (19 actions) so
-    # the policy owns arm counter-swing — the natural damper for the roll wobble
-    # at speed and the open-loop yaw wander measured on hardware.
+    # shoulder-pitch + elbow are in the action space (19 actions) so the policy
+    # owns arm counter-swing -- the natural damper for roll wobble at speed and
+    # for open-loop yaw wander.
     observed_joint_names: list[str] = [
         "waist.*",
         ".*_hip.*",

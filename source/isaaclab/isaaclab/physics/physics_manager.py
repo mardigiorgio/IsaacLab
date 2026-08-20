@@ -409,6 +409,18 @@ class PhysicsManager(ABC):
         pass
 
     @classmethod
+    def invalid_env_mask(cls):
+        """Environments the backend could not advance to the step boundary.
+
+        Returns a bool tensor of shape ``[num_envs]``, or ``None`` when the
+        backend always advances every environment (the default, so backends that
+        cannot fail this way need no implementation). A ``True`` entry means the
+        environment's state is NOT a completed transition and must not be fed to
+        a learning algorithm; the caller resets it.
+        """
+        return None
+
+    @classmethod
     def pre_render(cls) -> None:
         """Sync deferred physics state to the rendering backend.
 

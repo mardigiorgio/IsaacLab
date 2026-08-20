@@ -1,0 +1,277 @@
+{
+  "task": "IsaacContrib-Lift-Spatula-Trossen-v0",
+  "arm": "mujoco",
+  "solver_class": "SolverMuJoCo",
+  "num_envs": 16,
+  "steps": 300,
+  "tail": 150,
+  "settle_win": 60,
+  "gravity_scale": 3.0,
+  "sim_dt": 0.011111111111111112,
+  "decimation": 3,
+  "num_substeps": 1,
+  "gravity": [
+    0.0,
+    0.0,
+    -29.43
+  ],
+  "icf_contact_stiffness": null,
+  "icf_max_rigid_contact": null,
+  "slab_top_z": 0.02,
+  "object_mass_kg": 0.01810000091791153,
+  "object_weight_N": 0.5326830270141363,
+  "shapes_object": 192,
+  "shapes_slab": 16,
+  "delta_rest_per_world": [
+    0.000486578419804571,
+    0.0004865480711062735,
+    0.00048657856881618305,
+    0.0004865783204634974,
+    0.0004865782087047875,
+    0.0004865785936514523,
+    0.00048662666231393675,
+    0.0004865778610110283,
+    0.000486442719896632,
+    0.0004865786681572601,
+    0.00048657864332199083,
+    0.0004865783825516688,
+    0.0004865784570574766,
+    0.0004863821094234777,
+    0.00048657837013403593,
+    0.0004865786557396237
+  ],
+  "delta_rest_mean": 0.00048655879450961847,
+  "delta_rest_std": 5.811560158569405e-08,
+  "z_min_per_world": [
+    0.01847018115222454,
+    0.01847018301486969,
+    0.01847018301486969,
+    0.01847018115222454,
+    0.01847018115222454,
+    0.01847018301486969,
+    0.01847018301486969,
+    0.01847018301486969,
+    0.01847018115222454,
+    0.01847018301486969,
+    0.01847018115222454,
+    0.01847018301486969,
+    0.01847018301486969,
+    0.01847018115222454,
+    0.01847018115222454,
+    0.01847018115222454
+  ],
+  "settle_dz_max": 2.522394061088562e-05,
+  "episode_dones": 0,
+  "contacts_penetrating_median": 5,
+  "contacts_penetrating_mean": 4.6,
+  "contacts_all_per_world_mean": 145.54062499999998,
+  "contact_depth_max": 0.0004377327859401703,
+  "penetration_mean": 0.0003693052545612597,
+  "penetration_mean_std": 1.0400307499859415e-08,
+  "k_secant_measured": 288.478444557726,
+  "rigid_contact_max": 65536,
+  "keff_pairs": [
+    {
+      "body_a": "_World_envs_env_0_Object",
+      "body_b": "world",
+      "m_eff": 0.01809999740387,
+      "k_eff_saturated": 1437.3526922909236
+    },
+    {
+      "body_a": "_World_envs_env_0_Object",
+      "body_b": "_World_envs_env_0_Robot_follower_left_base_link",
+      "m_eff": 0.01809999740387,
+      "k_eff_saturated": 1437.3526922909236
+    },
+    {
+      "body_a": "_World_envs_env_0_Object",
+      "body_b": "_World_envs_env_0_Robot_follower_left_link_1",
+      "m_eff": 0.01809999344302586,
+      "k_eff_saturated": 1437.35237775331
+    },
+    {
+      "body_a": "_World_envs_env_0_Object",
+      "body_b": "_World_envs_env_0_Robot_follower_left_link_2",
+      "m_eff": 0.018062412809365356,
+      "k_eff_saturated": 1434.3680334042674
+    },
+    {
+      "body_a": "_World_envs_env_0_Object",
+      "body_b": "_World_envs_env_0_Robot_follower_left_link_3",
+      "m_eff": 0.01804283165807923,
+      "k_eff_saturated": 1432.8130596718815
+    },
+    {
+      "body_a": "_World_envs_env_0_Object",
+      "body_b": "_World_envs_env_0_Robot_follower_left_link_4",
+      "m_eff": 0.018036177384559295,
+      "k_eff_saturated": 1432.2846320845345
+    },
+    {
+      "body_a": "_World_envs_env_0_Object",
+      "body_b": "_World_envs_env_0_Robot_follower_left_link_5",
+      "m_eff": 0.018046765840900092,
+      "k_eff_saturated": 1433.1254800630759
+    },
+    {
+      "body_a": "_World_envs_env_0_Object",
+      "body_b": "_World_envs_env_0_Robot_follower_left_link_6",
+      "m_eff": 0.017938311069699266,
+      "k_eff_saturated": 1424.5128955472364
+    },
+    {
+      "body_a": "_World_envs_env_0_Object",
+      "body_b": "_World_envs_env_0_Robot_follower_left_camera_link",
+      "m_eff": 0.017803732366640644,
+      "k_eff_saturated": 1413.8257635631749
+    },
+    {
+      "body_a": "_World_envs_env_0_Object",
+      "body_b": "_World_envs_env_0_Robot_follower_left_gripper_left",
+      "m_eff": 0.017268279094960898,
+      "k_eff_saturated": 1371.3044756054037
+    },
+    {
+      "body_a": "_World_envs_env_0_Object",
+      "body_b": "_World_envs_env_0_Robot_follower_left_gripper_right",
+      "m_eff": 0.01726522667906248,
+      "k_eff_saturated": 1371.062077879499
+    },
+    {
+      "body_a": "_World_envs_env_0_Robot_follower_left_link_1",
+      "body_b": "world",
+      "m_eff": 82712.12466251629,
+      "k_eff_saturated": 6568315586.794002
+    },
+    {
+      "body_a": "_World_envs_env_0_Robot_follower_left_link_2",
+      "body_b": "world",
+      "m_eff": 8.698500789112938,
+      "k_eff_saturated": 690763.2774274846
+    },
+    {
+      "body_a": "_World_envs_env_0_Robot_follower_left_link_3",
+      "body_b": "world",
+      "m_eff": 5.7127778471563015,
+      "k_eff_saturated": 453661.75673121284
+    },
+    {
+      "body_a": "_World_envs_env_0_Robot_follower_left_link_4",
+      "body_b": "world",
+      "m_eff": 5.115240756147673,
+      "k_eff_saturated": 406210.2832673934
+    },
+    {
+      "body_a": "_World_envs_env_0_Robot_follower_left_link_5",
+      "body_b": "world",
+      "m_eff": 6.1363295880149815,
+      "k_eff_saturated": 487296.74691731995
+    },
+    {
+      "body_a": "_World_envs_env_0_Robot_follower_left_link_6",
+      "body_b": "world",
+      "m_eff": 2.0081065320493363,
+      "k_eff_saturated": 159467.2786876182
+    },
+    {
+      "body_a": "_World_envs_env_0_Robot_follower_left_camera_link",
+      "body_b": "world",
+      "m_eff": 1.0877000966061303,
+      "k_eff_saturated": 86376.1815749014
+    },
+    {
+      "body_a": "_World_envs_env_0_Robot_follower_left_gripper_left",
+      "body_b": "world",
+      "m_eff": 0.3757952703939499,
+      "k_eff_saturated": 29842.564703100386
+    },
+    {
+      "body_a": "_World_envs_env_0_Robot_follower_left_gripper_right",
+      "body_b": "world",
+      "m_eff": 0.3743549561351875,
+      "k_eff_saturated": 29728.18680948066
+    }
+  ],
+  "keff_spread_R": 4790677.0180330835,
+  "mj_timestep": 0.011111111380159855,
+  "geom_law_by_class": {
+    "gripper": [
+      {
+        "timeconst": 0.019999999553,
+        "dampratio": 1.0,
+        "dmin": 0.899999976158,
+        "dmax": 0.949999988079,
+        "width": 0.001000000047,
+        "geoms": 2
+      }
+    ],
+    "link": [
+      {
+        "timeconst": 0.019999999553,
+        "dampratio": 1.0,
+        "dmin": 0.899999976158,
+        "dmax": 0.949999988079,
+        "width": 0.001000000047,
+        "geoms": 12
+      }
+    ],
+    "object": [
+      {
+        "timeconst": 0.019999999553,
+        "dampratio": 1.0,
+        "dmin": 0.899999976158,
+        "dmax": 0.999000012875,
+        "width": 0.002000000095,
+        "geoms": 12
+      }
+    ],
+    "other": [
+      {
+        "timeconst": 0.000147441955,
+        "dampratio": 1.0,
+        "dmin": 0.899999976158,
+        "dmax": 0.949999988079,
+        "width": 0.001000000047,
+        "geoms": 1
+      },
+      {
+        "timeconst": 0.019999999553,
+        "dampratio": 1.0,
+        "dmin": 0.899999976158,
+        "dmax": 0.949999988079,
+        "width": 0.001000000047,
+        "geoms": 3
+      }
+    ],
+    "slab": [
+      {
+        "timeconst": 0.019999999553,
+        "dampratio": 1.0,
+        "dmin": 0.899999976158,
+        "dmax": 0.949999988079,
+        "width": 0.001000000047,
+        "geoms": 1
+      }
+    ]
+  },
+  "reference_pair_solmix_weight": 0.5,
+  "reference_law": {
+    "timeconst": 0.019999999553,
+    "dampratio": 1.0,
+    "dmax": 0.9745000004769999,
+    "width": 0.0015000000710000002
+  },
+  "solref_timeconst_authored": 0.019999999553,
+  "solref_dampratio": 1.0,
+  "solimp_dmax": 0.9745000004769999,
+  "solimp_width": 0.0015000000710000002,
+  "solref_timeconst_effective": 0.02222222276031971,
+  "refsafe_binding": true,
+  "mj_object_bodies": [
+    "_World_envs_env_0_Object"
+  ],
+  "keff_spread_R_object_pairs": 1.0483498271018847,
+  "keff_object_pairs_count": 11,
+  "keff_min_pair": "_World_envs_env_0_Object <-> _World_envs_env_0_Robot_follower_left_gripper_right",
+  "keff_max_pair": "_World_envs_env_0_Robot_follower_left_link_1 <-> world"
+}

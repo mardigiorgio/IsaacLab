@@ -220,9 +220,9 @@ def test_partial_reset_restores_adaptive_dt_only_for_reset_world(solver_cfg_fact
         # the FIRST call, which lands at the reset boundary either way. That same
         # step then immediately re-grows dt via step-doubling over the whole control
         # period (see mjwarp_manager._run_solver_substeps), so reading .dt only *after*
-        # the step is confounded by that same-step regrowth (measured: dt can regrow
-        # from dt_init back to its pre-reset ceiling within that single step, for both
-        # solvers). Capture the solver's dt array at the exact moment reset() lands by
+        # the step is confounded by that same-step regrowth -- dt can climb from
+        # dt_init back to its pre-reset ceiling inside that single step, for both
+        # solvers. Capture the solver's dt array at the exact moment reset() lands by
         # wrapping the solver instance's own .reset for the duration of this one step.
         solver = NewtonManager._solver
         original_reset = solver.reset

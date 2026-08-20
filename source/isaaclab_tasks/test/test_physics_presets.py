@@ -21,8 +21,8 @@ from isaaclab_tasks.utils.physics_presets import (
 )
 
 # The mimic-free stack task id lives in isaaclab_tasks.contrib and does not
-# depend on isaaclab_mimic (verified via the registered task ids in
-# source/isaaclab_tasks/isaaclab_tasks/contrib/stack/config/franka/__init__.py).
+# depend on isaaclab_mimic -- see the registered task ids in
+# source/isaaclab_tasks/isaaclab_tasks/contrib/stack/config/franka/__init__.py.
 TASK = "IsaacContrib-Stack-Cube-Franka-IK-Rel"
 
 

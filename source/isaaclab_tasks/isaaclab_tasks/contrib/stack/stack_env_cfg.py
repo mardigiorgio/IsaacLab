@@ -359,12 +359,11 @@ class PhysicsCfg(PresetCfg):
         collision_cfg=NewtonCollisionPipelineCfg(),
         # Contact stiffness must respect the MuJoCo solref stability bounds at the substep
         # rate: (ke, kd) convert to solref as timeconst = 2/kd and the contact is only stable
-        # when timeconst >= 2 * substep dt with a strongly overdamped ratio. The previous
-        # ke=1e6/kd=2000 authored timeconst 1 ms at a 5 ms substep -- an unstable finger-cube
-        # contact whose mm-scale grip chatter spun grasped cubes until they were ballistically
-        # ejected (measured 1-5 m/s). ke=4e4/kd=400 at num_substeps=4 (2.5 ms substep) sits
-        # exactly at the stability boundary (timeconst 5 ms, dampratio ~4.5): grasps are calm
-        # and stiff enough that stacked cubes settle within the task's height tolerance.
+        # when timeconst >= 2 * substep dt with a strongly overdamped ratio. A timeconst
+        # under that bound makes the finger-cube contact unstable, and its mm-scale grip
+        # chatter spins grasped cubes until they are ejected. These values sit at the
+        # stability boundary for num_substeps=4: calm enough to grasp, stiff enough that
+        # stacked cubes settle within the task's height tolerance.
         default_shape_cfg=NewtonShapeCfg(ke=4e4, kd=400),
         num_substeps=4,
         debug_mode=False,

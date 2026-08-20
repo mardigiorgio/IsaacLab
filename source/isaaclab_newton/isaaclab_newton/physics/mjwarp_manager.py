@@ -250,6 +250,31 @@ def _latch_sap_solve_failure(
 
 
 @wp.kernel(enable_backward=False)
+def _latch_icf_solve_failure(
+    converged_env: wp.array(dtype=wp.int32),
+    pending: wp.array(dtype=wp.int32),
+):
+    """Fixed-step ICF convergence certificate: report a solve that never converged.
+
+    ``IcfContactSolve.converged_env`` is 0 exactly where the inner Newton loop
+    left an env at its iteration cap without meeting a convergence criterion --
+    the same array, with the same 1=converged convention, that the adaptive ICF
+    arm folds into its solve-ok state and turns into a rejection. Latching it
+    here raises the bit the ``physics_diverged`` termination consumes, so the
+    two ICF arms end an episode on the same underlying event instead of only
+    the adaptive one having a divergence pathway.
+
+    Unlike the SAP counterpart this cannot also FREEZE the world: ``SolverICF.step``
+    takes no participation mask, so there is nothing to switch the world out of.
+    The bit is therefore a report only, and the episode ends at the next
+    termination evaluation rather than at this substep.
+    """
+    i = wp.tid()
+    if converged_env[i] == 0:
+        pending[i] = 1
+
+
+@wp.kernel(enable_backward=False)
 def _release_sap_failed(
     world_mask: wp.array(dtype=wp.bool),
     failed: wp.array(dtype=wp.int32),
@@ -297,6 +322,7 @@ class NewtonMJWarpManager(NewtonManager):
     """Frame counter for throttled adaptive dt/substep telemetry."""
 
     _sap: bool = False
+    _icf: bool = False
     """Set by :meth:`_build_solver`: True when the active backend is SAP
     (:class:`SolverSAP` fixed-step or :class:`SolverSAPAdaptive` step-doubling)."""
 
@@ -319,7 +345,7 @@ class NewtonMJWarpManager(NewtonManager):
     pending mask on the host every substep; containment (the default) never syncs."""
 
     _diverged_pending: wp.array | None = None
-    """Adaptive solvers and the fixed-step SAP arm: per-world int32 mask, nonzero where the solver latched
+    """Adaptive solvers and the fixed-step SAP and ICF arms: per-world int32 mask, nonzero where the solver latched
     ``diverged`` in some boundary since the world's last env reset. The solver-side latch is
     transient (cleared at boundary open and, on the SAP-adaptive path, consumed same-step as
     a controller reset mask), so this mask is the signal that survives for the env layer's
@@ -336,8 +362,11 @@ class NewtonMJWarpManager(NewtonManager):
         toggling without touching task configs.
 
         Returns:
-            Tuple ``(backend, adaptive)`` where ``backend`` is ``"mujoco"`` or ``"sap"``
-            and ``adaptive`` selects the step-doubling variant of that backend.
+            Tuple ``(backend, adaptive)`` where ``backend`` is ``"mujoco"``, ``"sap"`` or
+            ``"icf"`` and ``adaptive`` selects the step-doubling variant of that backend.
+            Each backend reads its own adaptivity latch (``adaptive`` for MuJoCo and ICF,
+            ``sap_adaptive`` for SAP) because a single field would make ``--solver sap``
+            and ``--solver icf-adaptive`` collide on one cfg attribute.
         """
         # Backend selection: cfg.backend is the source of truth; NEWTON_SOLVER / NEWTON_SAP=1
         # are shell-level env overrides.
@@ -346,6 +375,10 @@ class NewtonMJWarpManager(NewtonManager):
             backend = os.environ["NEWTON_SOLVER"]
         if os.environ.get("NEWTON_SAP") == "1":
             backend = "sap"
+
+        if backend == "icf":
+            adaptive = bool(getattr(solver_cfg, "adaptive", False)) or os.environ.get("NEWTON_ICF_ADAPTIVE") == "1"
+            return backend, adaptive
 
         if backend == "sap":
             adaptive = bool(getattr(solver_cfg, "sap_adaptive", False)) or os.environ.get("NEWTON_SAP_ADAPTIVE") == "1"
@@ -384,6 +417,12 @@ class NewtonMJWarpManager(NewtonManager):
           :class:`CollisionPipeline` contacts, see :meth:`_step_solver`).
         * ``("sap", True)`` — :class:`~newton.solvers.SolverSAPAdaptive` (step doubling
           over SAP; owns its own contact pipeline).
+        * ``("icf", False)`` — ``icf_warp.SolverICF`` (fixed-step Irrotational Contact
+          Fields); consumes the manager's :class:`CollisionPipeline` contacts.
+        * ``("icf", True)`` — ``icf_warp.SolverICFAdaptive`` (per-world step doubling
+          over ICF). It owns no contact pipeline either, so both ICF arms collide on
+          the same cadence against the same contact set; the same ``IcfParams`` object
+          is handed to both, so only the stepping scheme differs between them.
 
         Per-body ``disable_gravity`` prims are mapped onto MuJoCo per-body ``gravcomp=1.0``
         *before* construction on the MuJoCo backends (the solver reads ``gravcomp`` at
@@ -399,6 +438,111 @@ class NewtonMJWarpManager(NewtonManager):
         disable_gravity_mask = _disable_gravity_body_mask(model)
 
         _env = os.environ.get
+        if backend == "icf":
+            # icf_warp has no installable package; add its checkout to sys.path
+            # the same way the SAP backend does (override with ICF_WARP_PATH).
+            import sys as _sys
+
+            _icf_root = os.environ.get("ICF_WARP_PATH", "/home/mdigiorgio/Documents/code/icf_warp_isaaclab")
+            if _icf_root not in _sys.path:
+                _sys.path.insert(0, _icf_root)
+            from icf_warp import IcfParams, SolverICF
+
+            # CONTACT LAW AND CONTACT CAPACITY ARE RESOLVED ONCE, ABOVE THE
+            # FIXED/ADAPTIVE SPLIT, and the SAME IcfParams object reaches both
+            # constructors. These two solvers are the two arms of a
+            # fixed-vs-adaptive comparison; a knob read on one branch only would
+            # let a shell variable change one arm's physics and not the other's,
+            # and the comparison would no longer isolate timestepping.
+            #
+            # Contact compliance is GLOBAL in ICF (only friction is read
+            # per-shape off the model), so both knobs are exposed here rather
+            # than authored per-asset.
+            _icf_kwargs = {}
+            _k = _env("ICF_CONTACT_STIFFNESS")
+            _d = _env("ICF_HC_DISSIPATION")
+            if _k:
+                _icf_kwargs["contact_stiffness"] = float(_k)
+            if _d:
+                _icf_kwargs["contact_hc_dissipation"] = float(_d)
+            # Per-WORLD contact budget; contacts past it are dropped, which
+            # silently changes the physics rather than failing. Buffers scale
+            # as max_rigid_contact * num_envs, so it is a memory/fidelity
+            # trade and must be sized from the scene's measured peak.
+            _c = _env("ICF_MAX_RIGID_CONTACT")
+            if _c:
+                _icf_kwargs["max_rigid_contact"] = int(_c)
+            _icf_params = IcfParams(**_icf_kwargs)
+            if not adaptive:
+                logger.info("NewtonMJWarpManager: SolverICF (fixed-step ICF convex contact) kwargs=%s", _icf_kwargs)
+                return SolverICF(model, params=_icf_params)
+
+            try:
+                from icf_warp import IcfAdaptiveParams, SolverICFAdaptive
+            except ImportError as exc:
+                raise ImportError(
+                    "--solver icf-adaptive needs IcfAdaptiveParams and SolverICFAdaptive from "
+                    f"icf_warp (checkout {_icf_root!r}, override with ICF_WARP_PATH). The import "
+                    f"failed with: {exc}. Use --solver icf for the fixed-step ICF arm."
+                ) from exc
+
+            # SEED = THE FIXED ARM'S STEP. The outer boundary handed to step()
+            # is _solver_dt * _num_substeps, which is exactly the step the fixed
+            # ICF arm takes, so seeding the controller with it makes the adaptive
+            # arm start where the fixed arm sits and subdivide only where the
+            # error controller demands it. solver_cfg.adaptive_dt_init is NOT
+            # consulted: its default is a constant sized for a different
+            # boundary, and a seed that does not equal this arm's own boundary
+            # breaks that property silently.
+            _icf_dt_boundary = float(cls._solver_dt) * int(cls._num_substeps)
+            _icf_dt_init = float(_env("ICF_ADAPTIVE_DT_INIT", _icf_dt_boundary))
+            _icf_dt_max_env = _env("ICF_ADAPTIVE_DT_MAX")
+            _icf_adaptive_kwargs = {
+                "mode": "adaptive",
+                # tol and max_substeps are backend-agnostic controller knobs and
+                # share the cfg fields the other adaptive arms read.
+                "tol": float(_env("NEWTON_ADAPTIVE_TOL", getattr(solver_cfg, "adaptive_tol", 1e-3))),
+                "dt_inner_init": _icf_dt_init,
+                "max_substeps": int(
+                    _env("NEWTON_ADAPTIVE_MAX_SUBSTEPS", getattr(solver_cfg, "adaptive_max_substeps", 256))
+                ),
+            }
+            # dt_inner_min, dt_inner_max and rtol fall through to
+            # IcfAdaptiveParams' own defaults unless overridden here:
+            # solver_cfg.adaptive_dt_min carries a floor chosen for the MuJoCo
+            # controller, and there is no cfg field for the other two, so
+            # reading them off the cfg would import a policy this controller
+            # never validated.
+            _icf_dt_min_env = _env("ICF_ADAPTIVE_DT_MIN")
+            if _icf_dt_min_env:
+                _icf_adaptive_kwargs["dt_inner_min"] = float(_icf_dt_min_env)
+            if _icf_dt_max_env:
+                _icf_adaptive_kwargs["dt_inner_max"] = float(_icf_dt_max_env)
+            _icf_rtol_env = _env("ICF_ADAPTIVE_RTOL")
+            if _icf_rtol_env:
+                _icf_adaptive_kwargs["rtol"] = float(_icf_rtol_env)
+            _icf_adaptive = IcfAdaptiveParams(**_icf_adaptive_kwargs)
+            # IcfAdaptiveParams enforces dt_inner_min < dt_inner_init <=
+            # dt_inner_max itself; re-state the boundary relation it cannot see,
+            # because a seed above the boundary is clamped away every step and a
+            # seed below it makes the adaptive arm start finer than the fixed one.
+            if abs(_icf_adaptive.dt_inner_init - _icf_dt_boundary) > 1e-12:
+                logger.warning(
+                    "NewtonMJWarpManager: ICF adaptive seed dt_inner_init=%.6g s differs from the "
+                    "outer boundary %.6g s (the fixed ICF arm's step). The two ICF arms no longer "
+                    "start from the same step.",
+                    _icf_adaptive.dt_inner_init,
+                    _icf_dt_boundary,
+                )
+            logger.info(
+                "NewtonMJWarpManager: SolverICFAdaptive (ICF step-doubling; per-world adaptive dt) "
+                "params=%s adaptive=%s boundary_dt=%.6g",
+                _icf_kwargs,
+                _icf_adaptive,
+                _icf_dt_boundary,
+            )
+            return SolverICFAdaptive(model, params=_icf_params, adaptive=_icf_adaptive)
+
         if backend == "sap":
             if disable_gravity_mask.any():
                 logger.warning(
@@ -586,6 +730,7 @@ class NewtonMJWarpManager(NewtonManager):
         NewtonManager._use_single_state = True
         cls._adaptive = adaptive
         cls._sap = backend == "sap"
+        cls._icf = backend == "icf"
         cls._diverged_pending = None
         cls._sap_failed = None
         cls._sap_world_active = None
@@ -608,6 +753,14 @@ class NewtonMJWarpManager(NewtonManager):
             cls._sap_failed = wp.zeros(_n, dtype=wp.int32, device=PhysicsManager._device)
             cls._sap_world_active = wp.ones(_n, dtype=wp.int32, device=PhysicsManager._device)
             cls._sap_strict = os.environ.get("NEWTON_SAP_CONTAINMENT", "1") == "0"
+        elif backend == "icf":
+            # MDP parity for the fixed/adaptive ICF pair. The adaptive arm gets a
+            # `physics_diverged` pathway from its own divergence latch; without a
+            # mask here the fixed arm would have no such pathway at all, and the
+            # two arms would differ in their termination set as well as in their
+            # stepping scheme. See _certify_fixed_icf_solve for what the bit means
+            # and how the two thresholds still differ.
+            cls._diverged_pending = wp.zeros(int(model.world_count), dtype=wp.int32, device=PhysicsManager._device)
 
         if cls._sap:
             if cls._adaptive:
@@ -626,11 +779,20 @@ class NewtonMJWarpManager(NewtonManager):
                 logger.info("NewtonMJWarpManager: SolverSAP (fixed-step convex contact; CUDA graph disabled)")
             return
 
-        if cls._adaptive:
+        if cls._adaptive and cls._icf:
+            logger.info(
+                "NewtonMJWarpManager: SolverICFAdaptive (ICF step-doubling; per-world adaptive dt; "
+                "consumes the manager's CollisionPipeline contacts, frozen across the inner substeps "
+                "of one boundary)"
+            )
+        elif cls._adaptive:
             logger.info(
                 "NewtonMJWarpManager: SolverMuJoCoAdaptive (adaptive step-doubling; solver-internal "
                 "per-iteration CUDA-graph replay, set NEWTON_MJ_ADAPTIVE_GRAPH=0 to disable)"
             )
+        # Both ICF arms fall through to the cfg latch, so they consume the same
+        # manager-owned contact set on the same collide cadence -- the property
+        # that keeps the fixed/adaptive ICF pair a single-variable contrast.
         NewtonManager._needs_collision_pipeline = not solver_cfg.use_mujoco_contacts
 
         cfg = PhysicsManager._cfg
@@ -699,6 +861,8 @@ class NewtonMJWarpManager(NewtonManager):
         # solver step() is the boundary call (it owns its inner step-doubling loop + its
         # own contacts).
         cls._solver.step(state_0, state_1, control, contacts, substep_dt)
+        if cls._icf and not cls._adaptive:
+            cls._certify_fixed_icf_solve()
         if cls._adaptive and cls._diverged_pending is not None:
             # Same pending accumulation as the SAP-adaptive branch, so both
             # adaptive backends report divergence through the one
@@ -752,6 +916,41 @@ class NewtonMJWarpManager(NewtonManager):
                 "SolverSAP inner SAP solve failed to converge to "
                 f"optimality_rel_tol={float(cls._solver.optimality_rel_tol):.3e}."
             )
+
+    @classmethod
+    def _certify_fixed_icf_solve(cls) -> None:
+        """Consume the fixed-step ICF arm's per-env convergence result.
+
+        ``SolverICF.last_converged`` is not usable for this: it is host-side
+        bookkeeping, not the per-env decision. That decision lives in
+        ``contact_solve.converged_env``, which is the array the adaptive ICF arm
+        folds into its own solve-ok state, so both arms certify the same quantity
+        by the same arithmetic.
+
+        The two arms' divergence thresholds are NOT identical and must not be
+        reported as such: the adaptive arm rejects a failed solve and retries at a
+        smaller dt, latching ``diverged`` only when it is still failing at the dt
+        floor, while the fixed arm has no retry and latches on the first failure.
+        What this makes equal is the EXISTENCE of the pathway, not its trigger point.
+        """
+        if cls._diverged_pending is None:
+            return
+        contact_solve = getattr(cls._solver, "contact_solve", None)
+        converged_env = getattr(contact_solve, "converged_env", None)
+        if converged_env is None:
+            return
+        n = cls._diverged_pending.shape[0]
+        if converged_env.shape[0] != n:
+            raise RuntimeError(
+                "NewtonMJWarpManager: fixed-step ICF convergence certificate expects one "
+                f"contact_solve env per world, got {converged_env.shape[0]} for {n} worlds."
+            )
+        wp.launch(
+            _latch_icf_solve_failure,
+            dim=n,
+            inputs=[converged_env, cls._diverged_pending],
+            device=cls._diverged_pending.device,
+        )
 
     @classmethod
     def _run_solver_substeps(cls, contacts) -> None:
@@ -922,11 +1121,42 @@ class NewtonMJWarpManager(NewtonManager):
                 )
             cls._solver.reset(cls._state_0, world_mask=world_mask, flags=0)
             return
-        if cls._solver.use_mujoco_cpu and not local_mask.numpy().any():
+        if cls._icf and cls._diverged_pending is not None:
+            # Same consumption rule as the other arms: the env rebuilt this
+            # world's state, so the solve that failed is no longer the state
+            # being stepped and the fresh episode must not re-terminate on it.
+            wp.launch(
+                _clear_diverged_pending,
+                dim=cls._diverged_pending.shape[0],
+                inputs=[world_mask, cls._diverged_pending],
+                device=cls._diverged_pending.device,
+            )
+        if getattr(cls._solver, "use_mujoco_cpu", False) and not local_mask.numpy().any():
             return
         # flags=0 skips the joint-state reset to model defaults: IsaacLab owns
         # joint_q/joint_qd and has already written the authored reset pose.
         cls._solver.reset(cls._state_0, world_mask=world_mask, flags=0)
+
+    @classmethod
+    def invalid_env_mask(cls):
+        """Envs whose world the adaptive march abandoned short of the boundary.
+
+        With a quantile stop the march ends once the active set has fallen to
+        its cutoff rather than waiting for the last straggler, so the remaining
+        worlds never reached the step boundary. Their state is mid-step and is
+        not a transition, so the env layer resets them -- for every task, with
+        no task-side term to declare.
+
+        ``None`` when no quantile stop is engaged on the active solver.
+        """
+        mask = getattr(cls._solver, "boundary_cut_mask", None)
+        if mask is None:
+            return None
+        import warp as wp
+
+        out = wp.to_torch(mask) != 0
+        cls._solver.clear_boundary_cuts()
+        return out
 
     @classmethod
     def get_diverged_env_mask(cls):
@@ -946,7 +1176,10 @@ class NewtonMJWarpManager(NewtonManager):
         convergence certificate: a world whose contact solve did not converge is
         latched, frozen and reported here, so the ``physics_diverged`` term ends
         that episode instead of training on a solve that never converged. The
-        MuJoCo fixed arm allocates no mask and still returns ``None``.
+        fixed-step ICF arm reports the same certificate without the freeze
+        (``SolverICF.step`` takes no participation mask), which is what gives the
+        fixed and adaptive ICF arms the same termination pathway. The MuJoCo fixed
+        arm allocates no mask and still returns ``None``.
 
         Returns ``None`` when the active solver has no divergence signal.
         """
@@ -958,7 +1191,9 @@ class NewtonMJWarpManager(NewtonManager):
     def _supports_cuda_graph_capture(cls) -> bool:
         """Return whether the active solver configuration supports CUDA graph capture.
 
-        MANAGER-level capture stays OFF for SAP (owns its capture internally). For the
+        MANAGER-level capture stays OFF for SAP (owns its capture internally) and ON for
+        both ICF arms (ICF allocates nothing per step and the adaptive ICF march records as
+        a conditional while-node rather than its own capture). For the
         MuJoCo adaptive solver it is opt-in via ``NEWTON_MJ_ADAPTIVE_CONDITIONAL=1``: in
         that mode the solver's data-dependent boundary loop records as a CUDA
         conditional while-node (``wp.capture_while``), with mujoco_warp's per-step
@@ -969,6 +1204,15 @@ class NewtonMJWarpManager(NewtonManager):
         """
         if cls._sap:
             return False
+        if cls._icf:
+            # Both ICF arms are manager-capturable. The adaptive one records its
+            # data-dependent boundary march as a ``wp.capture_while`` conditional
+            # node and opens no capture of its own, and ICF allocates nothing per
+            # step, so the gate below (written for mujoco_warp's per-step scratch
+            # allocations) does not apply. Without this the adaptive ICF arm would
+            # run launch-by-launch against a captured fixed ICF arm and any wall-time
+            # comparison between them would be measuring launch overhead.
+            return True
         if cls._adaptive:
             return os.environ.get("NEWTON_MJ_ADAPTIVE_CONDITIONAL", "0") == "1"
         return True
@@ -1016,7 +1260,7 @@ class NewtonMJWarpManager(NewtonManager):
             cls._log_adaptive_telemetry()
         cfg = PhysicsManager._cfg
         # MuJoCo convergence stats read mjw_data, which the SAP backends do not have.
-        if cfg is not None and cfg.debug_mode and not cls._sap:  # type: ignore[union-attr]
+        if cfg is not None and cfg.debug_mode and not cls._sap and not cls._icf:  # type: ignore[union-attr]
             data = cls._get_solver_convergence_steps()
             logger.info(f"Solver convergence data: {data}")
             if data["max"] == cls._solver.mjw_model.opt.iterations:
