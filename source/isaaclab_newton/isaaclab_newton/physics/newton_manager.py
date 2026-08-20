@@ -1949,7 +1949,15 @@ class NewtonManager(PhysicsManager):
             and hasattr(cls._solver, "attach_collision_pipeline")
             and os.environ.get("NEWTON_ICF_REQUERY", "1") == "1"
         ):
-            cls._solver.attach_collision_pipeline(NewtonManager._collision_pipeline)
+            # NEWTON_ICF_MASK_REQUERY=0: finished worlds keep colliding (the
+            # pre-mask behavior, for A/B timing). NEWTON_ICF_REQUERY_HALF=0:
+            # one query per attempt instead of the paper's two — a DEVIATIONS
+            # departure gated on penetration-census evidence.
+            cls._solver.attach_collision_pipeline(
+                NewtonManager._collision_pipeline,
+                mask_requery=os.environ.get("NEWTON_ICF_MASK_REQUERY", "1") == "1",
+                half_query=os.environ.get("NEWTON_ICF_REQUERY_HALF", "1") == "1",
+            )
 
     # ----- Solver construction (subclass contract) ------------------------
 
