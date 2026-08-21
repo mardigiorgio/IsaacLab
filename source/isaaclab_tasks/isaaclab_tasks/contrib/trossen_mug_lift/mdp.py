@@ -859,6 +859,29 @@ def _pad_force_mags(env: ManagerBasedRLEnv, sensor_name: str) -> torch.Tensor:
     return torch.linalg.vector_norm(net, dim=-1).nan_to_num(0.0)
 
 
+def success_at_goal(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    pos_std: float,
+    sensor_name: str,
+    contact_threshold: float = 0.01,
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """Upstream success_reward, parallel-jaw form: tanh kernel on the
+    object-to-commanded-pose error, paid only while held in an opposed grasp.
+    The upstream function itself expects per-fingertip named sensors whose
+    layout a parallel jaw does not have; the kernel and gating semantics are
+    theirs, the grasp gate is the two-pad opposition."""
+    robot = env.scene[robot_cfg.name]
+    obj = env.scene[object_cfg.name]
+    command = env.command_manager.get_command(command_name)
+    des_pos_w, _ = combine_frame_transforms(robot.data.root_pos_w.torch, robot.data.root_quat_w.torch, command[:, :3])
+    err = torch.linalg.vector_norm(des_pos_w - obj.data.root_pos_w.torch, dim=1)
+    held = opposed_grasp(env, sensor_name, contact_threshold)
+    return _finite(held * (1.0 - torch.tanh(err / pos_std)))
+
+
 def pad_contact_forces(env: ManagerBasedRLEnv, sensor_name: str) -> torch.Tensor:
     """Net contact force on each finger pad from the mug [N], world frame,
     flattened (num_envs, num_pads * 3).

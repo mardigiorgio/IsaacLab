@@ -60,8 +60,6 @@ from isaaclab.utils.configclass import configclass
 
 from isaaclab_tasks.utils import PresetCfg
 
-from isaaclab_tasks.core.lift.mdp.rewards import success_reward as lift_success_reward
-
 from . import mdp
 from .assets import STATIONARY_AI_CFG
 
@@ -556,17 +554,16 @@ class RewardsCfg:
         },
     )
 
+    # Upstream's success semantics (pose match while grasped) in the
+    # parallel-jaw form: their function hard-requires per-fingertip sensor
+    # shapes this gripper does not have.
     success = RewTerm(
-        func=lift_success_reward,
+        func=mdp.success_at_goal,
         weight=10,
         params={
-            "asset_cfg": SceneEntityCfg("robot"),
-            "pos_std": 0.05,
-            "rot_std": 1.0e6,
             "command_name": "object_pose",
-            "align_asset_cfg": SceneEntityCfg("object"),
-            "thumb_name": "pad_left_contact",
-            "finger_names": ["pad_right_contact"],
+            "pos_std": 0.05,
+            "sensor_name": "pad_object_contact",
             "contact_threshold": 0.01,
         },
     )
