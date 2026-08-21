@@ -473,9 +473,14 @@ class ObservationsCfg:
         contact = ObsTerm(
             func=mdp.pad_contact_forces,
             params={"sensor_name": "pad_object_contact"},
-            clip=(-100.0, 100.0),
+            clip=(-20.0, 20.0),
         )
         object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
+        # Upstream observes the object quaternion; a rim pinch cares about
+        # tilt, and the policy cannot infer it from position alone.
+        object_orientation = ObsTerm(
+            func=mdp.root_quat_w, params={"asset_cfg": SceneEntityCfg("object"), "make_quat_unique": True}
+        )
         target_object_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "object_pose"})
         # The raw last action feeds back into the policy input; unclipped, the loop
         # goes exponentially unstable once the network's feedback gain crosses 1,
@@ -486,6 +491,9 @@ class ObservationsCfg:
         def __post_init__(self):
             self.enable_corruption = True
             self.concatenate_terms = True
+            # Upstream's proprio group carries 5 steps of history: contact
+            # events and closing motions are multi-step phenomena.
+            self.history_length = 5
 
     policy: PolicyCfg = PolicyCfg()
 
@@ -554,11 +562,18 @@ class RewardsCfg:
     )
     # The knock signal: mug motion while NOT held bleeds; a held carry is
     # exempt. Punishes exactly the approach failure mode and nothing else.
-    # NO grasp/contact term, deliberately (operator ruling): a hold annuity
-    # made clamp-and-hold-at-table the reward optimum. Picking up IS the
-    # objective, so height progress is the only paid use of the fingers —
-    # dense (every millimeter of raise pays), reaching weight 15 at the
-    # 8 cm carry height the goal terms gate on.
+    # Upstream's good_finger_contact (franka_env_cfg.py, weight 0.75,
+    # threshold 0.01 N), parallel-jaw form: both pads pressing the mug is the
+    # two-jaw analogue of their thumb+finger opposition. Reinstated in the
+    # validated shape after the match-upstream ruling; at 0.75 it cannot
+    # outbid the height chain (15) the way the earlier 2.0 hold annuity did.
+    good_finger_contact = RewTerm(
+        func=mdp.mug_grasped,
+        params={"sensor_name": "pad_object_contact", "threshold": 0.01},
+        weight=0.75,
+    )
+    # Height progress is dense (every millimeter of raise pays), weight 15 at
+    # the 8 cm carry height the goal terms gate on.
     lifting_object = RewTerm(
         func=mdp.object_lift_progress,
         params={"rest_height": OBJECT_REST_Z, "target_height": LIFT_HEIGHT},
