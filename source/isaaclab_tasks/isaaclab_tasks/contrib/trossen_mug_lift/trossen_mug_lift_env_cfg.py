@@ -100,20 +100,21 @@ LIFT_HEIGHT = 0.08
 # stays well under it, a fling exceeds it several-fold.
 CARRY_SPEED_MAX = 0.75
 
-# Pre-grasp reset pose: IK-GENERATED fingers-down straddle (operator ruling)
-# — tool axis vertical so the descent cannot clip the wall, fingertips
-# 5.3 mm below the rim plane, pad radials 10.7 mm (inside the opening) and
-# 55.1 mm (outside the wall), wall clearance 6.9 mm at nominal and >= 6.6 mm
-# across the whole teacher DR envelope. Generated and collision-constrained
-# by scripts/probes/probe_generate_pregrasp.py against the vendor model;
-# re-run it (then probe_bank_jacobian.py) after any mug or spawn change.
+# Pre-grasp reset pose: the operator's teleop-authored rim-pinch straddle —
+# the only pose to pass the DYNAMIC ladder (scripted close seats at 3.2 mm
+# with 3.6 N and lifts 100%; the takeoff policy trained on it lifts 50/50
+# from home starts, all straddle grips). Fingers-down generation was probed
+# and is kinematically infeasible at this reach (frame-clear closing sweep
+# vs joint-fold limits — see probe_generate_pregrasp.py). Under DR this
+# vector is only the NOMINAL: every bank start is re-solved per env by
+# BANK_POSE_XY_JACOBIAN for its actual mug placement.
 GRASP_BANK_POSE = {
-    "follower_left_joint_0": 0.0536,
-    "follower_left_joint_1": 2.3703,
-    "follower_left_joint_2": 2.2858,
-    "follower_left_joint_3": -1.4863,
-    "follower_left_joint_4": 0.0000,
-    "follower_left_joint_5": 0.0536,
+    "follower_left_joint_0": 0.042,
+    "follower_left_joint_1": 1.978,
+    "follower_left_joint_2": 1.586,
+    "follower_left_joint_3": -0.753,
+    "follower_left_joint_4": 0.000,
+    "follower_left_joint_5": -0.043,
     "follower_left_left_carriage_joint": 0.021,
     "follower_left_right_carriage_joint": 0.021,
 }
@@ -124,12 +125,12 @@ GRASP_BANK_POSE = {
 # against the vendor MuJoCo model (0.1-0.2 mm error over a 1 cm shift);
 # re-run that probe whenever GRASP_BANK_POSE changes.
 BANK_POSE_XY_JACOBIAN = [
-    [+2.177986, +0.116852],
-    [+0.347170, -6.470842],
-    [+0.610888, -11.386248],
-    [-0.263718, +4.915406],
-    [-0.000008, -0.000000],
-    [+2.177986, +0.116852],
+    [+2.486126, +0.104479],
+    [+0.162484, -3.866392],
+    [+0.230619, -5.487691],
+    [-0.068135, +1.621299],
+    [+1.026885, +0.043155],
+    [+2.264140, +0.095150],
 ]
 
 # Rim circle of the mug in its body frame, the one-wall pinch target for the
@@ -678,9 +679,9 @@ class EventCfg:
             "bank_fraction": 0.5,
             "noise": 0.0,
             "alpha_min": 1.0,
-            # 50/50 map (operator ruling): no mid-grasp subset; the generated
-            # fingers-down pre-grasp is the single bank anchor.
-            "grasped_fraction": 0.0,
+            # 50/25/25 (operator ruling): the mid-grasp subset restored at the
+            # measured clamp seat — the map of every lift that ever worked.
+            "grasped_fraction": 0.5,
             "grasped_carriage_m": 0.0035,
             "asset_cfg": SceneEntityCfg("robot"),
         },
