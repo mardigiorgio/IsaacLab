@@ -6,15 +6,14 @@
 """Trossen Stationary AI mug SLIDE: push the mug from its tape-measure spawn
 to a commanded position on the table WITHOUT tipping it.
 
-A sibling of the lift task sharing its scene, assets and mdp module. The
-grasp-discovery machinery (rim targets, close bootstrap, pre-grasp bank, lift
-income) is absent by construction: pushing is discoverable from plain reach
-shaping, and the physics of interest is sustained frictional sliding — the
-regime where fixed-step contact distorts normal forces and tips the mug.
+Shares the lift's scene, assets, actions and observations, but every
+BEHAVIORAL manager (rewards, events, terminations, curriculum) is declared
+complete in this file and replaces the inherited one wholesale — nothing the
+lift adds can flow into the slide implicitly. The grasp machinery is absent
+by construction: pushing is discoverable from plain reach shaping, and the
+physics of interest is sustained frictional sliding — the regime where
+fixed-step contact distorts normal forces and tips the mug.
 """
-
-import math
-import os
 
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
@@ -24,7 +23,6 @@ from isaaclab.utils.configclass import configclass
 
 from . import mdp
 from .trossen_mug_lift_env_cfg import (
-    CARRY_SPEED_MAX,
     OBJECT_REST_Z,
     TrossenMugLiftEnvCfg,
 )
@@ -36,9 +34,108 @@ PUSH_SPEED_MAX = 0.75
 
 
 @configclass
+class SlideRewardsCfg:
+    """The slide's complete reward set — self-contained, no lift terms.
+
+    Weights are an expected-value design, not taste: hover-never-touch must
+    earn LESS than a clumsy first push (hover annuity = reach only, ~2.5 per
+    episode; a 5 cm push with a 50% mid-episode failure still nets more).
+    Style is enforced by UNPAYMENT: the upright/on-table/speed gates zero a
+    tipped, airborne, or smacked mug's income; there is no tip fine, which at
+    any size taught hovering (measured twice)."""
+
+    # Reach toward the mug root: for a push, low on the wall IS the right
+    # approach point.
+    reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.2}, weight=0.5)
+    # Transport = progress ratchet (a parked mug earns nothing, ever): pays
+    # per 5 mm of NEW episode-best planar goal distance, upright (gate at
+    # ~53 degrees — a pushed mug rocks well past 30, and a gate that zeroes
+    # every real push teaches hovering), on the table, at push speed.
+    object_goal_tracking = RewTerm(
+        func=mdp.object_goal_progress_on_table,
+        params={
+            "min_improvement": 0.005,
+            "min_up_cos": 0.6,
+            "max_speed": PUSH_SPEED_MAX,
+            "command_name": "object_pose",
+        },
+        weight=5.0,
+    )
+    # Tight arrival kernel that only pays AT the goal, same gates.
+    object_goal_tracking_fine_grained = RewTerm(
+        func=mdp.object_goal_distance_on_table,
+        params={
+            "std": 0.05,
+            "min_up_cos": 0.6,
+            "max_speed": PUSH_SPEED_MAX,
+            "command_name": "object_pose",
+        },
+        weight=16.0,
+    )
+    # Scraping or pressing the tabletop with any robot body is never part of
+    # a correct push.
+    table_scrape = RewTerm(
+        func=mdp.body_contact, weight=-2.0, params={"sensor_name": "arm_table_contact", "threshold": 1.0}
+    )
+    # Erratic-arm suppression, gripper exempt; jerk targets direction-flips
+    # specifically, leaving a smooth sustained push unpenalized.
+    action_rate = RewTerm(func=mdp.arm_action_rate_l2, weight=-3e-3)
+    action_jerk = RewTerm(func=mdp.arm_action_jerk_l2, weight=-1e-3)
+    joint_vel = RewTerm(
+        func=mdp.joint_vel_l2,
+        weight=-5e-4,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["follower_left_joint_[0-5]"])},
+    )
+
+
+@configclass
+class SlideTerminationsCfg:
+    """The slide's complete termination set."""
+
+    time_out = DoneTerm(func=mdp.time_out, time_out=True)
+    # Fires only on constraint blowups through the arm.
+    robot_abnormal = DoneTerm(func=mdp.robot_state_abnormal, params={"max_joint_vel": 25.0})
+    # Solver-level containment valve (see the lift cfg's notes).
+    physics_diverged = DoneTerm(func=mdp.physics_diverged)
+    # A mug pushed off the slab is unrecoverable and the episode's income is
+    # already forfeit under the gates — end it.
+    object_out_of_bound = DoneTerm(
+        func=mdp.object_off_table,
+        params={"x_bound": 0.38, "y_bound": 0.62, "z_bound": 1.0},
+    )
+
+
+@configclass
+class SlideEventCfg:
+    """The slide's complete event set: home starts only, fixed mug spawn."""
+
+    reset_all = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
+    reset_object_position = EventTerm(
+        func=mdp.reset_root_state_uniform,
+        mode="reset",
+        params={
+            # ZERO spawn jitter, deliberately: the tape-measure protocol.
+            "pose_range": {"x": (0.0, 0.0), "y": (0.0, 0.0), "z": (0.0, 0.0)},
+            "velocity_range": {},
+            "asset_cfg": SceneEntityCfg("object"),
+        },
+    )
+
+
+@configclass
+class SlideCurriculumCfg:
+    """No curriculum: the slide trains from home starts throughout."""
+
+
+@configclass
 class TrossenMugSlideEnvCfg(TrossenMugLiftEnvCfg):
-    """Slide variant: lift rewards and grasp bootstraps replaced by upright
-    on-table transport income; goals commanded at table height."""
+    """Slide task: shared scene/actions/observations from the lift base;
+    behavioral managers replaced wholesale by the slide's own."""
+
+    rewards: SlideRewardsCfg = SlideRewardsCfg()
+    terminations: SlideTerminationsCfg = SlideTerminationsCfg()
+    events: SlideEventCfg = SlideEventCfg()
+    curriculum: SlideCurriculumCfg = SlideCurriculumCfg()
 
     def __post_init__(self):
         super().__post_init__()
@@ -46,81 +143,15 @@ class TrossenMugSlideEnvCfg(TrossenMugLiftEnvCfg):
         # ONE mug position across lift and slide, deliberately: a single
         # tape-measure placement serves both hardware protocols.
 
-        # Goals ON the table, far to ONE side of the spawn: the slide is a
-        # cross-table traverse, not a nudge — a goal near spawn lets a parked
-        # mug farm kernel income. Marker visualization on, so the target is
-        # visible in the viewer and training clips.
+        # Goal ON the table at the SIDE edge across from the mounted camera,
+        # one mug-base-radius before the rail, nudged inward per the operator
+        # view. Probe-measured mapping (scripts/probes/probe_goal_map.py):
+        # command frame IS the env frame. Marker visualization on, so the
+        # target is visible in the viewer and training clips.
         self.commands.object_pose.ranges.pos_z = (OBJECT_REST_Z, OBJECT_REST_Z)
-        # B at the SIDE edge across the table (the mounted-camera side), one
-        # mug-base-radius before the rail: lateral slide on the mug's line.
-        # Probe-measured mapping (scripts/probes/probe_goal_map.py): command
-        # frame IS the env frame; side edge x=+0.375, minus one mug radius.
         self.commands.object_pose.ranges.pos_x = (0.30, 0.30)
         self.commands.object_pose.ranges.pos_y = (0.0, 0.0)
         self.commands.object_pose.debug_vis = True
-
-        # Rewards: reach toward the mug root (for a push, low on the wall IS
-        # the right approach point), then upright-on-table transport at two
-        # scales. Tipping bleeds hard; there is nothing to close or lift.
-        # Weights are an expected-value design, not taste: hover-never-touch
-        # must earn LESS than a clumsy first push. Hover annuity = reach only
-        # (0.5 x 150dt = 2.5/ep). A 5 cm push with a 50% mid-episode tip =
-        # 2.5 + 1.7 (ratchet) - 1.2 (bleed) = 3.0 > 2.5, so contact is
-        # EV-positive from the first unskilled attempt; a completed slide
-        # earns ~40 via the arrival kernel. Tipping is priced mildly because
-        # the upright/on-table/speed GATES already zero a tipped mug's
-        # income — unpayment enforces style, the bleed only breaks ties.
-        self.rewards.reaching_object = RewTerm(
-            func=mdp.object_ee_distance, params={"std": 0.2}, weight=0.5
-        )
-        # No tip fine at all: a tipped mug already earns nothing through the
-        # gates and wastes its episode — measured at any fine size, the policy
-        # hovers at the mug and refuses the touch. Style is enforced purely by
-        # unpayment.
-        self.rewards.mug_tipped_on_table = None
-        self.rewards.looking_at_rim = None
-        self.rewards.close_at_rim = None
-        self.rewards.lifting_object = None
-        # Transport = progress ratchet (a parked mug earns nothing, ever) plus
-        # a tight arrival kernel that only pays AT the goal.
-        # Upright gate at ~53 degrees: a pushed mug rocks well past 30 and a
-        # gate that zeroes every real push teaches hovering, measured twice.
-        self.rewards.object_goal_tracking = RewTerm(
-            func=mdp.object_goal_progress_on_table,
-            params={
-                "min_improvement": 0.005,
-                "min_up_cos": 0.6,
-                "max_speed": PUSH_SPEED_MAX,
-                "command_name": "object_pose",
-            },
-            weight=5.0,
-        )
-        self.rewards.object_goal_tracking_fine_grained = RewTerm(
-            func=mdp.object_goal_distance_on_table,
-            params={
-                "std": 0.05,
-                "min_up_cos": 0.6,
-                "max_speed": PUSH_SPEED_MAX,
-                "command_name": "object_pose",
-            },
-            weight=16.0,
-        )
-
-        # No pre-contact bank for the slide: every episode starts from home,
-        # and the lift's reverse-curriculum anneal has nothing to anneal.
-        self.events.reset_arm_grasp_bank = None
-        self.curriculum.grow_approach = None
-        # The lift's approach-stack rewards target its pre-grasp pose; the
-        # slide's approach is plain reach.
-        self.rewards.pregrasp_match = None
-        self.rewards.mug_knocked = None
-
-        # A mug pushed off the slab is unrecoverable and the episode's income
-        # is already forfeit under the gates — end it.
-        self.terminations.object_out_of_bound = DoneTerm(
-            func=mdp.object_off_table,
-            params={"x_bound": 0.38, "y_bound": 0.62, "z_bound": 1.0},
-        )
 
 
 @configclass
