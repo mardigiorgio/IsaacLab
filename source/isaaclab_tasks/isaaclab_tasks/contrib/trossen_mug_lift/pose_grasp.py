@@ -66,6 +66,7 @@ from isaaclab_tasks.utils import parse_env_cfg  # noqa: E402
 
 from isaaclab_tasks.contrib.trossen_mug_lift.trossen_mug_lift_env_cfg import (  # noqa: E402
     ARM_JOINTS,
+    GRASP_BANK_POSE,
     OBJECT_REST_Z,
     GRIPPER_JOINT,
     GRIPPER_JOINT_R,
@@ -91,19 +92,10 @@ CLOSED_GAP_M = 0.0483
 # before any operation. That IS the articulation's init_state, so it is read from
 # default_joint_pos rather than restated here, and cannot drift from the rig config.
 #
-# POSE_START=pregrasp starts from the hand-authored vector below instead. Kept because
-# it took real effort to author, but it is NOT the default: it was authored against the
-# 57 cm mug spawn (the mug is now at 45.75 cm) and its joint_2 sits exactly on that
-# joint's 2.356 hard limit.
-PREGRASP_JOINT_POS = {
-    "follower_left_joint_0": +0.042000,
-    "follower_left_joint_1": +2.425000,
-    "follower_left_joint_2": +2.356000,
-    "follower_left_joint_3": -1.011000,
-    "follower_left_joint_4": -0.021000,
-    "follower_left_joint_5": -0.100000,
-}
-PREGRASP_GRIPPER = 0.026  # m per carriage (~59% open, finger gap ~100.3 mm)
+# POSE_START=bank starts from GRASP_BANK_POSE instead -- the teleop-authored pre-grasp
+# the task's own reset event uses. It is IMPORTED, never copied: a local copy would
+# silently stop matching the scene the moment the constant was retuned, and then this
+# tool would be showing a pose the env no longer resets to.
 
 
 def _t(x):
@@ -224,13 +216,12 @@ def main() -> int:
 
     # The single source of truth. The panel edits this; the loop commands it.
     grip_open = float(_t(robot.data.default_joint_pos)[0, grip_ids[0]])
-    _use_pregrasp = os.environ.get("POSE_START", "ready") == "pregrasp"
-    if _use_pregrasp:
-        # Clamped, not trusted: the pose was authored against a different mug spawn and
-        # sits ON joint_2's limit, so an unclamped write could land outside the soft
-        # limits and be silently rejected by the solver.
-        vals = {n: min(max(PREGRASP_JOINT_POS[n], lim[n][0]), lim[n][1]) for n in arm_names}
-        vals[GRIPPER_JOINT] = min(max(PREGRASP_GRIPPER, 0.0), grip_open)
+    _use_bank = os.environ.get("POSE_START", "ready") == "bank"
+    if _use_bank:
+        # Clamped, not trusted: the constant is retuned by hand, so an unclamped write
+        # could land outside the soft limits and be silently rejected by the solver.
+        vals = {n: min(max(GRASP_BANK_POSE[n], lim[n][0]), lim[n][1]) for n in arm_names}
+        vals[GRIPPER_JOINT] = min(max(float(GRASP_BANK_POSE[GRIPPER_JOINT]), 0.0), grip_open)
     else:
         # From default_joint_pos (the authored init_state), NOT the measured joint_pos:
         # by the time we read it the arm has already sagged a hair under gravity
@@ -418,7 +409,7 @@ def main() -> int:
         q_now = _t(robot.data.joint_pos)[0]
         worst = max(abs(float(q_now[i]) - vals[n]) for n, i in zip(arm_names, arm_ids))
         check("session starts AT the configured start pose", worst < 0.02, f"worst joint error {worst:.4f} rad")
-        if not _use_pregrasp:
+        if not _use_bank:
             # The READY pose must equal the rig's own init_state, not a restated copy.
             dflt = _t(robot.data.default_joint_pos)[0]
             worst_d = max(abs(vals[n] - float(dflt[i])) for n, i in zip(arm_names, arm_ids))
