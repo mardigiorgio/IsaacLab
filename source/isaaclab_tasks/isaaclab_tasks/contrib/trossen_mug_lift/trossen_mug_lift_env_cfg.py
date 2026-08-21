@@ -666,19 +666,6 @@ class EventCfg:
             "asset_cfg": SceneEntityCfg("object"),
         },
     )
-    # Start diversity for the non-bank half (upstream's visible discovery
-    # mechanism: every episode a different arm pose, some near the mug, so
-    # contact terms fire without a long profitable approach existing yet).
-    # Runs BEFORE the bank event; bank-selected envs overwrite it entirely.
-    randomize_arm_start = EventTerm(
-        func=mdp.reset_joints_by_offset,
-        mode="reset",
-        params={
-            "position_range": (-0.6, 0.6),
-            "velocity_range": (0.0, 0.0),
-            "asset_cfg": SceneEntityCfg("robot", joint_names=ARM_JOINTS),
-        },
-    )
     # Reverse-curriculum starts (Florensa): bank episodes begin at an
     # interpolation between home and the teleop pre-grasp; the curriculum
     # lowers alpha_min from 1 to 0, growing the start distribution back
