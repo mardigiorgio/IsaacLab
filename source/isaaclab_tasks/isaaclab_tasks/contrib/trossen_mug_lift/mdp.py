@@ -757,7 +757,11 @@ def reset_arm_reverse_curriculum(
     alpha_min: float = 1.0,
     grasped_fraction: float = 0.0,
     grasped_carriage_m: float = 0.0035,
+    track_object_xy: list | None = None,
+    nominal_object_pos: tuple | None = None,
+    safe_yaw_range: tuple | None = None,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
 ):
     """Reverse-curriculum start states: interpolate home -> pre-grasp.
 
@@ -789,6 +793,39 @@ def reset_arm_reverse_curriculum(
     alpha = sample_uniform(alpha_min, 1.0, (env_ids.shape[0], 1), env.device)
     start = home + alpha * (target.unsqueeze(0) - home)
     start = start + sample_uniform(-noise, noise, start.shape, start.device)
+    # Under randomized placement the authored pose must FOLLOW the mug: one
+    # precomputed Jacobian step translates the pre-grasp (and the grasped
+    # seat) by each env's placement delta — sub-mm over the +-1 cm DR range
+    # (probe_bank_jacobian.py). The handle is the mug's only asymmetric
+    # part, so bank envs also re-sample yaw into the handle-safe arc before
+    # the arm is placed around the mug.
+    if track_object_xy is not None and sel.any():
+        obj = env.scene[object_cfg.name]
+        if safe_yaw_range is not None:
+            rows = torch.nonzero(sel).squeeze(1)
+            ids_sel = env_ids[rows]
+            yaw = sample_uniform(safe_yaw_range[0], safe_yaw_range[1], (rows.shape[0],), env.device)
+            pose7 = obj.data.root_pose_w.torch[ids_sel].clone()
+            pose7[:, 3] = 0.0
+            pose7[:, 4] = 0.0
+            pose7[:, 5] = torch.sin(yaw / 2)
+            pose7[:, 6] = torch.cos(yaw / 2)
+            obj.write_root_pose_to_sim_index(root_pose=pose7, env_ids=ids_sel)
+            obj.write_root_velocity_to_sim_index(
+                root_velocity=torch.zeros(rows.shape[0], 6, device=env.device), env_ids=ids_sel
+            )
+        nominal = torch.tensor(nominal_object_pos, device=env.device)
+        delta = (
+            obj.data.root_pos_w.torch[env_ids, :2]
+            - env.scene.env_origins[env_ids, :2]
+            - nominal
+        )
+        M = torch.tensor(track_object_xy, device=env.device, dtype=torch.float32)
+        dq = delta @ M.T
+        arm_cols = torch.tensor(
+            [resolved.index(f"follower_left_joint_{i}") for i in range(6)], device=env.device
+        )
+        start[:, arm_cols] = torch.where(sel.unsqueeze(1), start[:, arm_cols] + dq, start[:, arm_cols])
     limits = asset.data.soft_joint_pos_limits.torch[env_ids[:, None], joint_ids]
     start = torch.where(sel.unsqueeze(1), start.clamp(limits[..., 0], limits[..., 1]), home)
     if grasped_fraction > 0.0:

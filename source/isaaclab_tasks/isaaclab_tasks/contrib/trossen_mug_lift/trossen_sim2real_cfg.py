@@ -135,6 +135,16 @@ class TrossenMugLiftTeacherEnvCfg(TrossenMugLiftEnvCfg):
             "z": (0.0, 0.0),
             "yaw": (-3.14159, 3.14159),
         }
+        # The banked pre-grasp FOLLOWS the randomized placement (one
+        # Jacobian step, probe-verified sub-mm over this range), and bank
+        # envs re-sample yaw into the handle-safe arc so the teleported
+        # straddle can never intersect the handle.
+        from .trossen_mug_lift_env_cfg import BANK_POSE_XY_JACOBIAN, _SPAWN_X, _SPAWN_Y  # noqa: PLC0415
+
+        bank = self.events.reset_arm_grasp_bank
+        bank.params["track_object_xy"] = BANK_POSE_XY_JACOBIAN
+        bank.params["nominal_object_pos"] = (_SPAWN_X, _SPAWN_Y)
+        bank.params["safe_yaw_range"] = (1.047, 5.236)
 
 
 @configclass

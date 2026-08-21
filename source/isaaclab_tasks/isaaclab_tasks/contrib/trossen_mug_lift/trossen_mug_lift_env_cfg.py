@@ -120,6 +120,20 @@ GRASP_BANK_POSE = {
     "follower_left_right_carriage_joint": 0.021,
 }
 
+# Joint response translating the banked pre-grasp with a planar mug shift:
+# damped pseudo-inverse of the position Jacobian AT the bank pose, (x, y)
+# columns. Derived and verified by scripts/probes/probe_bank_jacobian.py
+# against the vendor MuJoCo model (0.1-0.2 mm error over a 1 cm shift);
+# re-run that probe whenever GRASP_BANK_POSE changes.
+BANK_POSE_XY_JACOBIAN = [
+    [+2.486126, +0.104479],
+    [+0.162484, -3.866392],
+    [+0.230619, -5.487691],
+    [-0.068135, +1.621299],
+    [+1.026885, +0.043155],
+    [+2.264140, +0.095150],
+]
+
 # Rim circle of the mug in its body frame, the one-wall pinch target for the
 # reach term. Height is the authored MUG_HEIGHT in assets/convert_mug.py
 # (mesh-asserted there); the radius is the mug body radius, bounded above by
