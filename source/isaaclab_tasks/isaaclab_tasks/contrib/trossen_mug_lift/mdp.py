@@ -42,6 +42,38 @@ def action_rate_l2(env: ManagerBasedRLEnv) -> torch.Tensor:
     return _finite(torch.sum(torch.square(env.action_manager.action - env.action_manager.prev_action), dim=1))
 
 
+class arm_action_jerk_l2(ManagerTermBase):
+    """NaN-safe penalty on the CHANGE of the arm action delta (jerk).
+
+    Action-rate taxes any fast command; jerk taxes direction reversals and
+    twitching specifically, leaving a smooth sustained push unpenalized. Arm
+    dims only — the binary gripper flip is exploration, not jitter. Buffers
+    reset per episode so the first two steps of an episode are never charged.
+    """
+
+    def __init__(self, cfg, env: ManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        n = env.action_manager.get_term("arm_action").action_dim
+        self._prev_delta = torch.zeros(env.num_envs, n, device=env.device)
+        self._steps = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
+
+    def reset(self, env_ids=None):
+        if env_ids is None:
+            env_ids = slice(None)
+        self._prev_delta[env_ids] = 0.0
+        self._steps[env_ids] = 0
+
+    def __call__(self, env: ManagerBasedRLEnv, term_name: str = "arm_action") -> torch.Tensor:
+        n = self._prev_delta.shape[1]
+        delta = env.action_manager.action[:, :n] - env.action_manager.prev_action[:, :n]
+        jerk = torch.sum(torch.square(delta - self._prev_delta), dim=1)
+        # steps 0 and 1 have no meaningful delta history
+        jerk = torch.where(self._steps >= 2, jerk, torch.zeros_like(jerk))
+        self._prev_delta.copy_(delta)
+        self._steps += 1
+        return _finite(jerk)
+
+
 def arm_action_rate_l2(env: ManagerBasedRLEnv, term_name: str = "arm_action") -> torch.Tensor:
     """NaN-safe action-rate penalty over the ARM action dims only.
 
@@ -829,6 +861,62 @@ def object_goal_distance_on_table(
     z_local = obj.data.root_pos_w.torch[:, 2] - env.scene.env_origins[:, 2]
     gate = (up_z > min_up_cos) & (z_local < z_max) & _object_calm(env, max_speed, object_cfg)
     return _finite(gate * (1.0 - torch.tanh(distance / std)))
+
+
+class object_goal_progress_on_table(ManagerTermBase):
+    """Slide-task ratchet: 1.0 per ``min_improvement`` [m] of NEW episode-best
+    planar goal distance, credited only upright, on the table, at push speed.
+
+    The absolute kernel pays a parked mug whenever goals land near spawn; the
+    ratchet pays nothing until the mug actually gains ground, and ground given
+    back cannot be re-earned. Bar re-seeds when the command resamples.
+    """
+
+    def __init__(self, cfg, env: ManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        self.best = torch.full((env.num_envs,), float("inf"), device=env.device)
+        self._prev_cmd: torch.Tensor | None = None
+
+    def reset(self, env_ids=None):
+        if env_ids is None:
+            env_ids = slice(None)
+        self.best[env_ids] = float("inf")
+
+    def __call__(
+        self,
+        env: ManagerBasedRLEnv,
+        command_name: str,
+        min_improvement: float = 0.005,
+        z_max: float = 0.06,
+        min_up_cos: float = 0.87,
+        max_speed: float = float("inf"),
+        robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+        object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    ) -> torch.Tensor:
+        robot = env.scene[robot_cfg.name]
+        obj = env.scene[object_cfg.name]
+        command = env.command_manager.get_command(command_name)
+        des_pos_w, _ = combine_frame_transforms(
+            robot.data.root_pos_w.torch, robot.data.root_quat_w.torch, command[:, :3]
+        )
+        error = torch.norm(des_pos_w[:, :2] - obj.data.root_pos_w.torch[:, :2], dim=1).nan_to_num(
+            nan=float("inf"), posinf=float("inf"), neginf=float("inf")
+        )
+        quat = obj.data.root_quat_w.torch
+        up_z = 1.0 - 2.0 * (quat[:, 0] * quat[:, 0] + quat[:, 1] * quat[:, 1])
+        z_local = obj.data.root_pos_w.torch[:, 2] - env.scene.env_origins[:, 2]
+        gate = (up_z > min_up_cos) & (z_local < z_max) & _object_calm(env, max_speed, object_cfg)
+        cmd = command[:, :3]
+        if self._prev_cmd is None:
+            self._prev_cmd = cmd.clone()
+        else:
+            self.best[(self._prev_cmd != cmd).any(dim=1)] = float("inf")
+            self._prev_cmd.copy_(cmd)
+        unseeded = torch.isinf(self.best)
+        self.best[unseeded] = error[unseeded]
+        improved = gate & (error < self.best - min_improvement)
+        self.best[improved] = error[improved]
+        return improved.float()
 
 
 def object_position_in_robot_root_frame(

@@ -29,9 +29,10 @@ from .trossen_mug_lift_env_cfg import (
     TrossenMugLiftEnvCfg,
 )
 
-# Push speed cap [m/s]: gentler than the lift task's carry cap — a controlled
-# push never approaches it, a smack exceeds it immediately.
-PUSH_SPEED_MAX = 0.5
+# Push speed cap [m/s]: below the lift task's carry cap — a controlled push
+# stays under it, a smack exceeds it immediately. Loose enough that contact
+# transients do not zero honest pushes.
+PUSH_SPEED_MAX = 0.75
 
 
 @configclass
@@ -42,32 +43,63 @@ class TrossenMugSlideEnvCfg(TrossenMugLiftEnvCfg):
     def __post_init__(self):
         super().__post_init__()
 
-        # Goals ON the table, in the arm's reachable band. z is the command
-        # frame's, not the mug's; the transport term measures xy only.
+        # Goals ON the table, far to ONE side of the spawn: the slide is a
+        # cross-table traverse, not a nudge — a goal near spawn lets a parked
+        # mug farm kernel income. Marker visualization on, so the target is
+        # visible in the viewer and training clips.
         self.commands.object_pose.ranges.pos_z = (OBJECT_REST_Z, OBJECT_REST_Z)
+        self.commands.object_pose.ranges.pos_x = (0.26, 0.26)
+        self.commands.object_pose.ranges.pos_y = (-0.03, -0.03)
+        self.commands.object_pose.debug_vis = True
 
         # Rewards: reach toward the mug root (for a push, low on the wall IS
         # the right approach point), then upright-on-table transport at two
         # scales. Tipping bleeds hard; there is nothing to close or lift.
+        # Weights are an expected-value design, not taste: hover-never-touch
+        # must earn LESS than a clumsy first push. Hover annuity = reach only
+        # (0.5 x 150dt = 2.5/ep). A 5 cm push with a 50% mid-episode tip =
+        # 2.5 + 1.7 (ratchet) - 1.2 (bleed) = 3.0 > 2.5, so contact is
+        # EV-positive from the first unskilled attempt; a completed slide
+        # earns ~40 via the arrival kernel. Tipping is priced mildly because
+        # the upright/on-table/speed GATES already zero a tipped mug's
+        # income — unpayment enforces style, the bleed only breaks ties.
         self.rewards.reaching_object = RewTerm(
-            func=mdp.object_ee_distance, params={"std": 0.2}, weight=1.0
+            func=mdp.object_ee_distance, params={"std": 0.2}, weight=0.5
         )
+        # No tip fine at all: a tipped mug already earns nothing through the
+        # gates and wastes its episode — measured at any fine size, the policy
+        # hovers at the mug and refuses the touch. Style is enforced purely by
+        # unpayment.
+        self.rewards.mug_tipped_on_table = None
         self.rewards.looking_at_rim = None
         self.rewards.close_at_rim = None
         self.rewards.lifting_object = None
+        # Transport = progress ratchet (a parked mug earns nothing, ever) plus
+        # a tight arrival kernel that only pays AT the goal.
+        # Upright gate at ~53 degrees: a pushed mug rocks well past 30 and a
+        # gate that zeroes every real push teaches hovering, measured twice.
         self.rewards.object_goal_tracking = RewTerm(
-            func=mdp.object_goal_distance_on_table,
-            params={"std": 0.3, "max_speed": PUSH_SPEED_MAX, "command_name": "object_pose"},
-            weight=16.0,
+            func=mdp.object_goal_progress_on_table,
+            params={
+                "min_improvement": 0.005,
+                "min_up_cos": 0.6,
+                "max_speed": PUSH_SPEED_MAX,
+                "command_name": "object_pose",
+            },
+            weight=5.0,
         )
         self.rewards.object_goal_tracking_fine_grained = RewTerm(
             func=mdp.object_goal_distance_on_table,
-            params={"std": 0.05, "max_speed": PUSH_SPEED_MAX, "command_name": "object_pose"},
+            params={
+                "std": 0.05,
+                "min_up_cos": 0.6,
+                "max_speed": PUSH_SPEED_MAX,
+                "command_name": "object_pose",
+            },
             weight=16.0,
         )
 
-        # Pushing needs no pre-grasp bank: any contact en route moves the mug
-        # and the transport gradient takes over.
+        # No pre-contact bank for the slide: every episode starts from home.
         self.events.reset_arm_grasp_bank = None
 
         # A mug pushed off the slab is unrecoverable and the episode's income

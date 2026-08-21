@@ -89,7 +89,7 @@ OBJECT_USD_PATH = os.path.join(os.path.dirname(__file__), "assets", "usd", "mug_
 #   33.0 cm forward of the base plate center (toward the opposite arm),
 #   lying flat, handle pointing to the operator's left, blade edge facing the arm.
 BASE_PLATE_ENV = (-0.020, 0.4575)
-OBJECT_FORWARD_M = 0.570
+OBJECT_FORWARD_M = 0.630
 OBJECT_LATERAL_M = 0.0
 _SPAWN_X = BASE_PLATE_ENV[0] + OBJECT_LATERAL_M
 _SPAWN_Y = BASE_PLATE_ENV[1] - OBJECT_FORWARD_M
@@ -102,17 +102,19 @@ LIFT_HEIGHT = 0.08
 # stays well under it, a fling exceeds it several-fold.
 CARRY_SPEED_MAX = 0.75
 
-# Pre-grasp reset pose: open gripper hovering at the mug, probe-validated for
-# zero spawn contact and millimeter mug drift under the worst-case retreat
-# (scripts/probes/probe_bank_sanity.py). Interim values pending a
-# teleop-authored pose; regenerate or replace rather than hand-edit.
+# Pre-grasp reset pose: teleop-authored on the rig operator's own framing —
+# gripper straddling the mug at 26 mm/side (~100 mm gap) so the grasp is one
+# close command away. Re-validate with scripts/probes/probe_bank_sanity.py
+# after any spawn or rig change.
 GRASP_BANK_POSE = {
-    "follower_left_joint_0": -0.1017,
-    "follower_left_joint_1": 2.4731,
-    "follower_left_joint_2": 2.0438,
-    "follower_left_joint_3": -0.2029,
-    "follower_left_joint_4": -0.4480,
-    "follower_left_joint_5": -0.3167,
+    "follower_left_joint_0": 0.042,
+    "follower_left_joint_1": 2.425,
+    "follower_left_joint_2": 2.356,
+    "follower_left_joint_3": -1.011,
+    "follower_left_joint_4": -0.021,
+    "follower_left_joint_5": -0.100,
+    "follower_left_left_carriage_joint": 0.026,
+    "follower_left_right_carriage_joint": 0.026,
 }
 
 # Rim circle of the mug in its body frame, the one-wall pinch target for the
@@ -341,6 +343,12 @@ class TrossenMugLiftSceneCfg(InteractiveSceneCfg):
             "{ENV_REGEX_NS}/Object/collisions_base/.*",
         ],
     )
+    # Any robot body pressing the tabletop slab: scraping the table is never
+    # part of a correct pick or push.
+    arm_table_contact = NewtonContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/follower_left_.*",
+        filter_shape_prim_expr=["{ENV_REGEX_NS}/TableGuard.*"],
+    )
 
     # Static stand-in for the rig's tabletop collider, which is DISABLED in the
     # task USD overlay: the tabletop link belongs to the robot articulation and
@@ -393,13 +401,12 @@ class CommandsCfg:
         resampling_time_range=(5.0, 5.0),
         debug_vis=False,
         ranges=mdp.UniformPoseCommandCfg.Ranges(
-            # Reachable band for the left arm: out in front of it.
-            pos_x=(-0.12, 0.12),
-            pos_y=(-0.10, 0.05),
-            # z raised from (0.08, 0.25): goals barely off the slab let the
-            # policy score while hovering at table height — carry targets now
-            # sit clearly in the air.
-            pos_z=(0.15, 0.35),
+            # ONE fixed carry target, never resampled to a different point —
+            # the hardware protocol is a single tape-measured goal, and the
+            # demo policy should train against exactly that.
+            pos_x=(0.0, 0.0),
+            pos_y=(-0.03, -0.03),
+            pos_z=(0.25, 0.25),
             roll=(0.0, 0.0),
             pitch=(0.0, 0.0),
             yaw=(0.0, 0.0),
@@ -517,7 +524,15 @@ class RewardsCfg:
     # not jitter), and joint_vel covers the ARM joints only (a fast clamp-down
     # reads as high carriage velocity and must not be taxed). Weights sized to
     # outbid flail-scale motion, not exploration-scale motion.
-    action_rate = RewTerm(func=mdp.arm_action_rate_l2, weight=-1e-3)
+    # Scraping or pressing the tabletop with any robot body is never part of
+    # a correct pick or push.
+    table_scrape = RewTerm(
+        func=mdp.body_contact, weight=-2.0, params={"sensor_name": "arm_table_contact", "threshold": 1.0}
+    )
+    action_rate = RewTerm(func=mdp.arm_action_rate_l2, weight=-3e-3)
+    # Jerk targets erratic direction-flipping specifically; a smooth sustained
+    # motion pays action_rate but no jerk.
+    action_jerk = RewTerm(func=mdp.arm_action_jerk_l2, weight=-1e-3)
     joint_vel = RewTerm(
         func=mdp.joint_vel_l2, weight=-5e-4, params={"asset_cfg": SceneEntityCfg("robot", joint_names=[ARM_JOINTS])}
     )
