@@ -501,6 +501,21 @@ class RewardsCfg:
         params={"dist_threshold": 0.06, "rim_height": MUG_RIM_HEIGHT, "rim_radius": MUG_RIM_RADIUS},
         weight=0.5,
     )
+    # The teleop-authored pre-grasp as a joint-space attractor: a dense
+    # approach gradient whose optimum is the configuration one close command
+    # from a grasp.
+    pregrasp_match = RewTerm(
+        func=mdp.pregrasp_pose_match,
+        params={"pose": GRASP_BANK_POSE, "std": 0.5},
+        weight=1.0,
+    )
+    # The knock signal: mug motion while NOT held bleeds; a held carry is
+    # exempt. Punishes exactly the approach failure mode and nothing else.
+    mug_knocked = RewTerm(
+        func=mdp.mug_disturbed_ungrasped,
+        params={"sensor_name": "pad_object_contact", "contact_threshold": 0.5},
+        weight=-3.0,
+    )
     # Heavy bleed while the mug lies knocked over on the table. Tilt alone is
     # deliberately NOT punished — a one-wall pinch tilts a held mug — only the
     # tipped-AND-at-table-height state, so flick-lifts that end with the mug
@@ -540,10 +555,19 @@ class RewardsCfg:
     )
 
 
+from isaaclab.managers import CurriculumTermCfg as CurrTerm  # noqa: E402
+
+
 @configclass
 class CurriculumCfg:
-    """No curriculum. A penalty ramp would tax the only
-    motion the policy has reward for without paying for a grasp instead."""
+    """Reverse-curriculum anneal: bank starts begin AT the pre-grasp and the
+    start distribution grows back toward home over the first ~10k episodes
+    of steps, per Florensa reverse curriculum generation."""
+
+    grow_approach = CurrTerm(
+        func=mdp.anneal_reverse_curriculum,
+        params={"start_step": 0, "end_step": 240_000, "event_name": "reset_arm_grasp_bank"},
+    )
 
 
 @configclass
@@ -586,17 +610,18 @@ class EventCfg:
             "asset_cfg": SceneEntityCfg("object"),
         },
     )
-    # Pre-grasp initialization (standard fix for grasp-discovery failure —
-    # far-start exploration cannot find the close/lift income): half the
-    # episodes begin with the arm at GRASP_BANK_POSE inside the close gate,
-    # half from home so the approach stays in the data.
+    # Reverse-curriculum starts (Florensa): bank episodes begin at an
+    # interpolation between home and the teleop pre-grasp; the curriculum
+    # lowers alpha_min from 1 to 0, growing the start distribution back
+    # along the approach path as training proceeds.
     reset_arm_grasp_bank = EventTerm(
-        func=mdp.reset_arm_to_grasp_bank,
+        func=mdp.reset_arm_reverse_curriculum,
         mode="reset",
         params={
             "pose": GRASP_BANK_POSE,
             "bank_fraction": 0.5,
             "noise": 0.01,
+            "alpha_min": 1.0,
             "asset_cfg": SceneEntityCfg("robot"),
         },
     )

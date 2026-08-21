@@ -671,6 +671,102 @@ def object_goal_distance_held(
     )
 
 
+def pregrasp_pose_match(
+    env: ManagerBasedRLEnv,
+    pose: dict[str, float],
+    std: float = 0.5,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Dense kernel on the joint-space distance to THE pre-grasp configuration.
+
+    One authored demonstration defines the whole approach gradient: from
+    anywhere in the workspace the optimum is exactly the configuration whose
+    next action is the close command. Joint space, so no frames and no
+    object-geometry assumptions enter.
+    """
+    asset = env.scene[asset_cfg.name]
+    joint_ids, resolved = asset.find_joints(list(pose.keys()), preserve_order=True)
+    target = torch.tensor([pose[n] for n in resolved], device=env.device, dtype=torch.float32)
+    q = asset.data.joint_pos.torch[:, joint_ids]
+    distance = torch.linalg.vector_norm(q - target, dim=-1)
+    return _finite(1.0 - torch.tanh(distance / std))
+
+
+def mug_disturbed_ungrasped(
+    env: ManagerBasedRLEnv,
+    sensor_name: str,
+    contact_threshold: float = 0.5,
+    speed_clamp: float = 1.0,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """Mug speed while NOT held in an opposed grasp — the knock signal.
+
+    Bleeds for any mug motion the arm causes before it actually holds the
+    mug (approach knocks, brushes, bats); gates off entirely once both pads
+    press, so the grasp and carry are penalty-free. Hovering is neither
+    rewarded nor punished by this term.
+    """
+    obj = env.scene[object_cfg.name]
+    speed = torch.linalg.vector_norm(obj.data.root_lin_vel_w.torch, dim=-1).clamp(max=speed_clamp)
+    held = opposed_grasp(env, sensor_name, contact_threshold)
+    return _finite(torch.where(held, torch.zeros_like(speed), speed))
+
+
+def reset_arm_reverse_curriculum(
+    env: ManagerBasedRLEnv,
+    env_ids: torch.Tensor,
+    pose: dict[str, float],
+    bank_fraction: float,
+    noise: float,
+    alpha_min: float = 1.0,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+):
+    """Reverse-curriculum start states: interpolate home -> pre-grasp.
+
+    Selected envs start at ``q = home + alpha * (pose - home)`` with
+    ``alpha ~ U(alpha_min, 1)``: at ``alpha_min = 1`` every bank start is the
+    pre-grasp itself; as the curriculum lowers ``alpha_min`` toward 0 the
+    start distribution grows back along the approach path until home starts
+    dominate — the Florensa reverse curriculum on our own two anchors.
+    """
+    asset = env.scene[asset_cfg.name]
+    sel = torch.rand(env_ids.shape[0], device=env.device) < bank_fraction
+    if not sel.any():
+        return
+    ids = env_ids[sel]
+    joint_ids, resolved = asset.find_joints(list(pose.keys()), preserve_order=True)
+    target = torch.tensor([pose[n] for n in resolved], device=env.device, dtype=torch.float32)
+    home = asset.data.default_joint_pos.torch[ids][:, joint_ids]
+    alpha = sample_uniform(alpha_min, 1.0, (ids.shape[0], 1), env.device)
+    joint_pos = home + alpha * (target.unsqueeze(0) - home)
+    joint_pos += sample_uniform(-noise, noise, joint_pos.shape, joint_pos.device)
+    limits = asset.data.soft_joint_pos_limits.torch[ids[:, None], joint_ids]
+    joint_pos = joint_pos.clamp_(limits[..., 0], limits[..., 1])
+    asset.write_joint_position_to_sim_index(position=joint_pos, joint_ids=joint_ids, env_ids=ids)
+    asset.write_joint_velocity_to_sim_index(velocity=torch.zeros_like(joint_pos), joint_ids=joint_ids, env_ids=ids)
+
+
+def anneal_reverse_curriculum(
+    env: ManagerBasedRLEnv,
+    env_ids,
+    start_step: int = 0,
+    end_step: int = 240_000,
+    event_name: str = "reset_arm_grasp_bank",
+):
+    """Linearly grow the reverse curriculum's reach back toward home.
+
+    Lowers the reset event's ``alpha_min`` from 1 to 0 between
+    ``start_step`` and ``end_step`` env steps, then leaves it at 0 (bank
+    starts sampled along the ENTIRE approach path). Step-scheduled: simple,
+    deterministic, and resumable.
+    """
+    step = int(env.common_step_counter)
+    frac = min(max((step - start_step) / max(end_step - start_step, 1), 0.0), 1.0)
+    term = env.event_manager.get_term_cfg(event_name)
+    term.params["alpha_min"] = 1.0 - frac
+    return torch.tensor(term.params["alpha_min"])
+
+
 def reset_arm_to_grasp_bank(
     env: ManagerBasedRLEnv,
     env_ids: torch.Tensor,
