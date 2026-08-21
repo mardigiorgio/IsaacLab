@@ -519,11 +519,12 @@ def fingers_to_rim(
     center = root + rim_height * axis
     pads = asset.data.body_pos_w.torch[:, asset_cfg.body_ids]
     d = pads - center[:, None, :]
-    axial = (d * axis[:, None, :]).sum(dim=-1, keepdim=True)
-    planar = d - axial * axis[:, None, :]
-    planar_len = torch.linalg.vector_norm(planar, dim=-1, keepdim=True).clamp(min=1e-6)
-    nearest = center[:, None, :] + rim_radius * planar / planar_len
-    dist = torch.linalg.vector_norm(pads - nearest, dim=-1).max(dim=-1).values
+    axial = (d * axis[:, None, :]).sum(dim=-1)
+    planar = d - axial.unsqueeze(-1) * axis[:, None, :]
+    planar_len = torch.linalg.vector_norm(planar, dim=-1)
+    # closed-form point-to-circle distance: no division, no degenerate axis
+    # case (an on-axis point is rim_radius away in the planar direction).
+    dist = torch.sqrt(axial.square() + (planar_len - rim_radius).square()).max(dim=-1).values
     scale = torch.where(opposed_grasp(env, sensor_name, contact_threshold), 1.0, 0.1)
     return _finite((1.0 - torch.tanh(dist / std)) * scale)
 
