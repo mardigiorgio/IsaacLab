@@ -425,8 +425,13 @@ class ActionsCfg:
     # scale 0.25 (was 0.5): the commanded PD-target jump per step is a hard
     # kinematic speed bound the policy cannot learn around — halved after the
     # slow-mo review showed approach speeds no real rig should attempt.
+    # scale 0.1 (was 0.25): a rim pinch dies under commanded jitter that a
+    # push shrugs off — at init std ~1 the policy commands +/-scale rad of
+    # target jitter per step, and grasped starts measured seated clamps
+    # breaking within 1-2 steps at 0.25. The slide pins its own 0.25 (its
+    # recipe is frozen with trained baselines).
     arm_action = mdp.JointPositionActionCfg(
-        asset_name="robot", joint_names=[ARM_JOINTS], scale=0.25, use_default_offset=True, clip={".*": (-6.0, 6.0)}
+        asset_name="robot", joint_names=[ARM_JOINTS], scale=0.1, use_default_offset=True, clip={".*": (-6.0, 6.0)}
     )
     gripper_action = mdp.BinaryJointPositionActionCfg(
         asset_name="robot",

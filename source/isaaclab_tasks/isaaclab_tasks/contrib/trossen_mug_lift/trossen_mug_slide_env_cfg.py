@@ -171,6 +171,11 @@ class TrossenMugSlideEnvCfg(TrossenMugLiftEnvCfg):
     def __post_init__(self):
         super().__post_init__()
 
+        # Pinned to the slidev1 recipe: the lift base retunes its arm action
+        # scale for pinch survival, but the slide's trained ladder used 0.25
+        # and every future twin must match it.
+        self.actions.arm_action.scale = 0.25
+
         # ONE mug position across lift and slide, deliberately: a single
         # tape-measure placement serves both hardware protocols.
 
