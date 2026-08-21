@@ -679,9 +679,9 @@ class EventCfg:
             "bank_fraction": 0.5,
             "noise": 0.0,
             "alpha_min": 1.0,
-            # 50/25/25 (operator ruling): the mid-grasp subset restored at the
-            # measured clamp seat — the map of every lift that ever worked.
-            "grasped_fraction": 0.5,
+            # 50/50 ABLATION (operator ruling): in-hand subset OFF — its isolated
+            # contribution was never measured; takeoff-verbatim otherwise.
+            "grasped_fraction": 0.0,
             # 0.0035, the takeoff-proven seat: the policy trained with it reached
             # 36.3 reward and 50/50 home-start pickups; its minority ejections
             # are priced into those numbers. Reseating attempts (0.006, 0.0045)
