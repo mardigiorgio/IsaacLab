@@ -72,6 +72,17 @@ def main() -> int:
             f"[reset] pad-origin-to-mug: mean {pad_dist.mean() * 1000:6.1f} mm"
             f"  min {pad_dist.min() * 1000:6.1f} mm  max {pad_dist.max() * 1000:6.1f} mm"
         )
+        # Inside-the-mug test: pad origin's radial distance from the mug's
+        # vertical axis vs the rim radius, and its height vs the rim plane.
+        mug_root = obj.data.root_pos_w.torch[:, None, :]
+        rel = pad_pos - mug_root
+        radial = torch.linalg.vector_norm(rel[..., :2], dim=-1)
+        height = rel[..., 2]
+        for k in range(pad_pos.shape[1]):
+            r = radial[0, k] * 1000
+            h = height[0, k] * 1000
+            where = "INSIDE-CAVITY" if (r < 40 and 0 < h < 97) else ("ABOVE-RIM" if r < 40 else "OUTSIDE-WALL")
+            print(f"[reset] pad{k}: radial {r:6.1f} mm  height {h:6.1f} mm  -> {where}")
         zero = torch.zeros(args_cli.num_envs, env.unwrapped.action_manager.total_action_dim, device=env.unwrapped.device)
         with torch.inference_mode():
             for step in range(args_cli.steps):
