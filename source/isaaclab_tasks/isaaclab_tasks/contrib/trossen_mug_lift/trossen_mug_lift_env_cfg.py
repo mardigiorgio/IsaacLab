@@ -104,17 +104,16 @@ LIFT_HEIGHT = 0.08
 # stays well under it, a fling exceeds it several-fold.
 CARRY_SPEED_MAX = 0.75
 
-# Pre-grasp reset pose: the teleop-authored plan-view straddle with the pitch
-# joints solved so the pad faces engage the mug's upper wall — inner pad down
-# the cavity, outer pad clear of the wall, the rim circle passing between
-# them, fingertips clear of the table — so the grasp is one close command
-# away. Re-validate with scripts/probes/probe_bank_sanity.py after any spawn
-# or rig change.
+# Pre-grasp reset pose: operator-authored in the 1:1 pose lab — a rim-pinch
+# straddle with the fingertips entering just below the rim plane, inner pads
+# over the cavity, outer pads clear of the wall, so closing pinches the upper
+# wall and the grasp is one close command away. Re-validate with
+# scripts/probes/probe_bank_sanity.py after any spawn or rig change.
 GRASP_BANK_POSE = {
-    "follower_left_joint_0": 0.070,
-    "follower_left_joint_1": 2.094,
-    "follower_left_joint_2": 1.522,
-    "follower_left_joint_3": -0.630,
+    "follower_left_joint_0": 0.042,
+    "follower_left_joint_1": 1.978,
+    "follower_left_joint_2": 1.586,
+    "follower_left_joint_3": -0.753,
     "follower_left_joint_4": 0.000,
     "follower_left_joint_5": -0.043,
     "follower_left_left_carriage_joint": 0.021,
