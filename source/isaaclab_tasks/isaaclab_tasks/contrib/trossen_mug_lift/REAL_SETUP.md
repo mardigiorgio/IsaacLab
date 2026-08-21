@@ -9,12 +9,13 @@ lift-from-THE-spot / slide-from-THE-spot, and the rig must match.
 
 ## Mug placement (shared by BOTH tasks)
 
-1. Mark the point **63.0 cm forward** of the base-plate center, on the
-   centerline (zero lateral offset).
+1. Mark the table's lengthwise MIDPOINT on the centerline — halfway between
+   the two short edges (equivalently 45.75 cm forward of the base-plate
+   center), under the table camera.
 2. Place the mug's bottom-center on the mark, handle pointing toward the
    left arm's base plate (sim spawns the handle at +90° yaw toward the rig).
 
-Sim reference (env frame, meters): mug root at (-0.020, -0.1725, 0.021).
+Sim reference (env frame, meters): mug root at (-0.020, 0.000, 0.021).
 
 ## Slide task (mug A -> B without tipping)
 

@@ -89,7 +89,9 @@ OBJECT_USD_PATH = os.path.join(os.path.dirname(__file__), "assets", "usd", "mug_
 #   33.0 cm forward of the base plate center (toward the opposite arm),
 #   lying flat, handle pointing to the operator's left, blade edge facing the arm.
 BASE_PLATE_ENV = (-0.020, 0.4575)
-OBJECT_FORWARD_M = 0.630
+# Table lengthwise midpoint: halfway between the short edges, under the
+# table camera — reachable for teleop and a one-measurement placement.
+OBJECT_FORWARD_M = 0.4575
 OBJECT_LATERAL_M = 0.0
 _SPAWN_X = BASE_PLATE_ENV[0] + OBJECT_LATERAL_M
 _SPAWN_Y = BASE_PLATE_ENV[1] - OBJECT_FORWARD_M

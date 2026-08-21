@@ -51,7 +51,7 @@ class TrossenMugSlideEnvCfg(TrossenMugLiftEnvCfg):
         # mug farm kernel income. Marker visualization on, so the target is
         # visible in the viewer and training clips.
         self.commands.object_pose.ranges.pos_z = (OBJECT_REST_Z, OBJECT_REST_Z)
-        self.commands.object_pose.ranges.pos_x = (0.26, 0.26)
+        self.commands.object_pose.ranges.pos_x = (0.09, 0.09)
         self.commands.object_pose.ranges.pos_y = (-0.03, -0.03)
         self.commands.object_pose.debug_vis = True
 
