@@ -682,6 +682,11 @@ class EventCfg:
             # 50/25/25 (operator ruling): the mid-grasp subset restored at the
             # measured clamp seat — the map of every lift that ever worked.
             "grasped_fraction": 0.5,
+            # 0.0035, the takeoff-proven seat: the policy trained with it reached
+            # 36.3 reward and 50/50 home-start pickups; its minority ejections
+            # are priced into those numbers. Reseating attempts (0.006, 0.0045)
+            # both measured worse on the hold probe — refinement queued behind
+            # a per-subset instrument.
             "grasped_carriage_m": 0.0035,
             "asset_cfg": SceneEntityCfg("robot"),
         },
