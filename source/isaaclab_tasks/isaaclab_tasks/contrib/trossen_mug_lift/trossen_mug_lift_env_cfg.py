@@ -104,18 +104,21 @@ LIFT_HEIGHT = 0.08
 # stays well under it, a fling exceeds it several-fold.
 CARRY_SPEED_MAX = 0.75
 
-# Pre-grasp reset pose: teleop-authored, gripper open at 26 mm/side
-# (~100 mm gap) so the grasp is one close command away. Re-validate with
-# scripts/probes/probe_bank_sanity.py after any spawn or rig change.
+# Pre-grasp reset pose: the teleop-authored plan-view straddle with the pitch
+# joints solved so the pad faces engage the mug's upper wall — inner pad down
+# the cavity, outer pad clear of the wall, the rim circle passing between
+# them, fingertips clear of the table — so the grasp is one close command
+# away. Re-validate with scripts/probes/probe_bank_sanity.py after any spawn
+# or rig change.
 GRASP_BANK_POSE = {
-    "follower_left_joint_0": 0.042,
-    "follower_left_joint_1": 2.425,
-    "follower_left_joint_2": 2.356,
-    "follower_left_joint_3": -1.011,
-    "follower_left_joint_4": -0.021,
-    "follower_left_joint_5": -0.100,
-    "follower_left_left_carriage_joint": 0.026,
-    "follower_left_right_carriage_joint": 0.026,
+    "follower_left_joint_0": 0.070,
+    "follower_left_joint_1": 2.094,
+    "follower_left_joint_2": 1.522,
+    "follower_left_joint_3": -0.630,
+    "follower_left_joint_4": 0.000,
+    "follower_left_joint_5": -0.043,
+    "follower_left_left_carriage_joint": 0.021,
+    "follower_left_right_carriage_joint": 0.021,
 }
 
 # Rim circle of the mug in its body frame, the one-wall pinch target for the
@@ -446,7 +449,11 @@ class ObservationsCfg:
     class PolicyCfg(ObsGroup):
         """Reference Franka lift observation set: proprio + object + target + action."""
 
-        joint_pos = ObsTerm(func=mdp.joint_pos_rel)
+        # ABSOLUTE joint angles, deliberately: the grasp-bank reset retargets
+        # each env's default_joint_pos at its start pose (so zero action holds
+        # it), which makes relative-to-default readings alias — one physical
+        # pose would observe differently across envs.
+        joint_pos = ObsTerm(func=mdp.joint_pos)
         joint_vel = ObsTerm(func=mdp.joint_vel_rel)
         object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
         target_object_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "object_pose"})

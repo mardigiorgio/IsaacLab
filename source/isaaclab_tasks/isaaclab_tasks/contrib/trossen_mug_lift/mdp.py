@@ -730,20 +730,37 @@ def reset_arm_reverse_curriculum(
     dominate — the Florensa reverse curriculum on our own two anchors.
     """
     asset = env.scene[asset_cfg.name]
-    sel = torch.rand(env_ids.shape[0], device=env.device) < bank_fraction
-    if not sel.any():
-        return
-    ids = env_ids[sel]
     joint_ids, resolved = asset.find_joints(list(pose.keys()), preserve_order=True)
+    # The interpolation anchor must be the AUTHORED home. default_joint_pos is
+    # retargeted per episode below (so that zero action HOLDS each start pose),
+    # which makes the live tensor unusable as the anchor — cache it before the
+    # first retarget can touch it.
+    if not hasattr(env, "_bank_home_anchor"):
+        env._bank_home_anchor = asset.data.default_joint_pos.torch[0:1, joint_ids].clone()
+    home = env._bank_home_anchor.expand(env_ids.shape[0], -1)
+    sel = torch.rand(env_ids.shape[0], device=env.device) < bank_fraction
     target = torch.tensor([pose[n] for n in resolved], device=env.device, dtype=torch.float32)
-    home = asset.data.default_joint_pos.torch[ids][:, joint_ids]
-    alpha = sample_uniform(alpha_min, 1.0, (ids.shape[0], 1), env.device)
-    joint_pos = home + alpha * (target.unsqueeze(0) - home)
-    joint_pos += sample_uniform(-noise, noise, joint_pos.shape, joint_pos.device)
-    limits = asset.data.soft_joint_pos_limits.torch[ids[:, None], joint_ids]
-    joint_pos = joint_pos.clamp_(limits[..., 0], limits[..., 1])
-    asset.write_joint_position_to_sim_index(position=joint_pos, joint_ids=joint_ids, env_ids=ids)
-    asset.write_joint_velocity_to_sim_index(velocity=torch.zeros_like(joint_pos), joint_ids=joint_ids, env_ids=ids)
+    alpha = sample_uniform(alpha_min, 1.0, (env_ids.shape[0], 1), env.device)
+    start = home + alpha * (target.unsqueeze(0) - home)
+    start = start + sample_uniform(-noise, noise, start.shape, start.device)
+    limits = asset.data.soft_joint_pos_limits.torch[env_ids[:, None], joint_ids]
+    start = torch.where(sel.unsqueeze(1), start.clamp(limits[..., 0], limits[..., 1]), home)
+    # Zero action must HOLD the start pose: with a home-anchored offset the PD
+    # rips a banked arm back toward home on the first steps — through the mug,
+    # for an engaged pre-grasp. The arm action term's offset is a CLONE of
+    # default_joint_pos taken at construction, so the retarget must be written
+    # into the term's own tensor; writes to the data tensor never reach the PD
+    # path. Home envs get home written back, undoing any earlier retarget.
+    # Requires ABSOLUTE joint_pos observations: relative-to-default obs would
+    # alias across start poses.
+    term = env.action_manager.get_term("arm_action")
+    if not hasattr(env, "_bank_offset_cols"):
+        env._bank_offset_cols = torch.tensor(
+            [resolved.index(n) for n in term._joint_names], device=env.device
+        )
+    term._offset[env_ids] = start[:, env._bank_offset_cols]
+    asset.write_joint_position_to_sim_index(position=start, joint_ids=joint_ids, env_ids=env_ids)
+    asset.write_joint_velocity_to_sim_index(velocity=torch.zeros_like(start), joint_ids=joint_ids, env_ids=env_ids)
 
 
 def anneal_reverse_curriculum(

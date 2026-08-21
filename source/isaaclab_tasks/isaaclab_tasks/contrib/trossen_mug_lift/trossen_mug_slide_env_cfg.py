@@ -16,6 +16,8 @@ fixed-step contact distorts normal forces and tips the mug.
 """
 
 from isaaclab.managers import EventTermCfg as EventTerm
+from isaaclab.managers import ObservationGroupCfg as ObsGroup
+from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
@@ -31,6 +33,34 @@ from .trossen_mug_lift_env_cfg import (
 # stays under it, a smack exceeds it immediately. Loose enough that contact
 # transients do not zero honest pushes.
 PUSH_SPEED_MAX = 0.75
+
+
+@configclass
+class SlideObservationsCfg:
+    """The slide's observation set, pinned verbatim to the slidev1 recipe.
+
+    The lift moved to ABSOLUTE joint angles because its grasp-bank reset
+    retargets default_joint_pos per env; the slide has no bank and its
+    trained baselines (the slidev1 K-ladder) observed relative-to-default
+    angles, so the frozen recipe is declared here rather than inherited."""
+
+    @configclass
+    class PolicyCfg(ObsGroup):
+        joint_pos = ObsTerm(func=mdp.joint_pos_rel)
+        joint_vel = ObsTerm(func=mdp.joint_vel_rel)
+        object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
+        target_object_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "object_pose"})
+        # The raw last action feeds back into the policy input; unclipped, the
+        # loop goes exponentially unstable once the network's feedback gain
+        # crosses 1, which ends in a NaN in the PPO update. The clip bounds the
+        # loop; 6 sigma does not bind for a healthy policy.
+        actions = ObsTerm(func=mdp.last_action, clip=(-6.0, 6.0))
+
+        def __post_init__(self):
+            self.enable_corruption = True
+            self.concatenate_terms = True
+
+    policy: PolicyCfg = PolicyCfg()
 
 
 @configclass
@@ -132,6 +162,7 @@ class TrossenMugSlideEnvCfg(TrossenMugLiftEnvCfg):
     """Slide task: shared scene/actions/observations from the lift base;
     behavioral managers replaced wholesale by the slide's own."""
 
+    observations: SlideObservationsCfg = SlideObservationsCfg()
     rewards: SlideRewardsCfg = SlideRewardsCfg()
     terminations: SlideTerminationsCfg = SlideTerminationsCfg()
     events: SlideEventCfg = SlideEventCfg()
