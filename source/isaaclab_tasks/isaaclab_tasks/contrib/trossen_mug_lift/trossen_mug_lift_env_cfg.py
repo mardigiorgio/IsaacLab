@@ -537,19 +537,20 @@ class RewardsCfg:
         params={"sensor_name": "pad_object_contact", "threshold": 0.5},
         weight=2.0,
     )
-    mug_knocked = RewTerm(
-        func=mdp.mug_disturbed_ungrasped,
-        params={"sensor_name": "pad_object_contact", "contact_threshold": 0.5},
-        weight=-0.5,
-    )
     # Heavy bleed while the mug lies knocked over on the table. Tilt alone is
     # deliberately NOT punished — a one-wall pinch tilts a held mug — only the
     # tipped-AND-at-table-height state, so flick-lifts that end with the mug
     # on its side pay for it every remaining step.
-    mug_tipped_on_table = RewTerm(func=mdp.mug_on_side, weight=-5.0)
+    # NO calm gate on raw lift income and NO tip fine: both starved the lift
+    # mode into extinction during learning (a jittery early carry violates any
+    # speed gate; a dropped attempt tips and bleeds). Style is enforced by
+    # UNPAYMENT where it matters — the transport terms below stay calm-gated,
+    # so a fling earns lift income but never delivery income. Same rule the
+    # slide converged on: contact must never lose money, holding must always
+    # make money.
     lifting_object = RewTerm(
         func=mdp.object_is_lifted,
-        params={"minimal_height": LIFT_HEIGHT, "max_speed": CARRY_SPEED_MAX},
+        params={"minimal_height": LIFT_HEIGHT},
         weight=15.0,
     )
     object_goal_tracking = RewTerm(
