@@ -91,6 +91,8 @@ def main() -> int:
         )  # 0 = home/random, 1 = pre-grasp, 2 = grasped
 
         n = args_cli.num_envs
+        R_IN, R_OUT = 0.035, 0.0388
+        grip_type = torch.zeros(n, dtype=torch.long, device=u.device)  # 0 none, 1 straddle, 2 inside
         min_pad_dist = torch.full((n,), float("inf"), device=u.device)
         contact_steps = torch.zeros(n, device=u.device)
         both_pad_steps = torch.zeros(n, device=u.device)
@@ -113,6 +115,18 @@ def main() -> int:
                 both_pad_steps += (forces > 0.01).all(dim=1).float()
                 gate_steps += opposed_grasp(u, "pad_object_contact", 0.01).float()
                 pos = obj.data.root_pos_w.torch
+                rising = (pos[:, 2] - spawn[:, 2]) > 0.04
+                if rising.any():
+                    # grip type AT lift time: pad radial positions in the mug's
+                    # planar frame decide straddle vs both-fingers-inside
+                    rel = pad_pos - pos[:, None, :]
+                    radial = torch.linalg.vector_norm(rel[..., :2], dim=-1)
+                    inside = radial < R_IN
+                    outside = radial > R_OUT
+                    straddle = inside.any(dim=1) & outside.any(dim=1)
+                    both_in = inside.all(dim=1)
+                    grip_type = torch.where(rising & straddle & (grip_type == 0), 1, grip_type)
+                    grip_type = torch.where(rising & both_in & (grip_type == 0), 2, grip_type)
                 max_mug_rise = torch.maximum(max_mug_rise, pos[:, 2] - spawn[:, 2])
                 max_mug_drift = torch.maximum(
                     max_mug_drift, torch.linalg.vector_norm(pos[:, :2] - spawn[:, :2], dim=1)
@@ -135,6 +149,14 @@ def main() -> int:
                 f" | clamped>5steps {clamped:2d} | lifted>4cm {lifted:2d} | knocked {knocked:2d}"
                 f" | median min-pad-dist {min_pad_dist[m].median()*1000:6.1f} mm"
             )
+        lifted_mask = max_mug_rise > 0.04
+        n_lift = int(lifted_mask.sum())
+        n_straddle = int((grip_type == 1).sum())
+        n_inside = int((grip_type == 2).sum())
+        print(
+            f"[grip-type ] of {n_lift} lifts: straddle {n_straddle}, both-fingers-INSIDE {n_inside},"
+            f" other/ambiguous {n_lift - n_straddle - n_inside}"
+        )
         # instrument audit: the reward gate vs raw forces must agree
         agree = (gate_steps == both_pad_steps).all()
         print(f"[audit] opposed_grasp gate vs raw both-pad forces: {'AGREE' if agree else 'DISAGREE'}"
