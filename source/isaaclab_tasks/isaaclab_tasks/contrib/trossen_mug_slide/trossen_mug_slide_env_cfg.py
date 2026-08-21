@@ -6,31 +6,45 @@
 """Trossen Stationary AI mug SLIDE: push the mug from its tape-measure spawn
 to a commanded position on the table WITHOUT tipping it.
 
-Shares the lift's scene, assets, actions and observations, but every
-BEHAVIORAL manager (rewards, events, terminations, curriculum) is declared
-complete in this file and replaces the inherited one wholesale — nothing the
-lift adds can flow into the slide implicitly. The grasp machinery is absent
-by construction: pushing is discoverable from plain reach shaping, and the
-physics of interest is sustained frictional sliding — the regime where
-fixed-step contact distorts normal forces and tips the mug.
+A standalone task package, isaaclab-style: every manager is declared in this
+file; nothing is inherited from the lift task, so no lift retune can leak into
+the slide's frozen slidev1 recipe. The PLATFORM pieces — rig scene, physics
+stack, wiring constants — are imported from the mug-lift package the way
+isaaclab tasks import robots from ``isaaclab_assets``: they define the shared
+Stationary AI setup, not either task's behavior, and the adaptive-vs-fixed
+comparison requires both tasks to share them exactly.
+
+The grasp machinery is absent by construction: pushing is discoverable from
+plain reach shaping, and the physics of interest is sustained frictional
+sliding — the regime where fixed-step contact distorts normal forces and tips
+the mug.
 """
 
+from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
+from isaaclab.markers.config import FRAME_MARKER_CFG
+from isaaclab.sensors import FrameTransformerCfg
+from isaaclab.sensors.frame_transformer import OffsetCfg
 from isaaclab.utils.configclass import configclass
 
-from . import mdp
-from .trossen_mug_lift_env_cfg import (
+from isaaclab_tasks.contrib.trossen_mug_lift.trossen_mug_lift_env_cfg import (
     ARM_JOINTS,
+    BASE_LINK,
+    EE_LINK,
+    EE_TCP_OFFSET,
     GRIPPER_JOINT,
     GRIPPER_JOINT_R,
     OBJECT_REST_Z,
-    TrossenMugLiftEnvCfg,
+    TrossenMugLiftPhysicsCfg,
+    TrossenMugLiftSceneCfg,
 )
+
+from . import mdp
 
 # Push speed cap [m/s]: below the lift task's carry cap — a controlled push
 # stays under it, a smack exceeds it immediately. Loose enough that contact
@@ -39,10 +53,36 @@ PUSH_SPEED_MAX = 0.75
 
 
 @configclass
+class SlideCommandsCfg:
+    object_pose = mdp.UniformPoseCommandCfg(
+        asset_name="robot",
+        body_name=EE_LINK,
+        resampling_time_range=(5.0, 5.0),
+        # Marker visualization on, so the target is visible in the viewer and
+        # training clips.
+        debug_vis=True,
+        ranges=mdp.UniformPoseCommandCfg.Ranges(
+            # Goal ON the table at the SIDE edge across from the mounted
+            # camera, one mug-base-radius before the rail, nudged inward per
+            # the operator view. Probe-measured mapping
+            # (scripts/probes/probe_goal_map.py): command frame IS the env
+            # frame. ONE fixed goal, never resampled elsewhere — the hardware
+            # protocol is a single tape-measured target.
+            pos_x=(0.285, 0.285),
+            pos_y=(0.0, 0.0),
+            pos_z=(OBJECT_REST_Z, OBJECT_REST_Z),
+            roll=(0.0, 0.0),
+            pitch=(0.0, 0.0),
+            yaw=(0.0, 0.0),
+        ),
+    )
+
+
+@configclass
 class SlideActionsCfg:
     """The slide's action set, pinned verbatim to the slidev1 recipe.
 
-    The lift base retunes its actions for pinch survival (smaller arm scale,
+    The lift retunes its actions for pinch survival (smaller arm scale,
     position-controlled gripper); the slide's trained ladder used arm scale
     0.25 and the binary gripper, so the frozen recipe is declared here."""
 
@@ -59,12 +99,8 @@ class SlideActionsCfg:
 
 @configclass
 class SlideObservationsCfg:
-    """The slide's observation set, pinned verbatim to the slidev1 recipe.
-
-    The lift moved to ABSOLUTE joint angles because its grasp-bank reset
-    retargets default_joint_pos per env; the slide has no bank and its
-    trained baselines (the slidev1 K-ladder) observed relative-to-default
-    angles, so the frozen recipe is declared here rather than inherited."""
+    """The slide's observation set, pinned verbatim to the slidev1 recipe
+    (relative-to-default joint angles, as its trained baselines observed)."""
 
     @configclass
     class PolicyCfg(ObsGroup):
@@ -180,32 +216,73 @@ class SlideCurriculumCfg:
 
 
 @configclass
-class TrossenMugSlideEnvCfg(TrossenMugLiftEnvCfg):
-    """Slide task: shared scene/actions/observations from the lift base;
-    behavioral managers replaced wholesale by the slide's own."""
+class TrossenMugSlideEnvCfg(ManagerBasedRLEnvCfg):
+    """The slide task, assembled from its own managers on the shared rig scene.
 
-    actions: SlideActionsCfg = SlideActionsCfg()
+    ONE mug position across lift and slide, deliberately: a single
+    tape-measure placement serves both hardware protocols."""
+
+    scene: TrossenMugLiftSceneCfg = TrossenMugLiftSceneCfg(num_envs=8192, env_spacing=2.5)
     observations: SlideObservationsCfg = SlideObservationsCfg()
+    actions: SlideActionsCfg = SlideActionsCfg()
+    commands: SlideCommandsCfg = SlideCommandsCfg()
     rewards: SlideRewardsCfg = SlideRewardsCfg()
     terminations: SlideTerminationsCfg = SlideTerminationsCfg()
     events: SlideEventCfg = SlideEventCfg()
     curriculum: SlideCurriculumCfg = SlideCurriculumCfg()
 
+    def validate_config(self):
+        """Aim the recording camera at env_0's workspace.
+
+        The camera frames env_0 in WORLD coordinates, env_0's grid origin
+        depends on the final num_envs, and CLI overrides land after
+        construction — only this hook sees the real count. Mirrors
+        ``cloner.grid_transforms`` for index 0 (ii=jj=0)."""
+        import math as _math  # noqa: PLC0415
+
+        n = max(int(self.scene.num_envs), 1)
+        num_rows = _math.ceil(n / _math.sqrt(n))
+        num_cols = _math.ceil(n / num_rows)
+        ox = (num_rows - 1) / 2 * self.scene.env_spacing
+        oy = -(num_cols - 1) / 2 * self.scene.env_spacing
+        self.sim.default_visualizer_cfg.eye = (ox - 0.02, oy - 1.4, 0.65)
+        self.sim.default_visualizer_cfg.lookat = (ox - 0.02, oy + 0.15, 0.02)
+
     def __post_init__(self):
-        super().__post_init__()
+        # Exact 30 Hz control (decimation 3 x dt); dt is the closest integer-
+        # decimation solution to a 10 ms physics step at that exact rate.
+        # 5 s episodes. Identical to the lift's boundary by construction: the
+        # adaptive-vs-fixed comparison holds the control rate across tasks.
+        self.decimation = 3
+        self.episode_length_s = 5.0
+        self.sim.dt = 1 / 90
+        self.sim.render_interval = self.decimation
+        # Recorded video camera: FRONT view facing the Trossen (the arm faces
+        # -Y; the camera sits beyond the mug on -Y looking back at the arm),
+        # framing env_0's workspace instead of the whole grid.
+        from isaaclab_visualizers.newton import NewtonVisualizerCfg  # noqa: PLC0415
 
-        # ONE mug position across lift and slide, deliberately: a single
-        # tape-measure placement serves both hardware protocols.
+        self.sim.default_visualizer_cfg = NewtonVisualizerCfg(
+            headless=True, eye=(-0.02, -0.55, 0.3), lookat=(-0.02, 0.2, 0.1)
+        )
+        self.sim.physics = TrossenMugLiftPhysicsCfg()
 
-        # Goal ON the table at the SIDE edge across from the mounted camera,
-        # one mug-base-radius before the rail, nudged inward per the operator
-        # view. Probe-measured mapping (scripts/probes/probe_goal_map.py):
-        # command frame IS the env frame. Marker visualization on, so the
-        # target is visible in the viewer and training clips.
-        self.commands.object_pose.ranges.pos_z = (OBJECT_REST_Z, OBJECT_REST_Z)
-        self.commands.object_pose.ranges.pos_x = (0.285, 0.285)
-        self.commands.object_pose.ranges.pos_y = (0.0, 0.0)
-        self.commands.object_pose.debug_vis = True
+        # EE frame sensor at the true grasp point (finger midpoint).
+        marker_cfg = FRAME_MARKER_CFG.copy()
+        marker_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
+        marker_cfg.prim_path = "/Visuals/FrameTransformer"
+        self.scene.ee_frame = FrameTransformerCfg(
+            prim_path="{ENV_REGEX_NS}/Robot/" + BASE_LINK,
+            debug_vis=False,
+            visualizer_cfg=marker_cfg,
+            target_frames=[
+                FrameTransformerCfg.FrameCfg(
+                    prim_path="{ENV_REGEX_NS}/Robot/" + EE_LINK,
+                    name="end_effector",
+                    offset=OffsetCfg(pos=list(EE_TCP_OFFSET)),
+                ),
+            ],
+        )
 
 
 @configclass

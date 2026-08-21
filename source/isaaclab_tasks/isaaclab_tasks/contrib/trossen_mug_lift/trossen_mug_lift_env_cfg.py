@@ -483,11 +483,20 @@ class ObservationsCfg:
 
 @configclass
 class RewardsCfg:
-    """Classic Franka cube-lift shaping with transport-weighted tight tracking:
-    reach / lift / goal-track / tight fine track / action penalties.
-    minimal_height re-based for this object. Serious income exists only AT the
-    commanded goal; the broad kernel keeps gradient far from the goal. The
-    grasp-discovery burden is carried by the reset bank, not by a touch term."""
+    """Reference Franka cube-lift shaping plus the literature-backed grasp
+    additions, and NOTHING from the slide task.
+
+    Two provenances only:
+    - isaac-sim reference lift: reach / lift(15) / goal-track(16, std 0.3) /
+      fine(5, std 0.05) / action_rate(-1e-4) / joint_vel(-1e-4), no speed
+      gates, no contact fines, no jerk or scrape terms.
+    - the commissioned pre-grasp literature (DemoGrasp / dexsuite / Florensa):
+      pregrasp_match, approach-flow terms, grasp-hold reward; discovery is
+      carried by the reset bank and reverse curriculum, not by fines.
+
+    The slide's smoothing/scrape/gate structure lives ONLY in the slide's own
+    SlideRewardsCfg: those weights are sized to suppress flailing in a push
+    task and overpower pinch exploration here."""
 
     # Rim target, not the root: the root is the mug's bottom center, which the
     # TCP cannot reach without penetration — its gradient optimum is a press
@@ -498,25 +507,21 @@ class RewardsCfg:
         params={"std": 0.1, "rim_height": MUG_RIM_HEIGHT, "rim_radius": MUG_RIM_RADIUS},
         weight=1.0,
     )
-    # CARRY_SPEED_MAX gates every income term that pays while the mug is
-    # airborne: a deliberate carry stays well under it, a fling exceeds it by
-    # an order of magnitude — ballistic flight earns nothing, so the flick
-    # channel has no revenue and the tip penalty prices its landing.
     # Approach geometry, not just proximity: pays for the finger axis aiming
     # at the same rim point reach pulls toward, so the pinch arrives
     # nose-first with one pad either side of the wall.
     looking_at_rim = RewTerm(
         func=mdp.mug_rim_look_at,
         params={"rim_height": MUG_RIM_HEIGHT, "rim_radius": MUG_RIM_RADIUS},
-        weight=0.25,
+        weight=0.5,
     )
-    # Keeps the binary close channel alive: pays for COMMANDING close within
-    # 6 cm of the rim target — action-based (no contact needed, not a touch
-    # bonus) and proximity-gated (not spammable from afar).
+    # Keeps the close channel alive: pays for COMMANDING close within 6 cm of
+    # the rim target — action-based (no contact needed, not a touch bonus)
+    # and proximity-gated (not spammable from afar).
     close_at_rim = RewTerm(
         func=mdp.close_near_rim,
         params={"dist_threshold": 0.06, "rim_height": MUG_RIM_HEIGHT, "rim_radius": MUG_RIM_RADIUS},
-        weight=0.25,
+        weight=0.5,
     )
     # The teleop-authored pre-grasp as a joint-space attractor: a dense
     # approach gradient whose optimum is the configuration one close command
@@ -524,61 +529,36 @@ class RewardsCfg:
     pregrasp_match = RewTerm(
         func=mdp.pregrasp_pose_match,
         params={"pose": GRASP_BANK_POSE, "std": 0.5},
-        weight=0.5,
+        weight=1.0,
     )
     # The knock signal: mug motion while NOT held bleeds; a held carry is
     # exempt. Punishes exactly the approach failure mode and nothing else.
-    # The rung between hover and airborne: a held clamp pays per step, so the
-    # close that precedes every lift has its own gradient. Scripted-grasp probe:
-    # close-then-raise from the bank pose lifts 100% of envs, so the ladder,
-    # not the physics, is what training has to climb.
-    grasping = RewTerm(
-        func=mdp.mug_grasped,
-        params={"sensor_name": "pad_object_contact", "threshold": 0.5},
-        weight=2.0,
-    )
-    # Heavy bleed while the mug lies knocked over on the table. Tilt alone is
-    # deliberately NOT punished — a one-wall pinch tilts a held mug — only the
-    # tipped-AND-at-table-height state, so flick-lifts that end with the mug
-    # on its side pay for it every remaining step.
-    # NO calm gate on raw lift income and NO tip fine: both starved the lift
-    # mode into extinction during learning (a jittery early carry violates any
-    # speed gate; a dropped attempt tips and bleeds). Style is enforced by
-    # UNPAYMENT where it matters — the transport terms below stay calm-gated,
-    # so a fling earns lift income but never delivery income. Same rule the
-    # slide converged on: contact must never lose money, holding must always
-    # make money.
+    # NO grasp/contact term, deliberately (operator ruling): a hold annuity
+    # made clamp-and-hold-at-table the reward optimum. Picking up IS the
+    # objective, so height progress is the only paid use of the fingers —
+    # dense (every millimeter of raise pays), reaching weight 15 at the
+    # 8 cm carry height the goal terms gate on.
     lifting_object = RewTerm(
-        func=mdp.object_is_lifted,
-        params={"minimal_height": LIFT_HEIGHT},
+        func=mdp.object_lift_progress,
+        params={"rest_height": OBJECT_REST_Z, "target_height": LIFT_HEIGHT},
         weight=15.0,
     )
     object_goal_tracking = RewTerm(
         func=mdp.object_goal_distance,
-        params={"std": 0.3, "minimal_height": LIFT_HEIGHT, "max_speed": CARRY_SPEED_MAX, "command_name": "object_pose"},
+        params={"std": 0.3, "minimal_height": LIFT_HEIGHT, "command_name": "object_pose"},
         weight=16.0,
     )
     object_goal_tracking_fine_grained = RewTerm(
         func=mdp.object_goal_distance,
-        params={"std": 0.02, "minimal_height": LIFT_HEIGHT, "max_speed": CARRY_SPEED_MAX, "command_name": "object_pose"},
-        weight=16.0,
+        params={"std": 0.05, "minimal_height": LIFT_HEIGHT, "command_name": "object_pose"},
+        weight=5.0,
     )
-    # Erratic-arm suppression, gripper exempt: the action-rate penalty covers
-    # the ARM dims only (a binary open/close flip is grasp-timing exploration,
-    # not jitter), and joint_vel covers the ARM joints only (a fast clamp-down
-    # reads as high carriage velocity and must not be taxed). Weights sized to
-    # outbid flail-scale motion, not exploration-scale motion.
-    # Scraping or pressing the tabletop with any robot body is never part of
-    # a correct pick or push.
-    table_scrape = RewTerm(
-        func=mdp.body_contact, weight=-2.0, params={"sensor_name": "arm_table_contact", "threshold": 1.0}
-    )
-    action_rate = RewTerm(func=mdp.arm_action_rate_l2, weight=-3e-3)
-    # Jerk targets erratic direction-flipping specifically; a smooth sustained
-    # motion pays action_rate but no jerk.
-    action_jerk = RewTerm(func=mdp.arm_action_jerk_l2, weight=-1e-3)
+    # Reference-scale smoothing, and only reference-scale: the slide's
+    # 30x-heavier action-rate/jerk/scrape stack suppresses exactly the
+    # exploration a pinch needs.
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
     joint_vel = RewTerm(
-        func=mdp.joint_vel_l2, weight=-5e-4, params={"asset_cfg": SceneEntityCfg("robot", joint_names=[ARM_JOINTS])}
+        func=mdp.joint_vel_l2, weight=-1e-4, params={"asset_cfg": SceneEntityCfg("robot")}
     )
 
 

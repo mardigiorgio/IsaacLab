@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Sim2real variant of the Trossen mug lift: the domain-randomized TEACHER
+"""Sim2real variant of the Trossen mug slide: the domain-randomized TEACHER
 environment for the teacher->student distillation pipeline.
 
 The randomization set mirrors the in-house-validated G1 walking recipe
@@ -21,7 +21,7 @@ from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils.configclass import configclass
 
 from . import mdp
-from .trossen_mug_lift_env_cfg import TrossenMugLiftEnvCfg
+from .trossen_mug_slide_env_cfg import TrossenMugSlideEnvCfg
 
 
 def _apply_teacher_dr(cfg) -> None:
@@ -74,8 +74,8 @@ def _apply_teacher_dr(cfg) -> None:
 
 
 @configclass
-class TrossenMugLiftTeacherEnvCfg(TrossenMugLiftEnvCfg):
-    """Lift teacher: lift rewards + dynamics randomization, clean obs."""
+class TrossenMugSlideTeacherEnvCfg(TrossenMugSlideEnvCfg):
+    """Slide teacher: slidev1 rewards + dynamics randomization, clean obs."""
 
     def __post_init__(self):
         super().__post_init__()

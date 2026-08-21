@@ -859,6 +859,25 @@ def _pad_force_mags(env: ManagerBasedRLEnv, sensor_name: str) -> torch.Tensor:
     return torch.linalg.vector_norm(net, dim=-1).nan_to_num(0.0)
 
 
+def object_lift_progress(
+    env: ManagerBasedRLEnv,
+    rest_height: float,
+    target_height: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """Dense lift kernel: 0 at rest height, 1 at target height, linear between.
+
+    A binary above-target term has zero marginal value for every centimeter
+    below the target, so a policy holding the object at table level is at a
+    reward optimum (measured: clamp held 10.3 steps/ep, airborne 1.3 steps/ep
+    under the binary form). Height progress pays every millimeter of raise,
+    and pays NOTHING for contact alone — picking up is the only paid use of
+    the fingers."""
+    obj = env.scene[object_cfg.name]
+    z = obj.data.root_pos_w.torch[:, 2]
+    return _finite(((z - rest_height) / (target_height - rest_height)).clamp(0.0, 1.0))
+
+
 def mug_grasped(env: ManagerBasedRLEnv, sensor_name: str, threshold: float) -> torch.Tensor:
     """Reward form of the opposed-grasp gate: 1 while both pads clamp the mug.
 
