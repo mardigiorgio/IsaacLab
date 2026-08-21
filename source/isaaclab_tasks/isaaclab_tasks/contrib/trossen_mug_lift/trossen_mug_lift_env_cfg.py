@@ -336,6 +336,17 @@ class TrossenMugLiftSceneCfg(InteractiveSceneCfg):
         prim_path="{ENV_REGEX_NS}/Robot/follower_left_gripper_.*",
         filter_shape_prim_expr=["{ENV_REGEX_NS}/Object/collisions_.*/.*"],
     )
+    # Per-pad views of the same contacts: upstream's success_reward gates on
+    # named per-finger sensors (thumb + fingers); on a parallel jaw the left
+    # pad stands in for the thumb and the right pad for the finger set.
+    pad_left_contact = NewtonContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/follower_left_gripper_left",
+        filter_shape_prim_expr=["{ENV_REGEX_NS}/Object/collisions_.*/.*"],
+    )
+    pad_right_contact = NewtonContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/follower_left_gripper_right",
+        filter_shape_prim_expr=["{ENV_REGEX_NS}/Object/collisions_.*/.*"],
+    )
     # NON-GRIPPER left-arm links pressing the mug's BODY (wall sectors + base):
     # the no-batting rule. The finger pads are deliberately excluded — pads
     # brushing the body is a normal part of a grasp attempt, and penalizing it
@@ -554,6 +565,9 @@ class RewardsCfg:
             "rot_std": 1.0e6,
             "command_name": "object_pose",
             "align_asset_cfg": SceneEntityCfg("object"),
+            "thumb_name": "pad_left_contact",
+            "finger_names": ["pad_right_contact"],
+            "contact_threshold": 0.01,
         },
     )
 
@@ -634,7 +648,7 @@ class EventCfg:
         params={
             "pose": GRASP_BANK_POSE,
             "bank_fraction": 0.5,
-            "noise": 0.01,
+            "noise": 0.0,
             "alpha_min": 1.0,
             # Half the bank starts begin mid-grasp at the measured clamp seat
             # (probe_scripted_grasp: seat ~3.2 mm, 3.6 N, 100% scripted lifts).
