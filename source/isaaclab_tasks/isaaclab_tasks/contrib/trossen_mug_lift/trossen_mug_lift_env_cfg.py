@@ -679,9 +679,9 @@ class EventCfg:
             "bank_fraction": 0.5,
             "noise": 0.0,
             "alpha_min": 1.0,
-            # 50/50 ABLATION (operator ruling): in-hand subset OFF — its isolated
-            # contribution was never measured; takeoff-verbatim otherwise.
-            "grasped_fraction": 0.0,
+            # 50/25/25 with TRUE in-hand starts: the grasped subset raises the
+            # mug 15 mm off the table, supported by the seated clamp.
+            "grasped_fraction": 0.5,
             # 0.0035, the takeoff-proven seat: the policy trained with it reached
             # 36.3 reward and 50/50 home-start pickups; its minority ejections
             # are priced into those numbers. Reseating attempts (0.006, 0.0045)
