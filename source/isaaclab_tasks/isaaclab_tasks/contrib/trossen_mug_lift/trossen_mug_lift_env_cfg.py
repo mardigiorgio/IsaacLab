@@ -413,7 +413,9 @@ class CommandsCfg:
         asset_name="robot",
         body_name=EE_LINK,
         resampling_time_range=(5.0, 5.0),
-        debug_vis=False,
+        # Marker visualization on, matching the slide: the carry target is
+        # visible in the viewer and training clips.
+        debug_vis=True,
         ranges=mdp.UniformPoseCommandCfg.Ranges(
             # ONE fixed carry target, never resampled to a different point —
             # the hardware protocol is a single tape-measured goal, and the
@@ -572,6 +574,12 @@ class RewardsCfg:
         func=mdp.mug_grasped,
         params={"sensor_name": "pad_object_contact", "threshold": 0.01},
         weight=0.75,
+    )
+
+    contact_count = RewTerm(
+        func=mdp.pad_contact_count,
+        params={"sensor_name": "pad_object_contact", "threshold": 0.01},
+        weight=0.1,
     )
 
     early_termination = RewTerm(func=mdp.is_terminated_term, weight=-50, params={"term_keys": ["robot_abnormal"]})

@@ -859,6 +859,13 @@ def _pad_force_mags(env: ManagerBasedRLEnv, sensor_name: str) -> torch.Tensor:
     return torch.linalg.vector_norm(net, dim=-1).nan_to_num(0.0)
 
 
+def pad_contact_count(env: ManagerBasedRLEnv, sensor_name: str, threshold: float = 0.01) -> torch.Tensor:
+    """Number of finger pads in contact with the mug (0, 1 or 2) — upstream's
+    contact_count in parallel-jaw form: partial contact earns partial credit,
+    which grades the approach into touch before an opposed grasp exists."""
+    return _finite((_pad_force_mags(env, sensor_name) > threshold).float().sum(dim=1))
+
+
 def success_at_goal(
     env: ManagerBasedRLEnv,
     command_name: str,
