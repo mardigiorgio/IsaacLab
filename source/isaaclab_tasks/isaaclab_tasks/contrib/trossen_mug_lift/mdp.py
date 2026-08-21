@@ -859,11 +859,16 @@ def _pad_force_mags(env: ManagerBasedRLEnv, sensor_name: str) -> torch.Tensor:
     return torch.linalg.vector_norm(net, dim=-1).nan_to_num(0.0)
 
 
+# Mug body cylinder for the lowest-point kernel: the asset's mesh-asserted
+# rim height and body radius (see assets/convert_mug.py).
+MUG_BODY_HEIGHT = 0.0973
+MUG_BODY_RADIUS = 0.040
+
+
 def object_lift_progress(
     env: ManagerBasedRLEnv,
     rest_height: float,
     target_height: float,
-    min_up_cos: float = 0.6,
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
 ) -> torch.Tensor:
     """Dense lift kernel: 0 at rest height, 1 at target height, linear
@@ -876,17 +881,24 @@ def object_lift_progress(
     and pays NOTHING for contact alone — picking up is the only paid use of
     the fingers.
 
-    The upright gate is load-bearing, not style: a mug knocked onto its side
-    raises its ROOT to the cylinder radius (~0.059 m here), which an ungated
-    dense kernel pays as ~64% of a full lift, risk-free, forever — knocking
-    the mug over becomes the best-paying action in the task (observed: every
-    pre-grasp start knocked the mug within the first iterations)."""
+    Height is the object's LOWEST point (operator's formulation), not the
+    root: the root of a mug knocked onto its side rises to the cylinder
+    radius, which a root-height kernel pays as ~64% of a full lift, forever
+    (observed: every pre-grasp start knocked the mug and mean reward
+    plateaued by iteration 4). The lowest point of the body cylinder is
+    ``root_z - R*sin(tilt)`` — it rises only when the mug is genuinely
+    airborne, so no resting configuration (tipped, rolled, dragged) pays a
+    cent and no orientation gate is needed. The handle can prop the resting
+    body slightly for handle-down poses, a millimeters-scale underestimate
+    accepted for a closed-form kernel."""
     obj = env.scene[object_cfg.name]
     z = obj.data.root_pos_w.torch[:, 2]
     quat = obj.data.root_quat_w.torch
-    up_z = 1.0 - 2.0 * (quat[:, 0] * quat[:, 0] + quat[:, 1] * quat[:, 1])
-    progress = ((z - rest_height) / (target_height - rest_height)).clamp(0.0, 1.0)
-    return _finite((up_z > min_up_cos) * progress)
+    up_z = (1.0 - 2.0 * (quat[:, 0] * quat[:, 0] + quat[:, 1] * quat[:, 1])).clamp(-1.0, 1.0)
+    sin_tilt = torch.sqrt((1.0 - up_z * up_z).clamp(min=0.0))
+    z_min = torch.where(up_z >= 0.0, z, z + MUG_BODY_HEIGHT * up_z) - MUG_BODY_RADIUS * sin_tilt
+    progress = ((z_min - rest_height) / (target_height - rest_height)).clamp(0.0, 1.0)
+    return _finite(progress)
 
 
 def mug_grasped(env: ManagerBasedRLEnv, sensor_name: str, threshold: float) -> torch.Tensor:
