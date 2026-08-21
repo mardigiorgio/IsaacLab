@@ -117,10 +117,15 @@ def main() -> int:
                 pos = obj.data.root_pos_w.torch
                 rising = (pos[:, 2] - spawn[:, 2]) > 0.04
                 if rising.any():
-                    # grip type AT lift time: pad radial positions in the mug's
-                    # planar frame decide straddle vs both-fingers-inside
+                    # grip type AT lift time: pad radials in the MUG'S OWN
+                    # frame (a held rim-pinched mug hangs tilted, so world-xy
+                    # radials misclassify every real grip)
+                    from isaaclab.utils.math import quat_apply
+                    quat = obj.data.root_quat_w.torch
+                    axis = quat_apply(quat, torch.tensor([0.0, 0.0, 1.0], device=u.device).expand(quat.shape[0], 3))
                     rel = pad_pos - pos[:, None, :]
-                    radial = torch.linalg.vector_norm(rel[..., :2], dim=-1)
+                    axial = (rel * axis[:, None, :]).sum(dim=-1, keepdim=True)
+                    radial = torch.linalg.vector_norm(rel - axial * axis[:, None, :], dim=-1)
                     inside = radial < R_IN
                     outside = radial > R_OUT
                     straddle = inside.any(dim=1) & outside.any(dim=1)
