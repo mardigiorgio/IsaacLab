@@ -859,6 +859,22 @@ def _pad_force_mags(env: ManagerBasedRLEnv, sensor_name: str) -> torch.Tensor:
     return torch.linalg.vector_norm(net, dim=-1).nan_to_num(0.0)
 
 
+def pad_contact_forces(env: ManagerBasedRLEnv, sensor_name: str) -> torch.Tensor:
+    """Net contact force on each finger pad from the mug [N], world frame,
+    flattened (num_envs, num_pads * 3).
+
+    The touch channel (upstream franka lift feeds fingertip contact forces to
+    the policy the same way): without it the policy must close a
+    millimeter-tolerance pinch blind, inferring contact from proprioception
+    alone. The world frame doubles as the base frame here — the arm base is
+    env-aligned and fixed."""
+    forces = env.scene.sensors[sensor_name].data.force_matrix_w
+    if forces is None:
+        return torch.zeros(env.num_envs, 6, device=env.device)
+    net = forces.torch.sum(dim=2)
+    return _finite(net.reshape(net.shape[0], -1))
+
+
 # Mug body cylinder for the lowest-point kernel: the asset's mesh-asserted
 # rim height and body radius (see assets/convert_mug.py).
 MUG_BODY_HEIGHT = 0.0973

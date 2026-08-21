@@ -466,6 +466,15 @@ class ObservationsCfg:
         # pose would observe differently across envs.
         joint_pos = ObsTerm(func=mdp.joint_pos)
         joint_vel = ObsTerm(func=mdp.joint_vel_rel)
+        # TOUCH: net per-pad contact force from the mug, the upstream franka
+        # lift's fingertip-force channel. A pinch policy without it must find
+        # and hold a millimeter-tolerance clamp blind. Clip bounds transient
+        # spikes so the obs scale stays sane for the network.
+        contact = ObsTerm(
+            func=mdp.pad_contact_forces,
+            params={"sensor_name": "pad_object_contact"},
+            clip=(-100.0, 100.0),
+        )
         object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
         target_object_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "object_pose"})
         # The raw last action feeds back into the policy input; unclipped, the loop
