@@ -69,6 +69,17 @@ def main() -> int:
         g1, mug = goal_env_for(0.0, 0.0)
         g2, _ = goal_env_for(0.2, 0.1)
 
+        # Anchor pass: where does the ARM actually stand, and where is the slab?
+        env = gym.make(args_cli.task, cfg=env_cfg)
+        env.reset()
+        u = env.unwrapped
+        robot = u.scene["robot"]
+        ids, names = robot.find_bodies(["follower_left_base_link", "follower_left_link_6"])
+        pos = (robot.data.body_pos_w.torch[:, ids] - u.scene.env_origins[:, None, :])[0].cpu()
+        for n, p in zip(names, pos):
+            print(f"[probe] {n:<28}: {p.tolist()}")
+        env.close()
+
     dx = (g2 - g1) / torch.tensor([0.2, 0.2, 1.0])  # per-axis response, cmd_x step 0.2, cmd_y step 0.1 handled below
     # env response per unit cmd_x and cmd_y (finite differences on separate axes)
     print(f"[probe] mug env pos           : {mug.tolist()}")

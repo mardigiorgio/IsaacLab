@@ -51,14 +51,12 @@ class TrossenMugSlideEnvCfg(TrossenMugLiftEnvCfg):
         # mug farm kernel income. Marker visualization on, so the target is
         # visible in the viewer and training clips.
         self.commands.object_pose.ranges.pos_z = (OBJECT_REST_Z, OBJECT_REST_Z)
-        # B at the far end of the push line: one mug-base-radius before the
-        # rail at the table's far edge. Beyond arm reach by design — the
-        # policy must push-and-release and let friction park the mug.
-        # Probe-measured mapping (scripts/probes/probe_goal_map.py): the
-        # command frame IS the env frame; centerline x=-0.02, far edge
-        # y=-0.6096, minus one mug radius.
-        self.commands.object_pose.ranges.pos_x = (-0.02, -0.02)
-        self.commands.object_pose.ranges.pos_y = (-0.5696, -0.5696)
+        # B at the SIDE edge across the table (the mounted-camera side), one
+        # mug-base-radius before the rail: lateral slide on the mug's line.
+        # Probe-measured mapping (scripts/probes/probe_goal_map.py): command
+        # frame IS the env frame; side edge x=+0.375, minus one mug radius.
+        self.commands.object_pose.ranges.pos_x = (0.335, 0.335)
+        self.commands.object_pose.ranges.pos_y = (0.0, 0.0)
         self.commands.object_pose.debug_vis = True
 
         # Rewards: reach toward the mug root (for a push, low on the wall IS
