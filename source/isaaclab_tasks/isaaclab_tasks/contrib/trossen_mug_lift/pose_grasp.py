@@ -283,9 +283,14 @@ def main() -> int:
     _pad_ids, _pad_names = robot.find_bodies("follower_left_gripper_.*")
 
     def _pad_gauge() -> str:
-        """probe_bank_sanity's pad-vs-mug gauge, live: the printout itself says
-        whether the REALIZED pose straddles the mug, so a vector cannot look
-        right on screen while being somewhere else in numbers."""
+        """Pad-vs-mug gauge from REALIZED body poses, so a vector cannot look
+        right on screen while being somewhere else in numbers.
+
+        Raw numbers only, honestly labeled: the pad rows read the pad MOUNT
+        origins, which sit several cm above the rubber surfaces — classifying
+        them against rim height mislabels a correct rim pinch as too high.
+        The TCP row (finger midpoint) is the graspedness gauge: a pinch-ready
+        pose has TCP radial inside the wall and TCP height near the rim."""
         lines = []
         mug = mug_pose0[0, 0:3]
         pads = _t(robot.data.body_pos_w)[0, _pad_ids]
@@ -293,8 +298,18 @@ def main() -> int:
             rel = p - mug
             radial = float(torch.linalg.vector_norm(rel[:2])) * 1000
             height = float(rel[2]) * 1000
-            where = "INSIDE-CAVITY" if (radial < 40 and 0 < height < 97) else ("ABOVE-RIM" if radial < 40 else "OUTSIDE-WALL")
-            lines.append(f"  {name.replace('follower_left_', ''):24s} radial {radial:6.1f} mm  height {height:6.1f} mm  {where}\r\n")
+            lines.append(
+                f"  {name.replace('follower_left_', '') + ' (mount origin)':38s}"
+                f" radial {radial:6.1f} mm  height {height:6.1f} mm\r\n"
+            )
+        tcp = _t(env.scene["ee_frame"].data.target_pos_w)[0, 0]
+        rel = tcp - mug
+        radial = float(torch.linalg.vector_norm(rel[:2])) * 1000
+        height = float(rel[2]) * 1000
+        lines.append(
+            f"  {'TCP (finger midpoint)':38s} radial {radial:6.1f} mm  height {height:6.1f} mm"
+            f"   [mug: wall R 35-39, rim height 97]\r\n"
+        )
         return "".join(lines)
 
     def report(tag: str = "pose") -> dict[str, float]:
