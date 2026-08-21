@@ -47,6 +47,7 @@ def main() -> int:
     import torch
 
     from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
+    from isaaclab_rl.rsl_rl.utils import filter_unsupported_rsl_rl_kwargs
     from rsl_rl.runners import OnPolicyRunner
 
     from isaaclab_tasks.utils.hydra import resolve_task_config
@@ -61,8 +62,10 @@ def main() -> int:
 
         env = gym.make(args_cli.task, cfg=env_cfg)
         wrapped = RslRlVecEnvWrapper(env)
-        runner = OnPolicyRunner(wrapped, agent_cfg.to_dict(), log_dir=None, device=env.unwrapped.device)
-        runner.load(args_cli.checkpoint, load_optimizer=False)
+        runner = OnPolicyRunner(
+            wrapped, filter_unsupported_rsl_rl_kwargs(agent_cfg.to_dict()), log_dir=None, device=env.unwrapped.device
+        )
+        runner.load(args_cli.checkpoint)
         policy = runner.get_inference_policy(device=env.unwrapped.device)
 
         u = env.unwrapped
