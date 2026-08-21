@@ -72,6 +72,13 @@ from isaaclab_tasks.contrib.trossen_mug_lift.trossen_mug_lift_env_cfg import (  
     GRIPPER_JOINT_R,
 )
 
+# 1:1 WITH TRAINING: the training launches export these; a bare lab launch
+# would otherwise build a DIFFERENT scene (mesh mug, no rails) and any pose
+# authored in it would be authored against geometry the task never sees.
+# setdefault, so an explicit override still wins.
+os.environ.setdefault("MUG_COLLISION", "hull")
+os.environ.setdefault("TROSSEN_RAILS", "1")
+
 TASK = "IsaacContrib-Lift-Mug-Trossen-v0"
 _RENDER = not args_cli.selftest  # selftest is the only path that must not draw
 OUT_PATH = os.path.join(os.path.dirname(__file__), "grasp_pose_authored.py")
@@ -169,7 +176,13 @@ class RawKeys:
 
 
 def build_env(num_envs: int = 1):
+    from isaaclab_tasks.utils.physics_presets import apply_solver_choice
+
     cfg = parse_env_cfg(TASK, num_envs=num_envs)
+    # Same solver as the training runs (--solver icf): the realized pose is a
+    # PD equilibrium under the solver, so posing under a different one would
+    # hand back vectors authored against different sag.
+    apply_solver_choice(cfg, "icf")
     cfg.sim.physics.collision_cfg.rigid_contact_max = POSE_RIGID_CONTACT_MAX
     cfg.sim.physics.collision_cfg.max_triangle_pairs = POSE_MAX_TRIANGLE_PAIRS
 
@@ -267,6 +280,23 @@ def main() -> int:
     def joint_dict() -> dict[str, float]:
         return {n: vals[n] for n in editable}
 
+    _pad_ids, _pad_names = robot.find_bodies("follower_left_gripper_.*")
+
+    def _pad_gauge() -> str:
+        """probe_bank_sanity's pad-vs-mug gauge, live: the printout itself says
+        whether the REALIZED pose straddles the mug, so a vector cannot look
+        right on screen while being somewhere else in numbers."""
+        lines = []
+        mug = mug_pose0[0, 0:3]
+        pads = _t(robot.data.body_pos_w)[0, _pad_ids]
+        for name, p in zip(_pad_names, pads):
+            rel = p - mug
+            radial = float(torch.linalg.vector_norm(rel[:2])) * 1000
+            height = float(rel[2]) * 1000
+            where = "INSIDE-CAVITY" if (radial < 40 and 0 < height < 97) else ("ABOVE-RIM" if radial < 40 else "OUTSIDE-WALL")
+            lines.append(f"  {name.replace('follower_left_', ''):24s} radial {radial:6.1f} mm  height {height:6.1f} mm  {where}\r\n")
+        return "".join(lines)
+
     def report(tag: str = "pose") -> dict[str, float]:
         jd = joint_dict()
         g = vals[GRIPPER_JOINT]
@@ -275,6 +305,7 @@ def main() -> int:
             + "".join(f"  {n:28s} {v:+.6f}\r\n" for n, v in jd.items())
             + f"  gripper {g*1000:.1f} mm/side ({100.0*g/grip_open:.0f}% open,"
             f" gap ~{(CLOSED_GAP_M + 2*g)*1000:.1f} mm)\r\n"
+            + _pad_gauge()
             + "  vector [" + ", ".join(f"{v:+.6f}" for v in jd.values()) + "]\r\n"
         )
         sys.stdout.flush()
