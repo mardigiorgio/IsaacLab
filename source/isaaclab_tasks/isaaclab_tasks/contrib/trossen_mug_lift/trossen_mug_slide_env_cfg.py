@@ -43,6 +43,9 @@ class TrossenMugSlideEnvCfg(TrossenMugLiftEnvCfg):
     def __post_init__(self):
         super().__post_init__()
 
+        # ONE mug position across lift and slide, deliberately: a single
+        # tape-measure placement serves both hardware protocols.
+
         # Goals ON the table, far to ONE side of the spawn: the slide is a
         # cross-table traverse, not a nudge — a goal near spawn lets a parked
         # mug farm kernel income. Marker visualization on, so the target is
