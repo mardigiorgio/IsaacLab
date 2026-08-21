@@ -104,19 +104,18 @@ LIFT_HEIGHT = 0.08
 # stays well under it, a fling exceeds it several-fold.
 CARRY_SPEED_MAX = 0.75
 
-# Pre-grasp reset pose: teleop-authored on the rig operator's own framing —
-# gripper straddling the mug at 26 mm/side (~100 mm gap) so the grasp is one
-# close command away. Re-validate with scripts/probes/probe_bank_sanity.py
-# after any spawn or rig change.
+# Pre-grasp reset pose: teleop-authored, gripper open at 26 mm/side
+# (~100 mm gap) so the grasp is one close command away. Re-validate with
+# scripts/probes/probe_bank_sanity.py after any spawn or rig change.
 GRASP_BANK_POSE = {
-    "follower_left_joint_0": 0.070,
-    "follower_left_joint_1": 2.037,
-    "follower_left_joint_2": 1.732,
-    "follower_left_joint_3": -0.897,
-    "follower_left_joint_4": 0.000,
-    "follower_left_joint_5": -0.043,
-    "follower_left_left_carriage_joint": 0.021,
-    "follower_left_right_carriage_joint": 0.021,
+    "follower_left_joint_0": 0.042,
+    "follower_left_joint_1": 2.425,
+    "follower_left_joint_2": 2.356,
+    "follower_left_joint_3": -1.011,
+    "follower_left_joint_4": -0.021,
+    "follower_left_joint_5": -0.100,
+    "follower_left_left_carriage_joint": 0.026,
+    "follower_left_right_carriage_joint": 0.026,
 }
 
 # Rim circle of the mug in its body frame, the one-wall pinch target for the
