@@ -26,6 +26,9 @@ parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.R
 parser.add_argument("--task", type=str, default="IsaacContrib-Lift-Mug-Trossen-v0")
 parser.add_argument("--num_envs", type=int, default=4)
 parser.add_argument("--steps", type=int, default=5)
+parser.add_argument("--bench", action="store_true", help="time env.step instead of printing pixel stats")
+parser.add_argument("--no_camera", action="store_true", help="bench baseline: build the env without the camera")
+parser.add_argument("--res", type=int, default=128, help="camera resolution (square)")
 
 from isaaclab.app import add_launcher_args, launch_simulation  # noqa: E402
 
@@ -54,26 +57,58 @@ def main() -> int:
     with launch_simulation(env_cfg, args_cli):
         env_cfg.scene.num_envs = args_cli.num_envs
         apply_solver_choice(env_cfg, "icf")
-        env_cfg.scene.cam_high = TiledCameraCfg(
-            prim_path="{ENV_REGEX_NS}/Robot/cam_high_link/cam_high_color_frame/cam_high_color_optical_frame/smoke_cam",
-            update_period=0.0,
-            height=128,
-            width=128,
-            data_types=["rgb"],
-            # The default renderer_cfg resolves to the PhysX RTX renderer, which
-            # is not installed on the Newton stack; the Warp ray-tracer is.
-            renderer_cfg=NewtonWarpRendererCfg(),
-            spawn=sim_utils.PinholeCameraCfg(
-                focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.05, 5.0)
-            ),
-        )
+        if not args_cli.no_camera:
+            env_cfg.scene.cam_high = TiledCameraCfg(
+                prim_path="{ENV_REGEX_NS}/Robot/cam_high_link/cam_high_color_frame/cam_high_color_optical_frame/smoke_cam",
+                update_period=0.0,
+                height=args_cli.res,
+                width=args_cli.res,
+                data_types=["rgb"],
+                # The default renderer_cfg resolves to the PhysX RTX renderer, which
+                # is not installed on the Newton stack; the Warp ray-tracer is.
+                renderer_cfg=NewtonWarpRendererCfg(),
+                spawn=sim_utils.PinholeCameraCfg(
+                    focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.05, 5.0)
+                ),
+            )
 
         env = gym.make(args_cli.task, cfg=env_cfg)
         env.reset()
-        cam = env.unwrapped.scene.sensors["cam_high"]
         zero = torch.zeros(
             args_cli.num_envs, env.unwrapped.action_manager.total_action_dim, device=env.unwrapped.device
         )
+        if args_cli.bench:
+            import time
+
+            # Sensors render LAZILY on data access: a bench that never reads the
+            # image times physics only. Touch the buffer every step, exactly as a
+            # pixel-observation term would.
+            bench_cam = None if args_cli.no_camera else env.unwrapped.scene.sensors["cam_high"]
+
+            def _touch():
+                if bench_cam is not None:
+                    img = bench_cam.data.output["rgb"]
+                    (img.torch if hasattr(img, "torch") else img)[0, 0, 0, 0].item()
+
+            with torch.inference_mode():
+                for _ in range(5):  # warmup: kernel compilation and first renders
+                    env.step(zero)
+                    _touch()
+                torch.cuda.synchronize()
+                t0 = time.perf_counter()
+                for _ in range(args_cli.steps):
+                    env.step(zero)
+                    _touch()
+                torch.cuda.synchronize()
+                dt = time.perf_counter() - t0
+            tag = "no-camera" if args_cli.no_camera else f"cam {args_cli.res}x{args_cli.res}"
+            print(
+                f"[bench] {tag}  envs {args_cli.num_envs}  {args_cli.steps} steps in {dt:.2f}s"
+                f"  -> {args_cli.steps / dt:6.2f} steps/s  {args_cli.num_envs * args_cli.steps / dt:9.0f} env-steps/s"
+            )
+            env.close()
+            return 0
+        cam = env.unwrapped.scene.sensors["cam_high"]
         with torch.inference_mode():
             for step in range(args_cli.steps):
                 env.step(zero)
