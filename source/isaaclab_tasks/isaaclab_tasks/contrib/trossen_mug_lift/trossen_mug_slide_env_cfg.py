@@ -106,8 +106,14 @@ class TrossenMugSlideEnvCfg(TrossenMugLiftEnvCfg):
             weight=16.0,
         )
 
-        # No pre-contact bank for the slide: every episode starts from home.
+        # No pre-contact bank for the slide: every episode starts from home,
+        # and the lift's reverse-curriculum anneal has nothing to anneal.
         self.events.reset_arm_grasp_bank = None
+        self.curriculum.grow_approach = None
+        # The lift's approach-stack rewards target its pre-grasp pose; the
+        # slide's approach is plain reach.
+        self.rewards.pregrasp_match = None
+        self.rewards.mug_knocked = None
 
         # A mug pushed off the slab is unrecoverable and the episode's income
         # is already forfeit under the gates — end it.
