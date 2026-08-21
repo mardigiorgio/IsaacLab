@@ -537,10 +537,14 @@ class RewardsCfg:
 
     # weight 1.0 (classic cube-lift reach), not the dexsuite 0.05: with no
     # aerial-spawn machinery, reach-driven discovery must be profitable.
+    # Target = the RIM circle, not the root: the root is the bottom center,
+    # whose arg-min is both fingertips inside the cavity (field-observed).
     fingers_to_object = RewTerm(
-        func=mdp.fingers_to_object,
+        func=mdp.fingers_to_rim,
         params={
             "std": 0.4,
+            "rim_height": MUG_RIM_HEIGHT,
+            "rim_radius": MUG_RIM_RADIUS,
             "sensor_name": "pad_object_contact",
             "contact_threshold": 0.01,
             "asset_cfg": SceneEntityCfg("robot", body_names="follower_left_gripper_.*"),
