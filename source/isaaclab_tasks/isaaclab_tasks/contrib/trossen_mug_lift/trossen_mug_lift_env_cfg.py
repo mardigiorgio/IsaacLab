@@ -502,9 +502,13 @@ class RewardsCfg:
     # TCP cannot reach without penetration — its gradient optimum is a press
     # into the lower wall. The nearest-rim-point target makes the optimum a
     # one-wall pinch pose (pad outside, pad inside the opening).
+    # std 0.3, scene-scaled: the reference std 0.1 assumes Franka's ~25 cm
+    # home-to-object distance; this rig's home start puts the TCP ~0.5 m from
+    # the rim, where 1 - tanh(d/0.1) is saturated dead (reward 1e-4, gradient
+    # ~1e-3/m). At 0.3 the kernel is alive across the whole approach.
     reaching_object = RewTerm(
         func=mdp.mug_rim_ee_distance,
-        params={"std": 0.1, "rim_height": MUG_RIM_HEIGHT, "rim_radius": MUG_RIM_RADIUS},
+        params={"std": 0.3, "rim_height": MUG_RIM_HEIGHT, "rim_radius": MUG_RIM_RADIUS},
         weight=1.0,
     )
     # Approach geometry, not just proximity: pays for the finger axis aiming
@@ -568,12 +572,15 @@ from isaaclab.managers import CurriculumTermCfg as CurrTerm  # noqa: E402
 @configclass
 class CurriculumCfg:
     """Reverse-curriculum anneal: bank starts begin AT the pre-grasp and the
-    start distribution grows back toward home over the first ~10k episodes
-    of steps, per Florensa reverse curriculum generation."""
+    start distribution grows back toward home over the first 500 iterations
+    (12k env-steps at 24 steps/iter), per Florensa reverse curriculum
+    generation — the horizon must fit INSIDE a training run, or the
+    approach-from-home phase never enters the start distribution (the prior
+    240k horizon = 10k iterations meant 1k-iteration runs annealed 10%)."""
 
     grow_approach = CurrTerm(
         func=mdp.anneal_reverse_curriculum,
-        params={"start_step": 0, "end_step": 240_000, "event_name": "reset_arm_grasp_bank"},
+        params={"start_step": 0, "end_step": 12_000, "event_name": "reset_arm_grasp_bank"},
     )
 
 
