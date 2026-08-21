@@ -719,6 +719,8 @@ def reset_arm_reverse_curriculum(
     bank_fraction: float,
     noise: float,
     alpha_min: float = 1.0,
+    grasped_fraction: float = 0.0,
+    grasped_carriage_m: float = 0.0035,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
 ):
     """Reverse-curriculum start states: interpolate home -> pre-grasp.
@@ -728,6 +730,14 @@ def reset_arm_reverse_curriculum(
     pre-grasp itself; as the curriculum lowers ``alpha_min`` toward 0 the
     start distribution grows back along the approach path until home starts
     dominate — the Florensa reverse curriculum on our own two anchors.
+
+    ``grasped_fraction`` of the selected envs instead start exactly AT the
+    pose with the carriages written to the measured clamp seat: the episode
+    begins mid-grasp, so hold-and-raise income is on-policy from step 0
+    instead of gated behind sustained-close discovery — the deepest anchor
+    of the reverse curriculum. Discovered lifts otherwise die in the
+    variance valley (three runs: lifting found early, then abandoned for
+    the zero-variance hover annuity).
     """
     asset = env.scene[asset_cfg.name]
     joint_ids, resolved = asset.find_joints(list(pose.keys()), preserve_order=True)
@@ -745,6 +755,16 @@ def reset_arm_reverse_curriculum(
     start = start + sample_uniform(-noise, noise, start.shape, start.device)
     limits = asset.data.soft_joint_pos_limits.torch[env_ids[:, None], joint_ids]
     start = torch.where(sel.unsqueeze(1), start.clamp(limits[..., 0], limits[..., 1]), home)
+    if grasped_fraction > 0.0:
+        gsel = sel & (torch.rand(env_ids.shape[0], device=env.device) < grasped_fraction)
+        if gsel.any():
+            rows = torch.nonzero(gsel).squeeze(1)
+            # Exactly AT the pose (no alpha, no noise): a seated clamp only
+            # exists there; interpolated or jittered arms clamp air or wall.
+            start[rows] = target
+            for c, n in enumerate(resolved):
+                if "carriage" in n:
+                    start[rows, c] = grasped_carriage_m
     # Zero action must HOLD the start pose: with a home-anchored offset the PD
     # rips a banked arm back toward home on the first steps — through the mug,
     # for an engaged pre-grasp. The arm action term's offset is a CLONE of

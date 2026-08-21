@@ -636,6 +636,10 @@ class EventCfg:
             "bank_fraction": 0.5,
             "noise": 0.01,
             "alpha_min": 1.0,
+            # Half the bank starts begin mid-grasp at the measured clamp seat
+            # (probe_scripted_grasp: seat ~3.2 mm, 3.6 N, 100% scripted lifts).
+            "grasped_fraction": 0.5,
+            "grasped_carriage_m": 0.0035,
             "asset_cfg": SceneEntityCfg("robot"),
         },
     )

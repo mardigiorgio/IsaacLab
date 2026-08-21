@@ -89,12 +89,15 @@ def main() -> int:
                     fmax = float(torch.linalg.vector_norm(forces.torch.sum(dim=2), dim=-1).nan_to_num(0.0).max())
                 tcp = scene["ee_frame"].data.target_pos_w.torch[..., 0, :]
                 tcp_mug = torch.linalg.vector_norm(tcp - obj.data.root_pos_w.torch, dim=-1)
+                car_ids, _ = u.scene["robot"].find_joints("follower_left_.*_carriage_joint")
+                car = u.scene["robot"].data.joint_pos.torch[:, car_ids]
                 if step % 5 == 4 or step == n_steps - 1:
                     lifted = float((z > 0.04).float().mean())
                     print(
                         f"[step {step:02d}] mug dz mean {z.mean()*1000:7.1f} mm  max {z.max()*1000:7.1f} mm"
                         f"  lifted>4cm {lifted*100:5.1f}%  pad force max {fmax:8.2f} N"
                         f"  tcp-mug mean {tcp_mug.mean()*1000:6.1f} mm"
+                        f"  carriage mean {car.mean()*1000:6.2f} mm"
                     )
         held = float((z > 0.04).float().mean())
         print(f"[verdict] {held*100:.1f}% of envs hold the mug above 4 cm at the end of the raise")
