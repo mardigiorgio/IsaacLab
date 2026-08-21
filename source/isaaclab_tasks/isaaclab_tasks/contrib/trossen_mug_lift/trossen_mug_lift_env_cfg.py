@@ -677,10 +677,12 @@ class EventCfg:
         params={
             "pose": GRASP_BANK_POSE,
             "bank_fraction": 0.5,
-            "noise": 0.0,
+            "noise": 0.01,
             "alpha_min": 1.0,
-            # 50/25/25 with TRUE in-hand starts: the grasped subset raises the
-            # mug 15 mm off the table, supported by the seated clamp.
+            # 50/25/25, BENCHMARK-verbatim: clamp-on-table grasped subset and
+            # 0.01 reset noise — the exact behavior of the run that measured
+            # 50/50 pickups (13-28-57). The raised in-hand variant exists
+            # behind grasped_raise_m and trained slower in the A/B.
             "grasped_fraction": 0.5,
             # 0.0035, the takeoff-proven seat: the policy trained with it reached
             # 36.3 reward and 50/50 home-start pickups; its minority ejections

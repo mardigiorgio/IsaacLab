@@ -196,6 +196,7 @@ def reset_arm_reverse_curriculum(
     alpha_min: float = 1.0,
     grasped_fraction: float = 0.0,
     grasped_carriage_m: float = 0.0035,
+    grasped_raise_m: float = 0.0,
     track_object_xy: list | None = None,
     nominal_object_pos: tuple | None = None,
     safe_yaw_range: tuple | None = None,
@@ -277,19 +278,19 @@ def reset_arm_reverse_curriculum(
             for c, n in enumerate(resolved):
                 if "carriage" in n:
                     start[rows, c] = grasped_carriage_m
-            # TRULY in hand (operator ruling): the mug is raised off the table
-            # and SUPPORTED by the seated clamp — the scripted press carries it
-            # at ~3.6 N through a 19 cm raise, so this state is stable. A
-            # clamped-on-table start was never in hand: it could tip at reset
-            # and paid nothing for being held.
-            obj = env.scene[object_cfg.name]
-            ids_g = env_ids[rows]
-            pose7 = obj.data.root_pose_w.torch[ids_g].clone()
-            pose7[:, 2] += 0.015
-            obj.write_root_pose_to_sim_index(root_pose=pose7, env_ids=ids_g)
-            obj.write_root_velocity_to_sim_index(
-                root_velocity=torch.zeros(rows.shape[0], 6, device=env.device), env_ids=ids_g
-            )
+            # Optional raised (truly held) variant: measured stable, but the
+            # A/B record says the benchmark's clamp-on-table form trained
+            # faster (raised variant: success 0.001 at 222; benchmark: takeoff
+            # at ~150). Default 0 = benchmark behavior.
+            if grasped_raise_m > 0.0:
+                obj = env.scene[object_cfg.name]
+                ids_g = env_ids[rows]
+                pose7 = obj.data.root_pose_w.torch[ids_g].clone()
+                pose7[:, 2] += grasped_raise_m
+                obj.write_root_pose_to_sim_index(root_pose=pose7, env_ids=ids_g)
+                obj.write_root_velocity_to_sim_index(
+                    root_velocity=torch.zeros(rows.shape[0], 6, device=env.device), env_ids=ids_g
+                )
     # Zero action must HOLD the start pose: with a home-anchored offset the PD
     # rips a banked arm back toward home on the first steps — through the mug,
     # for an engaged pre-grasp. The arm action term's offset is a CLONE of
