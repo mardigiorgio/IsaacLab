@@ -33,10 +33,14 @@ class TrossenMugLiftPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         hidden_dims=[256, 128, 64],
         activation="elu",
         obs_normalization=False,
-        # std floor keeps the effectively-binary gripper dim from collapsing sigma to
-        # zero (log-prob blowup); the cap bounds exploration drift, which is otherwise
-        # unbounded and runs away.
-        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=1.0, std_type="log", std_range=(0.05, 3.0)),
+        # std floor keeps the gripper dim from collapsing sigma to zero
+        # (log-prob blowup); the cap bounds exploration drift, which is
+        # otherwise unbounded and runs away.
+        # init_std 0.5 (was 1.0): a held pinch survives only while sampled
+        # jitter stays inside the clamp's seat; at std 1 the seat breaks in
+        # 1-2 steps and the grasp income stream cannot exist to be learned.
+        # The slide keeps its trained recipe in TrossenMugSlidePPORunnerCfg.
+        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=0.5, std_type="log", std_range=(0.05, 3.0)),
     )
     critic = RslRlMLPModelCfg(
         hidden_dims=[256, 128, 64],
@@ -56,4 +60,19 @@ class TrossenMugLiftPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         lam=0.95,
         desired_kl=0.01,
         max_grad_norm=1.0,
+    )
+
+
+@configclass
+class TrossenMugSlidePPORunnerCfg(TrossenMugLiftPPORunnerCfg):
+    """The slide's PPO recipe, pinned verbatim to slidev1.
+
+    The lift retunes its exploration for pinch survival; the slide's trained
+    K-ladder ran init_std 1.0 and every future twin must match it."""
+
+    actor = RslRlMLPModelCfg(
+        hidden_dims=[256, 128, 64],
+        activation="elu",
+        obs_normalization=False,
+        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=1.0, std_type="log", std_range=(0.05, 3.0)),
     )

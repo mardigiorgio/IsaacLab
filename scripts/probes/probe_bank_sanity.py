@@ -26,6 +26,12 @@ parser.add_argument("--task", type=str, default="IsaacContrib-Lift-Mug-Trossen-v
 parser.add_argument("--num_envs", type=int, default=64)
 parser.add_argument("--steps", type=int, default=20)
 parser.add_argument("--seed", type=int, default=42)
+parser.add_argument(
+    "--action_std",
+    type=float,
+    default=0.0,
+    help="Gaussian action noise per step (0 = the zero-action worst case); set to the PPO init std to measure clamp survival under an untrained policy",
+)
 
 from isaaclab.app import add_launcher_args, launch_simulation  # noqa: E402
 
@@ -86,6 +92,8 @@ def main() -> int:
         zero = torch.zeros(args_cli.num_envs, env.unwrapped.action_manager.total_action_dim, device=env.unwrapped.device)
         with torch.inference_mode():
             for step in range(args_cli.steps):
+                if args_cli.action_std > 0.0:
+                    zero = torch.randn_like(zero) * args_cli.action_std
                 env.step(zero)
                 pos = obj.data.root_pos_w.torch - scene.env_origins
                 drift = torch.linalg.vector_norm(pos[:, :2] - spawn[:, :2], dim=1)

@@ -441,10 +441,14 @@ class ActionsCfg:
     # the bank event retargets the offset so grasped starts hold their seat.
     # Both carriages actively driven -- symmetric close, like the real
     # hardware (the mimic weld stays defused in the task layer).
+    # scale 0.008: sampled jitter must stay inside the clamp's measured seat
+    # (~3.2 mm) or a held grip breaks between decisions — at 0.02 x std 0.5
+    # the seat still dies in a few steps. Full travel stays reachable in a
+    # handful of saturated steps.
     gripper_action = mdp.JointPositionActionCfg(
         asset_name="robot",
         joint_names=[GRIPPER_JOINT, GRIPPER_JOINT_R],
-        scale=0.02,
+        scale=0.008,
         use_default_offset=True,
         clip={".*": (-6.0, 6.0)},
     )
