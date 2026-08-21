@@ -149,7 +149,7 @@ class TrossenMugSlideEnvCfg(TrossenMugLiftEnvCfg):
         # command frame IS the env frame. Marker visualization on, so the
         # target is visible in the viewer and training clips.
         self.commands.object_pose.ranges.pos_z = (OBJECT_REST_Z, OBJECT_REST_Z)
-        self.commands.object_pose.ranges.pos_x = (0.30, 0.30)
+        self.commands.object_pose.ranges.pos_x = (0.285, 0.285)
         self.commands.object_pose.ranges.pos_y = (0.0, 0.0)
         self.commands.object_pose.debug_vis = True
 
