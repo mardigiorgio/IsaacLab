@@ -496,7 +496,7 @@ class RewardsCfg:
     looking_at_rim = RewTerm(
         func=mdp.mug_rim_look_at,
         params={"rim_height": MUG_RIM_HEIGHT, "rim_radius": MUG_RIM_RADIUS},
-        weight=0.5,
+        weight=0.25,
     )
     # Keeps the binary close channel alive: pays for COMMANDING close within
     # 6 cm of the rim target — action-based (no contact needed, not a touch
@@ -504,7 +504,7 @@ class RewardsCfg:
     close_at_rim = RewTerm(
         func=mdp.close_near_rim,
         params={"dist_threshold": 0.06, "rim_height": MUG_RIM_HEIGHT, "rim_radius": MUG_RIM_RADIUS},
-        weight=0.5,
+        weight=0.25,
     )
     # The teleop-authored pre-grasp as a joint-space attractor: a dense
     # approach gradient whose optimum is the configuration one close command
@@ -512,14 +512,14 @@ class RewardsCfg:
     pregrasp_match = RewTerm(
         func=mdp.pregrasp_pose_match,
         params={"pose": GRASP_BANK_POSE, "std": 0.5},
-        weight=1.0,
+        weight=0.5,
     )
     # The knock signal: mug motion while NOT held bleeds; a held carry is
     # exempt. Punishes exactly the approach failure mode and nothing else.
     mug_knocked = RewTerm(
         func=mdp.mug_disturbed_ungrasped,
         params={"sensor_name": "pad_object_contact", "contact_threshold": 0.5},
-        weight=-3.0,
+        weight=-0.5,
     )
     # Heavy bleed while the mug lies knocked over on the table. Tilt alone is
     # deliberately NOT punished — a one-wall pinch tilts a held mug — only the
