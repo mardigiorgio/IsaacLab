@@ -57,6 +57,15 @@ def main() -> int:
     with launch_simulation(env_cfg, args_cli):
         env_cfg.scene.num_envs = args_cli.num_envs
         apply_solver_choice(env_cfg, "icf")
+        # POSE_RENDER=1: every env resets to the authored pre-grasp (open
+        # gripper, no grasped subset, no noise) and zero action HOLDS it, so
+        # the saved frame is a render of GRASP_BANK_POSE in the actual scene.
+        if os.environ.get("POSE_RENDER", "0") == "1":
+            bank = getattr(env_cfg.events, "reset_arm_grasp_bank", None)
+            if bank is not None:
+                bank.params["bank_fraction"] = 1.0
+                bank.params["noise"] = 0.0
+                bank.params["grasped_fraction"] = 0.0
         if not args_cli.no_camera:
             env_cfg.scene.cam_high = TiledCameraCfg(
                 prim_path="{ENV_REGEX_NS}/Robot/cam_high_link/cam_high_color_frame/cam_high_color_optical_frame/smoke_cam",

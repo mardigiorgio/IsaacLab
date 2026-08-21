@@ -23,7 +23,7 @@ import mujoco
 import numpy as np
 
 XML = "/tmp/claude-1002/-home-mdigiorgio-Documents-code/fef98df8-95da-4aa4-a47c-133d6ad86ec5/scratchpad/trossen_mjc/trossen_arm_mujoco/assets/stationary_ai/stationary_ai.xml"
-POSE = [0.042, 1.978, 1.586, -0.753, 0.000, -0.043]
+POSE = [0.0536, 2.3703, 2.2858, -1.4863, 0.0000, 0.0536]
 
 m = mujoco.MjModel.from_xml_path(XML)
 d = mujoco.MjData(m)
