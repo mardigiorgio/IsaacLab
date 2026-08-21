@@ -3,28 +3,24 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Trossen Stationary AI mug-lift: classic Franka-cube-lift shaping on the official rig.
+"""Trossen Stationary AI mug LIFT: pick the mug up from its tape-measure
+spawn and carry it to a fixed goal 23 cm above the table.
 
-The thin-object task for the adaptive-vs-fixed solver comparison: the LBM wooden flat
-spatula (66 g, 30.0 x 7.0 x 5.1 cm -- the same asset as the G1 spatula task) on the
-official Trossen Stationary AI rig, single active LEFT arm.
+The stiff-contact task for the adaptive-vs-fixed solver comparison: the LBM
+Inomata mug (plastic, hull-decomposed collision) on the official Trossen
+Stationary AI rig, single active LEFT arm, parallel-jaw rim pinch.
 
-GRASP GEOMETRY (measured from the official USD, decides the task): the gripper's
-carriage travel is 0 -> 0.044 m with a hard lower limit, giving a CLOSED finger gap of
-4.83 cm. The ~2.2 cm handle is therefore ungraspable -- the fingers close past it. The
-BLADE is 6.98 cm wide, so gripping ACROSS the blade gives 2.15 cm of squeeze:
-dimensionally the same pinch the Stationary AI cube task performs on its 5.4 cm cube.
-The task is lift-by-the-blade -- finger pads clamping a millimeters-thick wooden plate
-resting on a rigid tabletop, which is precisely the stiff thin-object contact regime
-where fixed-step integration artifacts are largest.
+Structure: the validated core-lift reward family (grasp-gated progress
+ratchet toward the aerial goal, success bonus, contact terms) with the
+operator's cylinder-surface reach kernel and straddle pair gate; touch,
+object pose and 5-step history in the observations; reverse-curriculum
+starts anchored on the operator's teleop-authored pre-grasp (exact
+teleports, grasped subset at the measured clamp seat, randomized arm starts
+for the home half).
 
-Reward shaping is the classic Franka cube lift, unchanged in structure and weights:
-reach (std 0.1, w 1) / lift (w 15) / goal-track (w 16, std 0.3) / fine track (w 5,
-std 0.05) / action-rate and joint-velocity penalties. Observations are the reference
-single policy group (proprioception + object position + target + last action).
-
-Robot wiring constants (EE link, TCP offset, joints, gripper commands, goal and reset
-bands) are the Stationary AI cube task's measured values, reused verbatim.
+Robot wiring constants (EE link, TCP offset, joints, gripper commands) are
+the Stationary AI rig's measured values; every placement constant is
+tape-measure-reproducible per REAL_SETUP.md.
 """
 
 from __future__ import annotations
