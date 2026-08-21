@@ -529,8 +529,14 @@ class RewardsCfg:
       yaw is free.
     """
 
-    action_l2 = RewTerm(func=mdp.action_l2, weight=-0.01)
+    # -0.001, not upstream's -0.01: their action tax is affordable because
+    # start diversity does the discovering; from our fixed home a 50-step
+    # approach at -0.01 costs ~5x what the reach kernel pays back (hand
+    # arithmetic in the session log), making the statue the optimum.
+    action_l2 = RewTerm(func=mdp.action_l2, weight=-0.001)
 
+    # weight 1.0 (classic cube-lift reach), not the dexsuite 0.05: with no
+    # aerial-spawn machinery, reach-driven discovery must be profitable.
     fingers_to_object = RewTerm(
         func=mdp.fingers_to_object,
         params={
@@ -539,7 +545,7 @@ class RewardsCfg:
             "contact_threshold": 0.01,
             "asset_cfg": SceneEntityCfg("robot", body_names="follower_left_gripper_.*"),
         },
-        weight=0.05,
+        weight=1.0,
     )
 
     # Progress pays once per min_improvement of NEW best object-to-goal
@@ -641,6 +647,19 @@ class EventCfg:
             "pose_range": {"x": (0.0, 0.0), "y": (0.0, 0.0), "z": (0.0, 0.0)},
             "velocity_range": {},
             "asset_cfg": SceneEntityCfg("object"),
+        },
+    )
+    # Start diversity for the non-bank half (upstream's visible discovery
+    # mechanism: every episode a different arm pose, some near the mug, so
+    # contact terms fire without a long profitable approach existing yet).
+    # Runs BEFORE the bank event; bank-selected envs overwrite it entirely.
+    randomize_arm_start = EventTerm(
+        func=mdp.reset_joints_by_offset,
+        mode="reset",
+        params={
+            "position_range": (-0.6, 0.6),
+            "velocity_range": (0.0, 0.0),
+            "asset_cfg": SceneEntityCfg("robot", joint_names=ARM_JOINTS),
         },
     )
     # Reverse-curriculum starts (Florensa): bank episodes begin at an
