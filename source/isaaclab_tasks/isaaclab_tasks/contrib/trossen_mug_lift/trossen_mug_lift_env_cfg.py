@@ -60,6 +60,8 @@ from isaaclab.utils.configclass import configclass
 
 from isaaclab_tasks.utils import PresetCfg
 
+from isaaclab_tasks.core.lift.mdp.rewards import success_reward as lift_success_reward
+
 from . import mdp
 from .assets import STATIONARY_AI_CFG
 
@@ -500,102 +502,68 @@ class ObservationsCfg:
 
 @configclass
 class RewardsCfg:
-    """Reference Franka cube-lift shaping plus the literature-backed grasp
-    additions, and NOTHING from the slide task.
+    """The VALIDATED core-lift reward structure (isaaclab_tasks.core.lift
+    RewardsCfg plus the franka config's contact term), ported in form and
+    weight. Note upstream has NO lift term: height income IS the grasp-gated
+    progress ratchet toward the aerial goal, plus success at it — our fixed
+    goal already sits 23 cm up, so the same mechanism forces the same lift.
 
-    Two provenances only:
-    - isaac-sim reference lift: reach / lift(15) / goal-track(16, std 0.3) /
-      fine(5, std 0.05) / action_rate(-1e-4) / joint_vel(-1e-4), no speed
-      gates, no contact fines, no jerk or scrape terms.
-    - the commissioned pre-grasp literature (DemoGrasp / dexsuite / Florensa):
-      pregrasp_match, approach-flow terms, grasp-hold reward; discovery is
-      carried by the reset bank and reverse curriculum, not by fines.
+    Adaptations, each forced by hardware or task shape and nothing else:
+    - fingers_to_object / the ratchet / good_finger_contact run on this
+      rig's pad bodies and pad_object_contact sensor (their per-fingertip
+      sensor plumbing does not exist on a parallel jaw); kernel forms and
+      weights are theirs.
+    - orientation_tracking is omitted and success's rotation factor is
+      neutralized (rot_std 1e6): the command is position-only and a mug's
+      yaw is free.
+    """
 
-    The slide's smoothing/scrape/gate structure lives ONLY in the slide's own
-    SlideRewardsCfg: those weights are sized to suppress flailing in a push
-    task and overpower pinch exploration here."""
+    action_l2 = RewTerm(func=mdp.action_l2, weight=-0.01)
 
-    # Rim target, not the root: the root is the mug's bottom center, which the
-    # TCP cannot reach without penetration — its gradient optimum is a press
-    # into the lower wall. The nearest-rim-point target makes the optimum a
-    # one-wall pinch pose (pad outside, pad inside the opening).
-    # FINGERS to object, not a general EE-reach (operator ruling): tanh kernel
-    # on the WORST pad-to-mug distance — both jaws must approach for the
-    # kernel to saturate, so it shapes the straddle itself, and it pays in
-    # full only under an opposed grasp (dexsuite approach-flow form, the same
-    # shape the fork's core lift uses). std 0.3, scene-scaled: this rig's
-    # home start puts the fingers ~0.5 m out, where a std-0.1 kernel is
-    # saturated dead (reward 1e-4, gradient ~1e-3/m).
-    reaching_object = RewTerm(
+    fingers_to_object = RewTerm(
         func=mdp.fingers_to_object,
         params={
-            "std": 0.3,
+            "std": 0.4,
             "sensor_name": "pad_object_contact",
-            "contact_threshold": 0.5,
+            "contact_threshold": 0.01,
             "asset_cfg": SceneEntityCfg("robot", body_names="follower_left_gripper_.*"),
         },
-        weight=1.0,
+        weight=0.05,
     )
-    # Approach geometry, not just proximity: pays for the finger axis aiming
-    # at the same rim point reach pulls toward, so the pinch arrives
-    # nose-first with one pad either side of the wall.
-    looking_at_rim = RewTerm(
-        func=mdp.mug_rim_look_at,
-        params={"rim_height": MUG_RIM_HEIGHT, "rim_radius": MUG_RIM_RADIUS},
-        weight=0.5,
+
+    # Progress pays once per min_improvement of NEW best object-to-goal
+    # distance, only while held in an opposed grasp: ground given back cannot
+    # be re-earned, a batted flight moves nothing.
+    position_tracking = RewTerm(
+        func=mdp.position_command_progress,
+        weight=5.0,
+        params={
+            "min_improvement": 0.0025,
+            "command_name": "object_pose",
+            "sensor_name": "pad_object_contact",
+            "contact_threshold": 0.01,
+        },
     )
-    # Keeps the close channel alive: pays for COMMANDING close within 6 cm of
-    # the rim target — action-based (no contact needed, not a touch bonus)
-    # and proximity-gated (not spammable from afar).
-    close_at_rim = RewTerm(
-        func=mdp.close_near_rim,
-        params={"dist_threshold": 0.06, "rim_height": MUG_RIM_HEIGHT, "rim_radius": MUG_RIM_RADIUS},
-        weight=0.5,
+
+    success = RewTerm(
+        func=lift_success_reward,
+        weight=10,
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "pos_std": 0.05,
+            "rot_std": 1.0e6,
+            "command_name": "object_pose",
+            "align_asset_cfg": SceneEntityCfg("object"),
+        },
     )
-    # The teleop-authored pre-grasp as a joint-space attractor: a dense
-    # approach gradient whose optimum is the configuration one close command
-    # from a grasp.
-    pregrasp_match = RewTerm(
-        func=mdp.pregrasp_pose_match,
-        params={"pose": GRASP_BANK_POSE, "std": 0.5},
-        weight=1.0,
-    )
-    # The knock signal: mug motion while NOT held bleeds; a held carry is
-    # exempt. Punishes exactly the approach failure mode and nothing else.
-    # Upstream's good_finger_contact (franka_env_cfg.py, weight 0.75,
-    # threshold 0.01 N), parallel-jaw form: both pads pressing the mug is the
-    # two-jaw analogue of their thumb+finger opposition. Reinstated in the
-    # validated shape after the match-upstream ruling; at 0.75 it cannot
-    # outbid the height chain (15) the way the earlier 2.0 hold annuity did.
+
     good_finger_contact = RewTerm(
         func=mdp.mug_grasped,
         params={"sensor_name": "pad_object_contact", "threshold": 0.01},
         weight=0.75,
     )
-    # Height progress is dense (every millimeter of raise pays), weight 15 at
-    # the 8 cm carry height the goal terms gate on.
-    lifting_object = RewTerm(
-        func=mdp.object_lift_progress,
-        params={"rest_height": OBJECT_REST_Z, "target_height": LIFT_HEIGHT},
-        weight=15.0,
-    )
-    object_goal_tracking = RewTerm(
-        func=mdp.object_goal_distance,
-        params={"std": 0.3, "minimal_height": LIFT_HEIGHT, "command_name": "object_pose"},
-        weight=16.0,
-    )
-    object_goal_tracking_fine_grained = RewTerm(
-        func=mdp.object_goal_distance,
-        params={"std": 0.05, "minimal_height": LIFT_HEIGHT, "command_name": "object_pose"},
-        weight=5.0,
-    )
-    # Reference-scale smoothing, and only reference-scale: the slide's
-    # 30x-heavier action-rate/jerk/scrape stack suppresses exactly the
-    # exploration a pinch needs.
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
-    joint_vel = RewTerm(
-        func=mdp.joint_vel_l2, weight=-1e-4, params={"asset_cfg": SceneEntityCfg("robot")}
-    )
+
+    early_termination = RewTerm(func=mdp.is_terminated_term, weight=-50, params={"term_keys": ["robot_abnormal"]})
 
 
 from isaaclab.managers import CurriculumTermCfg as CurrTerm  # noqa: E402
