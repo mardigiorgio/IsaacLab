@@ -773,12 +773,17 @@ def reset_arm_reverse_curriculum(
     # path. Home envs get home written back, undoing any earlier retarget.
     # Requires ABSOLUTE joint_pos observations: relative-to-default obs would
     # alias across start poses.
-    term = env.action_manager.get_term("arm_action")
-    if not hasattr(env, "_bank_offset_cols"):
-        env._bank_offset_cols = torch.tensor(
-            [resolved.index(n) for n in term._joint_names], device=env.device
-        )
-    term._offset[env_ids] = start[:, env._bank_offset_cols]
+    if not hasattr(env, "_bank_offset_map"):
+        env._bank_offset_map = []
+        for term_name in ("arm_action", "gripper_action"):
+            term = env.action_manager.get_term(term_name)
+            offset = getattr(term, "_offset", None)
+            if not torch.is_tensor(offset):
+                continue  # binary-style terms hold no offset (the slide's gripper)
+            cols = torch.tensor([resolved.index(n) for n in term._joint_names], device=env.device)
+            env._bank_offset_map.append((term, cols))
+    for term, cols in env._bank_offset_map:
+        term._offset[env_ids] = start[:, cols]
     asset.write_joint_position_to_sim_index(position=start, joint_ids=joint_ids, env_ids=env_ids)
     asset.write_joint_velocity_to_sim_index(velocity=torch.zeros_like(start), joint_ids=joint_ids, env_ids=env_ids)
 

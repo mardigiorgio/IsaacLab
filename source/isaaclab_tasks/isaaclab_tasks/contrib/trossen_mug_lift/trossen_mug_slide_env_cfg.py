@@ -25,6 +25,9 @@ from isaaclab.utils.configclass import configclass
 
 from . import mdp
 from .trossen_mug_lift_env_cfg import (
+    ARM_JOINTS,
+    GRIPPER_JOINT,
+    GRIPPER_JOINT_R,
     OBJECT_REST_Z,
     TrossenMugLiftEnvCfg,
 )
@@ -33,6 +36,25 @@ from .trossen_mug_lift_env_cfg import (
 # stays under it, a smack exceeds it immediately. Loose enough that contact
 # transients do not zero honest pushes.
 PUSH_SPEED_MAX = 0.75
+
+
+@configclass
+class SlideActionsCfg:
+    """The slide's action set, pinned verbatim to the slidev1 recipe.
+
+    The lift base retunes its actions for pinch survival (smaller arm scale,
+    position-controlled gripper); the slide's trained ladder used arm scale
+    0.25 and the binary gripper, so the frozen recipe is declared here."""
+
+    arm_action = mdp.JointPositionActionCfg(
+        asset_name="robot", joint_names=[ARM_JOINTS], scale=0.25, use_default_offset=True, clip={".*": (-6.0, 6.0)}
+    )
+    gripper_action = mdp.BinaryJointPositionActionCfg(
+        asset_name="robot",
+        joint_names=[GRIPPER_JOINT, GRIPPER_JOINT_R],
+        open_command_expr={GRIPPER_JOINT: 0.044, GRIPPER_JOINT_R: 0.044},
+        close_command_expr={GRIPPER_JOINT: 0.0, GRIPPER_JOINT_R: 0.0},
+    )
 
 
 @configclass
@@ -162,6 +184,7 @@ class TrossenMugSlideEnvCfg(TrossenMugLiftEnvCfg):
     """Slide task: shared scene/actions/observations from the lift base;
     behavioral managers replaced wholesale by the slide's own."""
 
+    actions: SlideActionsCfg = SlideActionsCfg()
     observations: SlideObservationsCfg = SlideObservationsCfg()
     rewards: SlideRewardsCfg = SlideRewardsCfg()
     terminations: SlideTerminationsCfg = SlideTerminationsCfg()
@@ -170,11 +193,6 @@ class TrossenMugSlideEnvCfg(TrossenMugLiftEnvCfg):
 
     def __post_init__(self):
         super().__post_init__()
-
-        # Pinned to the slidev1 recipe: the lift base retunes its arm action
-        # scale for pinch survival, but the slide's trained ladder used 0.25
-        # and every future twin must match it.
-        self.actions.arm_action.scale = 0.25
 
         # ONE mug position across lift and slide, deliberately: a single
         # tape-measure placement serves both hardware protocols.

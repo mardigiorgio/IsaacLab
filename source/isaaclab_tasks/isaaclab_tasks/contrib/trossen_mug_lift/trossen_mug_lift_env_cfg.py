@@ -433,17 +433,20 @@ class ActionsCfg:
     arm_action = mdp.JointPositionActionCfg(
         asset_name="robot", joint_names=[ARM_JOINTS], scale=0.1, use_default_offset=True, clip={".*": (-6.0, 6.0)}
     )
-    gripper_action = mdp.BinaryJointPositionActionCfg(
+    # POSITION-controlled carriages with the same hold-at-offset machinery as
+    # the arm, NOT the binary open/close term: a binary gripper cannot HOLD a
+    # clamp under exploration — zero/positive action is a full open, the sign
+    # flips every few steps at init, and P(close held for an episode) is
+    # 0.5^150. With a default offset, zero action KEEPS the current grip, and
+    # the bank event retargets the offset so grasped starts hold their seat.
+    # Both carriages actively driven -- symmetric close, like the real
+    # hardware (the mimic weld stays defused in the task layer).
+    gripper_action = mdp.JointPositionActionCfg(
         asset_name="robot",
         joint_names=[GRIPPER_JOINT, GRIPPER_JOINT_R],
-        # BOTH carriages actively driven to the same target -- symmetric close, like
-        # the real hardware. This replaces the earlier right-carriage weld (a
-        # ghost-world-era workaround for the solver-sensitive passive mimic): with
-        # the mimic defused in the task layer, two position-driven carriages need no
-        # coupling constraint at all, and the grasp stays centered like the real
-        # gripper's.
-        open_command_expr={GRIPPER_JOINT: 0.044, GRIPPER_JOINT_R: 0.044},
-        close_command_expr={GRIPPER_JOINT: 0.0, GRIPPER_JOINT_R: 0.0},
+        scale=0.02,
+        use_default_offset=True,
+        clip={".*": (-6.0, 6.0)},
     )
 
 
