@@ -516,6 +516,15 @@ class RewardsCfg:
     )
     # The knock signal: mug motion while NOT held bleeds; a held carry is
     # exempt. Punishes exactly the approach failure mode and nothing else.
+    # The rung between hover and airborne: a held clamp pays per step, so the
+    # close that precedes every lift has its own gradient. Scripted-grasp probe:
+    # close-then-raise from the bank pose lifts 100% of envs, so the ladder,
+    # not the physics, is what training has to climb.
+    grasping = RewTerm(
+        func=mdp.mug_grasped,
+        params={"sensor_name": "pad_object_contact", "threshold": 0.5},
+        weight=2.0,
+    )
     mug_knocked = RewTerm(
         func=mdp.mug_disturbed_ungrasped,
         params={"sensor_name": "pad_object_contact", "contact_threshold": 0.5},

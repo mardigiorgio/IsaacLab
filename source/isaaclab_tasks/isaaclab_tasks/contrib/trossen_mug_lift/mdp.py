@@ -834,6 +834,15 @@ def _pad_force_mags(env: ManagerBasedRLEnv, sensor_name: str) -> torch.Tensor:
     return torch.linalg.vector_norm(net, dim=-1).nan_to_num(0.0)
 
 
+def mug_grasped(env: ManagerBasedRLEnv, sensor_name: str, threshold: float) -> torch.Tensor:
+    """Reward form of the opposed-grasp gate: 1 while both pads clamp the mug.
+
+    The rung between hovering and airborne income: closing on the mug must pay
+    BEFORE any lift succeeds, or the close-and-hold that precedes every lift is
+    a reward dead zone the policy has no gradient into."""
+    return opposed_grasp(env, sensor_name, threshold).float()
+
+
 def opposed_grasp(env: ManagerBasedRLEnv, sensor_name: str, threshold: float) -> torch.Tensor:
     """Bool per env: EVERY pad presses the object above ``threshold`` [N].
 
