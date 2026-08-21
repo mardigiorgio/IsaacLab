@@ -502,13 +502,21 @@ class RewardsCfg:
     # TCP cannot reach without penetration — its gradient optimum is a press
     # into the lower wall. The nearest-rim-point target makes the optimum a
     # one-wall pinch pose (pad outside, pad inside the opening).
-    # std 0.3, scene-scaled: the reference std 0.1 assumes Franka's ~25 cm
-    # home-to-object distance; this rig's home start puts the TCP ~0.5 m from
-    # the rim, where 1 - tanh(d/0.1) is saturated dead (reward 1e-4, gradient
-    # ~1e-3/m). At 0.3 the kernel is alive across the whole approach.
+    # FINGERS to object, not a general EE-reach (operator ruling): tanh kernel
+    # on the WORST pad-to-mug distance — both jaws must approach for the
+    # kernel to saturate, so it shapes the straddle itself, and it pays in
+    # full only under an opposed grasp (dexsuite approach-flow form, the same
+    # shape the fork's core lift uses). std 0.3, scene-scaled: this rig's
+    # home start puts the fingers ~0.5 m out, where a std-0.1 kernel is
+    # saturated dead (reward 1e-4, gradient ~1e-3/m).
     reaching_object = RewTerm(
-        func=mdp.mug_rim_ee_distance,
-        params={"std": 0.3, "rim_height": MUG_RIM_HEIGHT, "rim_radius": MUG_RIM_RADIUS},
+        func=mdp.fingers_to_object,
+        params={
+            "std": 0.3,
+            "sensor_name": "pad_object_contact",
+            "contact_threshold": 0.5,
+            "asset_cfg": SceneEntityCfg("robot", body_names="follower_left_gripper_.*"),
+        },
         weight=1.0,
     )
     # Approach geometry, not just proximity: pays for the finger axis aiming
