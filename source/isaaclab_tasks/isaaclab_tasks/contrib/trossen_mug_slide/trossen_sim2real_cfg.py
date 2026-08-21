@@ -17,7 +17,10 @@ distillation runner.
 """
 
 from isaaclab.managers import EventTermCfg as EventTerm
+from isaaclab.managers import ObservationGroupCfg as ObsGroup
+from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import SceneEntityCfg
+from isaaclab.utils.noise import UniformNoiseCfg as Unoise
 from isaaclab.utils.configclass import configclass
 
 from . import mdp
@@ -80,3 +83,36 @@ class TrossenMugSlideTeacherEnvCfg(TrossenMugSlideEnvCfg):
     def __post_init__(self):
         super().__post_init__()
         _apply_teacher_dr(self)
+
+
+@configclass
+class TrossenMugSlideDistillEnvCfg(TrossenMugSlideTeacherEnvCfg):
+    """Distillation stage for the slide: the teacher's randomized world with
+    a second, heavy-noise ``student`` observation group. The ``policy`` group
+    stays byte-identical to the frozen slidev1 recipe — the trained teacher
+    checkpoint reads it, so its layout is load-bearing."""
+
+    def __post_init__(self):
+        super().__post_init__()
+
+        policy = self.observations.policy
+
+        @configclass
+        class StudentObsCfg(ObsGroup):
+            joint_pos = ObsTerm(func=policy.joint_pos.func, noise=Unoise(n_min=-0.05, n_max=0.05))
+            joint_vel = ObsTerm(func=policy.joint_vel.func, noise=Unoise(n_min=-2.0, n_max=2.0))
+            object_position = ObsTerm(
+                func=policy.object_position.func, noise=Unoise(n_min=-0.02, n_max=0.02)
+            )
+            target_object_position = ObsTerm(
+                func=policy.target_object_position.func, params=dict(policy.target_object_position.params)
+            )
+            actions = ObsTerm(func=policy.actions.func, clip=(-6.0, 6.0))
+
+            def __post_init__(self):
+                self.enable_corruption = True
+                self.concatenate_terms = True
+                self.history_length = 5
+
+        self.observations.student = StudentObsCfg()
+        self.observations.policy.enable_corruption = False

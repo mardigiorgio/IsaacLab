@@ -13,7 +13,13 @@ the Franka cube lift does.
 
 from isaaclab.utils.configclass import configclass
 
-from isaaclab_rl.rsl_rl import RslRlMLPModelCfg, RslRlOnPolicyRunnerCfg, RslRlPpoAlgorithmCfg
+from isaaclab_rl.rsl_rl import (
+    RslRlDistillationAlgorithmCfg,
+    RslRlDistillationRunnerCfg,
+    RslRlMLPModelCfg,
+    RslRlOnPolicyRunnerCfg,
+    RslRlPpoAlgorithmCfg,
+)
 
 
 @configclass
@@ -61,3 +67,47 @@ class TrossenMugLiftPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         desired_kl=0.01,
         max_grad_norm=1.0,
     )
+
+
+@configclass
+class TrossenMugLiftDistillationRunnerCfg(RslRlDistillationRunnerCfg):
+    """Teacher->student distillation (anymal_d pattern): the frozen teacher
+    reads the clean privileged group, the student learns to match it from the
+    heavy-noise group. Teacher dims must equal the trained teacher's actor."""
+
+    num_steps_per_env = 120
+    max_iterations = 300
+    save_interval = 50
+    experiment_name = "trossen_mug_lift"
+    obs_groups = {"student": ["student"], "teacher": ["policy"]}
+    student = RslRlMLPModelCfg(
+        hidden_dims=[256, 128, 64],
+        activation="elu",
+        obs_normalization=False,
+        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=0.1, std_type="log", std_range=(0.05, 3.0)),
+    )
+    teacher = RslRlMLPModelCfg(
+        hidden_dims=[256, 128, 64],
+        activation="elu",
+        obs_normalization=False,
+        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=0.0, std_type="log", std_range=(0.0, 3.0)),
+    )
+    algorithm = RslRlDistillationAlgorithmCfg(
+        num_learning_epochs=2,
+        learning_rate=1.0e-3,
+        gradient_length=15,
+    )
+
+
+@configclass
+class TrossenMugLiftFinetunePPORunnerCfg(TrossenMugLiftPPORunnerCfg):
+    """RL finetune of the distilled student: asymmetric actor-critic — the
+    actor sees only the heavy-noise student group (what hardware provides),
+    the critic keeps clean privileged state. Resume from the distilled
+    checkpoint; the low LR polishes rather than relearns."""
+
+    obs_groups = {"actor": ["student"], "critic": ["policy"]}
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.algorithm.learning_rate = 3.0e-5

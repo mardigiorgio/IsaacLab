@@ -17,8 +17,11 @@ distillation runner.
 """
 
 from isaaclab.managers import EventTermCfg as EventTerm
+from isaaclab.managers import ObservationGroupCfg as ObsGroup
+from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils.configclass import configclass
+from isaaclab.utils.noise import UniformNoiseCfg as Unoise
 
 from . import mdp
 from .trossen_mug_lift_env_cfg import TrossenMugLiftEnvCfg
@@ -132,3 +135,50 @@ class TrossenMugLiftTeacherEnvCfg(TrossenMugLiftEnvCfg):
             "z": (0.0, 0.0),
             "yaw": (-3.14159, 3.14159),
         }
+
+
+@configclass
+class TrossenMugLiftDistillEnvCfg(TrossenMugLiftTeacherEnvCfg):
+    """Distillation stage: the teacher's randomized world, TWO observation
+    groups — ``policy`` (clean privileged state, what the trained teacher
+    reads) and ``student`` (the same signals under HEAVY sensor noise, what
+    the real rig's proprioception looks like). The G1-family pattern: the
+    student is state-based; cameras are a later stage if hardware demands
+    them."""
+
+    def __post_init__(self):
+        super().__post_init__()
+
+        policy = self.observations.policy
+
+        @configclass
+        class StudentObsCfg(ObsGroup):
+            joint_pos = ObsTerm(func=policy.joint_pos.func, noise=Unoise(n_min=-0.05, n_max=0.05))
+            joint_vel = ObsTerm(func=policy.joint_vel.func, noise=Unoise(n_min=-2.0, n_max=2.0))
+            contact = ObsTerm(
+                func=policy.contact.func,
+                params=dict(policy.contact.params),
+                clip=(-20.0, 20.0),
+                noise=Unoise(n_min=-2.0, n_max=2.0),
+            )
+            object_position = ObsTerm(
+                func=policy.object_position.func, noise=Unoise(n_min=-0.02, n_max=0.02)
+            )
+            object_orientation = ObsTerm(
+                func=policy.object_orientation.func,
+                params=dict(policy.object_orientation.params),
+                noise=Unoise(n_min=-0.05, n_max=0.05),
+            )
+            target_object_position = ObsTerm(
+                func=policy.target_object_position.func, params=dict(policy.target_object_position.params)
+            )
+            actions = ObsTerm(func=policy.actions.func, clip=(-6.0, 6.0))
+
+            def __post_init__(self):
+                self.enable_corruption = True
+                self.concatenate_terms = True
+                self.history_length = 5
+
+        self.observations.student = StudentObsCfg()
+        # the privileged group stays clean for the teacher side of distillation
+        self.observations.policy.enable_corruption = False
