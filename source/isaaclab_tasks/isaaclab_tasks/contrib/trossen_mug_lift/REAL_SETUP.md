@@ -1,41 +1,40 @@
-# Real-world setup: Trossen spatula lift
+# Real-world setup: Trossen Stationary AI mug tasks
 
-Reproduces the simulation's evaluation pose (`...EnvCfg_PLAY`, zero spawn jitter) at the
-physical Stationary AI rig with a tape measure. Training adds ±10 cm lateral / ±7.5 cm
-forward jitter around this same nominal pose.
+Every placement is defined relative to ONE physical landmark — the LEFT arm's
+base-plate center at tabletop level — so the identical setup is reproduced on
+the rig with a tape measure. "Forward" is away from the left arm along the
+rig's centerline; "left/right" are from the operator standing behind the left
+arm facing forward. Sim trains with ZERO spawn jitter: the experiment is
+lift-from-THE-spot / slide-from-THE-spot, and the rig must match.
 
-## Reference landmark
+## Mug placement (shared by BOTH tasks)
 
-**The LEFT arm's base plate center, at tabletop level.** All measurements start here.
-"Forward" means from the base plate toward the opposite arm; "left" is the operator's
-left when standing behind the left arm facing forward.
+1. Mark the point **63.0 cm forward** of the base-plate center, on the
+   centerline (zero lateral offset).
+2. Place the mug's bottom-center on the mark, handle pointing toward the
+   left arm's base plate (sim spawns the handle at +90° yaw toward the rig).
 
-## Spatula placement (nominal / evaluation pose)
+Sim reference (env frame, meters): mug root at (-0.020, -0.1725, 0.021).
 
-1. Mark the point **33.0 cm forward** of the base plate center, **on the base plate's
-   centerline** (lateral offset 0).
-2. Lay the spatula **flat on the tabletop** with the **blade center** on that mark.
-3. **Handle points to the operator's left**, blade edge facing the arm — the blade's
-   7.0 cm width lies across the gripper's approach.
+## Slide task (mug A -> B without tipping)
 
-```
-        [opposite arm]
-              ^
-              | forward
-              |
-   handle <===#####        # = blade, center on the mark
-              |(33.0 cm)
-              |
-      [left arm base plate]
-```
+- A is the mug placement above.
+- B is on the table, **20 cm past A along the push line** (away from the
+  arm), 3 cm toward the mug's centerline alignment — in sim the commanded
+  goal is fixed and rendered as the table cross in every clip.
+- Success: mug upright at B, at rest. Tipping or leaving the table is a
+  failed trial.
 
-## Notes
+## Lift task (pick and carry to a fixed point)
 
-- The gripper grasps the BLADE (7.0 cm wide), not the handle: the official model's
-  closed finger gap is 4.83 cm, wider than the ~2.2 cm handle. See the task module
-  docstring for the measured geometry.
-- Reachability: this pose sits at the center of the band a trained Stationary AI cube
-  policy demonstrably grasped across (June reach-map measurements; band corners
-  0.22-0.39 m from the base plate, well inside the arm's measured extension).
-- If the physical gripper's true closed gap is measured below ~2 cm (ruler check),
-  handle grasp becomes possible and the task geometry should be revisited.
+- Same mug placement.
+- The carry target is a single fixed point commanded ~25 cm above the table;
+  its exact rig-frame projection gets taped during the eval session from the
+  sim goal marker.
+
+## Evaluation protocol
+
+- Policies are evaluated from the HOME pose only (the -Play task variants pin
+  every episode to home starts; no reset banks in eval).
+- Film every trial; success judgments come from the video plus the logged
+  metrics, not the reward.
