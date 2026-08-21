@@ -554,11 +554,12 @@ class RewardsCfg:
     # Target = the RIM circle, not the root: the root is the bottom center,
     # whose arg-min is both fingertips inside the cavity (field-observed).
     fingers_to_object = RewTerm(
-        func=mdp.fingers_to_rim,
+        func=mdp.fingers_to_mug_surface,
         params={
             "std": 0.4,
-            "rim_height": MUG_RIM_HEIGHT,
-            "rim_radius": MUG_RIM_RADIUS,
+            "mug_radius": MUG_RIM_RADIUS,
+            "mug_height": MUG_RIM_HEIGHT,
+            "inner_radius": 0.035,
             "sensor_name": "pad_object_contact",
             "contact_threshold": 0.01,
             "asset_cfg": SceneEntityCfg("robot", body_names="follower_left_gripper_.*"),

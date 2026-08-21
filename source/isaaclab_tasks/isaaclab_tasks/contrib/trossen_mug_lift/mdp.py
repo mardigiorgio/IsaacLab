@@ -493,39 +493,48 @@ def object_ee_distance(
     return _finite(1.0 - torch.tanh(distance / std))
 
 
-def fingers_to_rim(
+def fingers_to_mug_surface(
     env: ManagerBasedRLEnv,
     std: float,
-    rim_height: float,
-    rim_radius: float,
+    mug_radius: float,
+    mug_height: float,
+    inner_radius: float,
     sensor_name: str,
     contact_threshold: float,
     asset_cfg: SceneEntityCfg,
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
 ) -> torch.Tensor:
-    """Approach flow on the WORST pad-to-nearest-RIM-POINT distance, paid at
-    10% without an opposed grasp and in full with one.
+    """Approach flow on the WORST pad distance to the mug's cylinder surface
+    (operator's formulation: radius and height of the mug, min distance to
+    the lateral surface), full pay ONLY for a grasped STRADDLE.
 
-    The dexsuite form targets the object ROOT — the mug's bottom center — so
-    its arg-min is both fingertips pushed down inside the cavity toward the
-    bottom (field-observed as the both-fingers-in-the-mouth exploit). Every
-    rim point is reachable without penetration and the rim IS the pinch
-    target, so the kernel's optimum returns to a one-in-one-out straddle."""
+    Unsigned distance to any surface or curve scores inside-touching equal
+    to outside-touching, so the kernel alone cannot kill the both-fingers-
+    inside exploit — and one finger inside IS the intended grasp, so no
+    per-pad geometry can. The discriminator is the PAIR: full pay requires
+    one pad inside the opening radius and one outside the wall, under an
+    opposed grasp. Both-inside never earns full pay and sits farther from
+    the surface than the straddle: strictly dominated, no fines."""
     asset = env.scene[asset_cfg.name]
     obj = env.scene[object_cfg.name]
     root = obj.data.root_pos_w.torch
     quat = obj.data.root_quat_w.torch
     axis = quat_apply(quat, torch.tensor([0.0, 0.0, 1.0], device=root.device).expand_as(root))
-    center = root + rim_height * axis
     pads = asset.data.body_pos_w.torch[:, asset_cfg.body_ids]
-    d = pads - center[:, None, :]
+    d = pads - root[:, None, :]
     axial = (d * axis[:, None, :]).sum(dim=-1)
     planar = d - axial.unsqueeze(-1) * axis[:, None, :]
-    planar_len = torch.linalg.vector_norm(planar, dim=-1)
-    # closed-form point-to-circle distance: no division, no degenerate axis
-    # case (an on-axis point is rim_radius away in the planar direction).
-    dist = torch.sqrt(axial.square() + (planar_len - rim_radius).square()).max(dim=-1).values
-    scale = torch.where(opposed_grasp(env, sensor_name, contact_threshold), 1.0, 0.1)
+    r = torch.linalg.vector_norm(planar, dim=-1)
+    # exterior: hypot of radial and axial overshoot; interior of the
+    # cylinder envelope: distance to the lateral wall from inside
+    dr = (r - mug_radius).clamp(min=0.0)
+    dz = (axial - mug_height).clamp(min=0.0) + (-axial).clamp(min=0.0)
+    d_ext = torch.sqrt(dr.square() + dz.square())
+    inside_env = (r < mug_radius) & (axial > 0.0) & (axial < mug_height)
+    dist = torch.where(inside_env, mug_radius - r, d_ext).max(dim=-1).values
+    straddle = (r < inner_radius).any(dim=1) & (r > mug_radius).any(dim=1)
+    full = opposed_grasp(env, sensor_name, contact_threshold) & straddle
+    scale = torch.where(full, 1.0, 0.1)
     return _finite((1.0 - torch.tanh(dist / std)) * scale)
 
 
