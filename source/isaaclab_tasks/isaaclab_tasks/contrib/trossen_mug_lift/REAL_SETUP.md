@@ -20,9 +20,11 @@ Sim reference (env frame, meters): mug root at (-0.020, 0.000, 0.021).
 ## Slide task (mug A -> B without tipping)
 
 - A is the mug placement above.
-- B is on the table, **20 cm past A along the push line** (away from the
-  arm), 3 cm toward the mug's centerline alignment — in sim the commanded
-  goal is fixed and rendered as the table cross in every clip.
+- B is at the FAR END of the push line: on the centerline, **one mug-base
+  radius (4 cm) before the rail at the table's far edge** — a ~57 cm slide.
+  Beyond arm reach by design: the policy pushes and releases, friction parks
+  the mug. In sim the commanded goal is fixed and rendered as the table
+  cross in every clip.
 - Success: mug upright at B, at rest. Tipping or leaving the table is a
   failed trial.
 

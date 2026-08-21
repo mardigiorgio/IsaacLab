@@ -51,7 +51,10 @@ class TrossenMugSlideEnvCfg(TrossenMugLiftEnvCfg):
         # mug farm kernel income. Marker visualization on, so the target is
         # visible in the viewer and training clips.
         self.commands.object_pose.ranges.pos_z = (OBJECT_REST_Z, OBJECT_REST_Z)
-        self.commands.object_pose.ranges.pos_x = (0.09, 0.09)
+        # B at the far end of the push line: one mug-base-radius before the
+        # rail at the table's far edge. Beyond arm reach by design — the
+        # policy must push-and-release and let friction park the mug.
+        self.commands.object_pose.ranges.pos_x = (0.457, 0.457)
         self.commands.object_pose.ranges.pos_y = (-0.03, -0.03)
         self.commands.object_pose.debug_vis = True
 
