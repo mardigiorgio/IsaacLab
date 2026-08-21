@@ -55,7 +55,7 @@ class TrossenMugSlideEnvCfg(TrossenMugLiftEnvCfg):
         # mug-base-radius before the rail: lateral slide on the mug's line.
         # Probe-measured mapping (scripts/probes/probe_goal_map.py): command
         # frame IS the env frame; side edge x=+0.375, minus one mug radius.
-        self.commands.object_pose.ranges.pos_x = (0.315, 0.315)
+        self.commands.object_pose.ranges.pos_x = (0.30, 0.30)
         self.commands.object_pose.ranges.pos_y = (0.0, 0.0)
         self.commands.object_pose.debug_vis = True
 
