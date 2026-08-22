@@ -561,11 +561,13 @@ class RewardsCfg:
 
     # weight 1.0 (classic cube-lift reach), not the dexsuite 0.05: with no
     # aerial-spawn machinery, reach-driven discovery must be profitable.
-    # Target = the RIM circle, not the root: the root is the bottom center,
-    # whose arg-min is both fingertips inside the cavity (field-observed).
-    # The plain dexsuite finger-reach term (operator ruling: the inside-mug
-    # sightings were teleport visuals, not reward-driven — simplify). Weight
-    # stays 1.0: the statue arithmetic on discovery still holds.
+    # Weight 3.0: at 1.0 the depth gradient is negligible — a rim-tip pinch
+    # and a deep grip differ by ~0.11 on the kernel, dwarfed by the contact
+    # income, so grips settle at the shallowest hold (rim plucking). Tripling
+    # makes depth worth trading gripper jitter for. The known failure mode of
+    # a strong root pull is the both-fingers-inside attractor; the opposed-
+    # grasp gate (10% income without a two-sided hold) is the guard, and the
+    # early videos are the check.
     fingers_to_object = RewTerm(
         func=mdp.fingers_to_object,
         params={
@@ -574,7 +576,7 @@ class RewardsCfg:
             "contact_threshold": 0.01,
             "asset_cfg": SceneEntityCfg("robot", body_names="follower_left_gripper_.*"),
         },
-        weight=1.0,
+        weight=3.0,
     )
 
     # Progress pays once per min_improvement of NEW best object-to-goal
