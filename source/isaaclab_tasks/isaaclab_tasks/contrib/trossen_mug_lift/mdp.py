@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 import torch
 
 from isaaclab.envs.mdp import *  # noqa: F401,F403
-from isaaclab.managers import ManagerTermBase, SceneEntityCfg, TerminationTermCfg
+from isaaclab.managers import ManagerTermBase, SceneEntityCfg
 from isaaclab.utils.math import combine_frame_transforms, quat_apply, sample_uniform, subtract_frame_transforms
 
 if TYPE_CHECKING:
@@ -197,6 +197,7 @@ def reset_arm_reverse_curriculum(
     grasped_fraction: float = 0.0,
     grasped_carriage_m: float = 0.0035,
     grasped_raise_m: float = 0.0,
+    in_hand_seed: dict | None = None,
     track_object_xy: list | None = None,
     nominal_object_pos: tuple | None = None,
     safe_yaw_range: tuple | None = None,
@@ -239,6 +240,8 @@ def reset_arm_reverse_curriculum(
     # (probe_bank_jacobian.py). The handle is the mug's only asymmetric
     # part, so bank envs also re-sample yaw into the handle-safe arc before
     # the arm is placed around the mug.
+    dq_arm = None
+    arm_cols = None
     if track_object_xy is not None and sel.any():
         obj = env.scene[object_cfg.name]
         if safe_yaw_range is not None:
@@ -255,29 +258,56 @@ def reset_arm_reverse_curriculum(
                 root_velocity=torch.zeros(rows.shape[0], 6, device=env.device), env_ids=ids_sel
             )
         nominal = torch.tensor(nominal_object_pos, device=env.device)
-        delta = (
-            obj.data.root_pos_w.torch[env_ids, :2]
-            - env.scene.env_origins[env_ids, :2]
-            - nominal
-        )
+        delta = obj.data.root_pos_w.torch[env_ids, :2] - env.scene.env_origins[env_ids, :2] - nominal
         M = torch.tensor(track_object_xy, device=env.device, dtype=torch.float32)
-        dq = delta @ M.T
-        arm_cols = torch.tensor(
-            [resolved.index(f"follower_left_joint_{i}") for i in range(6)], device=env.device
-        )
-        start[:, arm_cols] = torch.where(sel.unsqueeze(1), start[:, arm_cols] + dq, start[:, arm_cols])
+        dq_arm = delta @ M.T
+        arm_cols = torch.tensor([resolved.index(f"follower_left_joint_{i}") for i in range(6)], device=env.device)
+        start[:, arm_cols] = torch.where(sel.unsqueeze(1), start[:, arm_cols] + dq_arm, start[:, arm_cols])
     limits = asset.data.soft_joint_pos_limits.torch[env_ids[:, None], joint_ids]
     start = torch.where(sel.unsqueeze(1), start.clamp(limits[..., 0], limits[..., 1]), home)
     if grasped_fraction > 0.0:
         gsel = sel & (torch.rand(env_ids.shape[0], device=env.device) < grasped_fraction)
         if gsel.any():
             rows = torch.nonzero(gsel).squeeze(1)
-            # Exactly AT the pose (no alpha, no noise): a seated clamp only
-            # exists there; interpolated or jittered arms clamp air or wall.
-            start[rows] = target
-            for c, n in enumerate(resolved):
-                if "carriage" in n:
-                    start[rows, c] = grasped_carriage_m
+            if in_hand_seed is not None:
+                # The recorded fixed point of the dynamic close: arm joints,
+                # carriage, AND the mug displaced into the grip — a true wall
+                # pinch that contact settling re-establishes, robust to the
+                # tracking residual (teleporting only the joint values leaves
+                # the mug un-displaced and no pinch exists).
+                seed_q = torch.tensor(
+                    [in_hand_seed.get(n, 0.0) for n in resolved],
+                    device=env.device,
+                    dtype=torch.float32,
+                )
+                for c, n in enumerate(resolved):
+                    if "carriage" in n:
+                        seed_q[c] = in_hand_seed["carriage_m"]
+                start[rows] = seed_q
+            else:
+                # Exactly AT the pose (no alpha, no noise): a seated clamp only
+                # exists there; interpolated or jittered arms clamp air or wall.
+                start[rows] = target
+                for c, n in enumerate(resolved):
+                    if "carriage" in n:
+                        start[rows, c] = grasped_carriage_m
+            # The tracking translation must survive the row overwrite above,
+            # or grasped starts stop following the mug under randomized
+            # placement.
+            if dq_arm is not None:
+                start[rows[:, None], arm_cols[None, :]] += dq_arm[rows]
+            if in_hand_seed is not None:
+                obj = env.scene[object_cfg.name]
+                ids_g = env_ids[rows]
+                dxyz = in_hand_seed["mug_dxyz_m"]
+                pose7 = obj.data.root_pose_w.torch[ids_g].clone()
+                pose7[:, 0] += dxyz[0]
+                pose7[:, 1] += dxyz[1]
+                pose7[:, 2] += dxyz[2]
+                obj.write_root_pose_to_sim_index(root_pose=pose7, env_ids=ids_g)
+                obj.write_root_velocity_to_sim_index(
+                    root_velocity=torch.zeros(rows.shape[0], 6, device=env.device), env_ids=ids_g
+                )
             # Optional raised (truly held) variant: measured stable, but the
             # A/B record says the benchmark's clamp-on-table form trained
             # faster (raised variant: success 0.001 at 222; benchmark: takeoff

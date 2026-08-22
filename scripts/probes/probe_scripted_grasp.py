@@ -62,7 +62,11 @@ def main() -> int:
         scene = u.scene
         obj = scene["object"]
         env.reset()
-        spawn_z = obj.data.root_pos_w.torch[:, 2].clone()
+        spawn = obj.data.root_pos_w.torch.clone()
+        spawn_z = spawn[:, 2].clone()
+        robot = scene["robot"]
+        car_ids, _ = robot.find_joints("follower_left_.*_carriage_joint")
+        arm_ids, arm_names = robot.find_joints("follower_left_joint_[0-5]", preserve_order=True)
 
         # Action layout: arm term (6 joints, scaled relative targets) then the
         # binary gripper term (1 action: >=0 open, <0 close).
@@ -89,18 +93,40 @@ def main() -> int:
                     fmax = float(torch.linalg.vector_norm(forces.torch.sum(dim=2), dim=-1).nan_to_num(0.0).max())
                 tcp = scene["ee_frame"].data.target_pos_w.torch[..., 0, :]
                 tcp_mug = torch.linalg.vector_norm(tcp - obj.data.root_pos_w.torch, dim=-1)
-                car_ids, _ = u.scene["robot"].find_joints("follower_left_.*_carriage_joint")
-                car = u.scene["robot"].data.joint_pos.torch[:, car_ids]
+                car = robot.data.joint_pos.torch[:, car_ids]
+                # The settled close, BEFORE the raise, is the in-hand seed
+                # state: teleporting it (joints AND mug displacement) must
+                # reproduce this pinch. Reported paste-ready; the raise phase
+                # that follows is its liftability check.
+                if step == args_cli.close_steps - 1:
+                    q = robot.data.joint_pos.torch[:, arm_ids]
+                    d = obj.data.root_pos_w.torch - spawn
+                    pn = torch.zeros(args_cli.num_envs, 2, device=u.device)
+                    if forces is not None:
+                        pn = torch.linalg.vector_norm(forces.torch.sum(dim=2), dim=-1).nan_to_num(0.0)
+                    both_min = pn.min(dim=1).values
+                    print(
+                        f"[in-hand seed] q spread max {(q.max(0).values - q.min(0).values).max() * 1000:.2f} mrad"
+                        f"  carriage {car.mean() * 1000:.2f} mm"
+                        f"  mug d ({d[:, 0].mean() * 1000:+.1f}, {d[:, 1].mean() * 1000:+.1f},"
+                        f" {d[:, 2].mean() * 1000:+.1f}) mm"
+                        f"  spread {(d.max(0).values - d.min(0).values).max() * 1000:.2f} mm"
+                        f"  both-pad force mean {both_min.mean():.2f} N  min {both_min.min():.2f} N"
+                    )
+                    seed = {n: round(float(q[:, i].mean()), 4) for i, n in enumerate(arm_names)}
+                    seed["carriage_m"] = round(float(car.mean()), 5)
+                    seed["mug_dxyz_m"] = tuple(round(float(d[:, i].mean()), 5) for i in range(3))
+                    print(f"IN_HAND_SEED = {seed}")
                 if step % 5 == 4 or step == n_steps - 1:
                     lifted = float((z > 0.04).float().mean())
                     print(
-                        f"[step {step:02d}] mug dz mean {z.mean()*1000:7.1f} mm  max {z.max()*1000:7.1f} mm"
-                        f"  lifted>4cm {lifted*100:5.1f}%  pad force max {fmax:8.2f} N"
-                        f"  tcp-mug mean {tcp_mug.mean()*1000:6.1f} mm"
-                        f"  carriage mean {car.mean()*1000:6.2f} mm"
+                        f"[step {step:02d}] mug dz mean {z.mean() * 1000:7.1f} mm  max {z.max() * 1000:7.1f} mm"
+                        f"  lifted>4cm {lifted * 100:5.1f}%  pad force max {fmax:8.2f} N"
+                        f"  tcp-mug mean {tcp_mug.mean() * 1000:6.1f} mm"
+                        f"  carriage mean {car.mean() * 1000:6.2f} mm"
                     )
         held = float((z > 0.04).float().mean())
-        print(f"[verdict] {held*100:.1f}% of envs hold the mug above 4 cm at the end of the raise")
+        print(f"[verdict] {held * 100:.1f}% of envs hold the mug above 4 cm at the end of the raise")
         env.close()
     return 0
 
