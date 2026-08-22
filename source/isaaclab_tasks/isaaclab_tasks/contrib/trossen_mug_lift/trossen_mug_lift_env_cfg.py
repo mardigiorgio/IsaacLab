@@ -623,15 +623,21 @@ class RewardsCfg:
 @configclass
 class CurriculumCfg:
     """Reverse-curriculum anneal: bank starts begin AT the pre-grasp and the
-    start distribution grows back toward home over the first 500 iterations
-    (12k env-steps at 24 steps/iter), per Florensa reverse curriculum
-    generation — the horizon must fit INSIDE a training run, or the
-    approach-from-home phase never enters the start distribution (the prior
-    240k horizon = 10k iterations meant 1k-iteration runs annealed 10%)."""
+    start distribution grows back toward home over the first 100 iterations
+    (2.4k env-steps at 24 steps/iter), per Florensa reverse curriculum
+    generation.
+
+    The horizon is set by two constraints. It must end AFTER close-discovery
+    saturates (the wide-scale gripper finds sustained contact inside ~40
+    iterations, so the anchor has served its purpose by then), and as soon
+    after as possible: while the anneal runs, every band of newly retreated
+    starts injects fresh unsolved episodes, and consolidation only begins
+    once the start distribution goes stationary at alpha 0 — a long horizon
+    spends most of the run paying that moving-target tax."""
 
     grow_approach = CurrTerm(
         func=mdp.anneal_reverse_curriculum,
-        params={"start_step": 0, "end_step": 12_000, "event_name": "reset_arm_grasp_bank"},
+        params={"start_step": 0, "end_step": 2_400, "event_name": "reset_arm_grasp_bank"},
     )
 
 
