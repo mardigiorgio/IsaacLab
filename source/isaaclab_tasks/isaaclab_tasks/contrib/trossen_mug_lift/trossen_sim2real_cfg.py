@@ -74,6 +74,22 @@ def _apply_teacher_dr(cfg) -> None:
             "velocity_range": {"x": (-0.05, 0.05), "y": (-0.05, 0.05)},
         },
     )
+    # Tabletop friction: the slab is a body of the rig articulation and takes
+    # the shared shape default mu 1.0; the real surface (laminate, dust,
+    # spills) can sit well below it, and the mug-table pair governs every
+    # on-table phase — sliding above all. The bracket reaches down to slick
+    # laminate while covering the authored value.
+    cfg.events.table_material = EventTerm(
+        func=mdp.randomize_rigid_body_material,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names="tabletop_link"),
+            "static_friction_range": (0.4, 1.2),
+            "dynamic_friction_range": (0.4, 1.2),
+            "restitution_range": (0.0, 0.0),
+            "num_buckets": 64,
+        },
+    )
     # Finger-pad friction: the mug-side material is randomized above; the
     # pad side of the grip pair varies with rubber wear and dust in reality.
     # Nominal 1.0 is the vendor model's authored coefficient.
@@ -139,7 +155,7 @@ class TrossenMugLiftTeacherEnvCfg(TrossenMugLiftEnvCfg):
         # Jacobian step, probe-verified sub-mm over this range), and bank
         # envs re-sample yaw into the handle-safe arc so the teleported
         # straddle can never intersect the handle.
-        from .trossen_mug_lift_env_cfg import BANK_POSE_XY_JACOBIAN, _SPAWN_X, _SPAWN_Y  # noqa: PLC0415
+        from .trossen_mug_lift_env_cfg import _SPAWN_X, _SPAWN_Y, BANK_POSE_XY_JACOBIAN  # noqa: PLC0415
 
         bank = self.events.reset_arm_grasp_bank
         bank.params["track_object_xy"] = BANK_POSE_XY_JACOBIAN
@@ -171,9 +187,7 @@ class TrossenMugLiftDistillEnvCfg(TrossenMugLiftTeacherEnvCfg):
                 clip=(-20.0, 20.0),
                 noise=Unoise(n_min=-2.0, n_max=2.0),
             )
-            object_position = ObsTerm(
-                func=policy.object_position.func, noise=Unoise(n_min=-0.02, n_max=0.02)
-            )
+            object_position = ObsTerm(func=policy.object_position.func, noise=Unoise(n_min=-0.02, n_max=0.02))
             object_orientation = ObsTerm(
                 func=policy.object_orientation.func,
                 params=dict(policy.object_orientation.params),

@@ -20,8 +20,8 @@ from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import SceneEntityCfg
-from isaaclab.utils.noise import UniformNoiseCfg as Unoise
 from isaaclab.utils.configclass import configclass
+from isaaclab.utils.noise import UniformNoiseCfg as Unoise
 
 from . import mdp
 from .trossen_mug_slide_env_cfg import TrossenMugSlideEnvCfg
@@ -64,6 +64,22 @@ def _apply_teacher_dr(cfg) -> None:
             "com_range": {"x": (-0.005, 0.005), "y": (-0.005, 0.005), "z": (-0.01, 0.01)},
         },
     )
+    # Tabletop friction: the slab is a body of the rig articulation and takes
+    # the shared shape default mu 1.0; the real surface (laminate, dust,
+    # spills) can sit well below it, and the mug-table pair IS the slide's
+    # dynamics. The bracket reaches down to slick laminate while covering
+    # the authored value.
+    cfg.events.table_material = EventTerm(
+        func=mdp.randomize_rigid_body_material,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names="tabletop_link"),
+            "static_friction_range": (0.4, 1.2),
+            "dynamic_friction_range": (0.4, 1.2),
+            "restitution_range": (0.0, 0.0),
+            "num_buckets": 64,
+        },
+    )
     # Interval nudge on the mug: bumps, tablecloth drag, imperfect resets.
     cfg.events.mug_nudge = EventTerm(
         func=mdp.push_by_setting_velocity,
@@ -101,9 +117,7 @@ class TrossenMugSlideDistillEnvCfg(TrossenMugSlideTeacherEnvCfg):
         class StudentObsCfg(ObsGroup):
             joint_pos = ObsTerm(func=policy.joint_pos.func, noise=Unoise(n_min=-0.05, n_max=0.05))
             joint_vel = ObsTerm(func=policy.joint_vel.func, noise=Unoise(n_min=-2.0, n_max=2.0))
-            object_position = ObsTerm(
-                func=policy.object_position.func, noise=Unoise(n_min=-0.02, n_max=0.02)
-            )
+            object_position = ObsTerm(func=policy.object_position.func, noise=Unoise(n_min=-0.02, n_max=0.02))
             target_object_position = ObsTerm(
                 func=policy.target_object_position.func, params=dict(policy.target_object_position.params)
             )
