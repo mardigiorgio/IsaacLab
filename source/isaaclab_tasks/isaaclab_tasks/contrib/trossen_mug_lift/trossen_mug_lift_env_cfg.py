@@ -51,6 +51,7 @@ from isaaclab.sensors import FrameTransformerCfg
 from isaaclab.sensors.frame_transformer import OffsetCfg
 from isaaclab.sim.schemas import RigidBodyPropertiesCfg
 from isaaclab.sim.spawners.materials.physics_materials_cfg import UsdPhysicsRigidBodyMaterialCfg
+from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.utils.configclass import configclass
 
 from isaaclab_tasks.utils import PresetCfg
@@ -409,10 +410,20 @@ class TrossenMugLiftSceneCfg(InteractiveSceneCfg):
 
     ee_frame: FrameTransformerCfg | None = None  # built in __post_init__ (marker cfg copy)
 
+    # The ground is VISUAL-ONLY. No dynamic body can touch it inside a live
+    # episode -- off-table termination fires at tabletop level, ~0.75 m above
+    # the floor, and the caged arm cannot reach below the slab -- while a
+    # colliding infinite plane defeats BVH pruning, so every geometry query
+    # would test the rig frame's full-resolution mesh against it. Newton's
+    # importer honors collisionEnabled=False and imports the grid as a
+    # non-colliding visual shape.
     plane: AssetBaseCfg = AssetBaseCfg(
         prim_path="/World/GroundPlane",
         init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0)),
-        spawn=sim_utils.GroundPlaneCfg(),
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=f"{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd",
+            collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=False),
+        ),
     )
     light: AssetBaseCfg = AssetBaseCfg(
         prim_path="/World/light",
