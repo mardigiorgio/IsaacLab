@@ -33,8 +33,6 @@ from isaaclab_newton.physics.newton_collision_cfg import NewtonCollisionPipeline
 from isaaclab_newton.sensors import ContactSensorCfg as NewtonContactSensorCfg
 from isaaclab_newton.sim.schemas import MujocoCollisionCfg
 from isaaclab_newton.sim.spawners.materials import NewtonMaterialCfg
-
-from isaaclab.sim.spawners.materials.physics_materials_cfg import UsdPhysicsRigidBodyMaterialCfg
 from isaaclab_physx.physics import PhysxCfg
 
 import isaaclab.sim as sim_utils
@@ -52,6 +50,7 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import FrameTransformerCfg
 from isaaclab.sensors.frame_transformer import OffsetCfg
 from isaaclab.sim.schemas import RigidBodyPropertiesCfg
+from isaaclab.sim.spawners.materials.physics_materials_cfg import UsdPhysicsRigidBodyMaterialCfg
 from isaaclab.utils.configclass import configclass
 
 from isaaclab_tasks.utils import PresetCfg
@@ -311,7 +310,9 @@ class TrossenMugLiftSceneCfg(InteractiveSceneCfg):
                 # hull path must revalidate rest penetration and the grip
                 # census, on BOTH solver arms together.
                 sim_utils.schemas.UsdPhysicsMeshCollisionCfg(
-                    mesh_approximation_name=("convexHull" if os.environ.get("MUG_COLLISION", "mesh") == "hull" else "none")
+                    mesh_approximation_name=(
+                        "convexHull" if os.environ.get("MUG_COLLISION", "mesh") == "hull" else "none"
+                    )
                 ),
                 # See the rig's collision_props: the contact response time is
                 # authored rather than derived from ke/kd, which would place it
@@ -609,9 +610,6 @@ class RewardsCfg:
     early_termination = RewTerm(func=mdp.is_terminated_term, weight=-50, params={"term_keys": ["robot_abnormal"]})
 
 
-from isaaclab.managers import CurriculumTermCfg as CurrTerm  # noqa: E402
-
-
 @configclass
 class CurriculumCfg:
     """Reverse-curriculum anneal: bank starts begin AT the pre-grasp and the
@@ -667,6 +665,19 @@ class EventCfg:
             "asset_cfg": SceneEntityCfg("object"),
         },
     )
+    # Scatter every reset's arm joints; declared BEFORE the bank event, which
+    # overwrites its own subset with exact poses — so the net effect is wide
+    # start-state coverage on the home half only. Mug-independent, hence
+    # composes with placement/yaw DR unchanged.
+    randomize_arm_start = EventTerm(
+        func=mdp.reset_joints_by_offset,
+        mode="reset",
+        params={
+            "position_range": (-0.6, 0.6),
+            "velocity_range": (0.0, 0.0),
+            "asset_cfg": SceneEntityCfg("robot", joint_names="follower_left_joint_[0-5]"),
+        },
+    )
     # Reverse-curriculum starts (Florensa): bank episodes begin at an
     # interpolation between home and the teleop pre-grasp; the curriculum
     # lowers alpha_min from 1 to 0, growing the start distribution back
@@ -677,12 +688,13 @@ class EventCfg:
         params={
             "pose": GRASP_BANK_POSE,
             "bank_fraction": 0.5,
-            "noise": 0.01,
+            # Bank poses are applied EXACTLY: under DR the per-env Jacobian
+            # re-solve does the adapting, so jitter here only degrades the
+            # seeded states (mm-scale clearances).
+            "noise": 0.0,
             "alpha_min": 1.0,
-            # 50/25/25, BENCHMARK-verbatim: clamp-on-table grasped subset and
-            # 0.01 reset noise — the exact behavior of the run that measured
-            # 50/50 pickups (13-28-57). The raised in-hand variant exists
-            # behind grasped_raise_m and trained slower in the A/B.
+            # 50/25/25: clamp-on-table grasped subset. The raised in-hand
+            # variant exists behind grasped_raise_m.
             "grasped_fraction": 0.5,
             # 0.0035, the takeoff-proven seat: the policy trained with it reached
             # 36.3 reward and 50/50 home-start pickups; its minority ejections
