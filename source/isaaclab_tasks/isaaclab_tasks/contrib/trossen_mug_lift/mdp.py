@@ -344,34 +344,6 @@ def success_at_goal(
     return _finite(held * (1.0 - torch.tanh(err / pos_std)))
 
 
-def settled_hold_at_goal(
-    env: ManagerBasedRLEnv,
-    command_name: str,
-    pos_std: float,
-    vel_std: float,
-    sensor_name: str,
-    contact_threshold: float = 0.01,
-    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
-    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
-    arm_cfg: SceneEntityCfg = SceneEntityCfg("robot", joint_names="follower_left_joint_[0-5]"),
-) -> torch.Tensor:
-    """Calm-hold bonus inside the success state: success_at_goal's exact
-    at-goal, opposed-grasp payment scaled by an arm-stillness kernel on the
-    arm joint speeds. Because every factor of the gate must already be earned,
-    a policy that never lifts collects nothing from stillness -- the term can
-    only shape HOW the succeeded hold is carried, never whether to pursue it,
-    which is what makes a stillness income safe against the measured
-    hover-statue attractor."""
-    robot = env.scene[robot_cfg.name]
-    obj = env.scene[object_cfg.name]
-    command = env.command_manager.get_command(command_name)
-    des_pos_w, _ = combine_frame_transforms(robot.data.root_pos_w.torch, robot.data.root_quat_w.torch, command[:, :3])
-    err = torch.linalg.vector_norm(des_pos_w - obj.data.root_pos_w.torch, dim=1)
-    held = opposed_grasp(env, sensor_name, contact_threshold)
-    speed = torch.linalg.vector_norm(robot.data.joint_vel.torch[:, arm_cfg.joint_ids], dim=1)
-    return _finite(held * (1.0 - torch.tanh(err / pos_std)) * (1.0 - torch.tanh(speed / vel_std)))
-
-
 def pad_contact_forces(env: ManagerBasedRLEnv, sensor_name: str) -> torch.Tensor:
     """Net contact force on each finger pad from the mug [N], world frame,
     flattened (num_envs, num_pads * 3).
