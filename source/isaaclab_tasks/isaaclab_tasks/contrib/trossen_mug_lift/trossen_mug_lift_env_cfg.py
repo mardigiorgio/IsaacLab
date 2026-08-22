@@ -472,10 +472,20 @@ class ActionsCfg:
     # (~3.2 mm) or a held grip breaks between decisions — at 0.02 x std 0.5
     # the seat still dies in a few steps. Full travel stays reachable in a
     # handful of saturated steps.
+    # DISCOVERY CONSTRAINT (the entropy arithmetic): the commanded carriage is
+    # offset + scale * a with the offset held at the episode's start pose, so
+    # closing is discoverable only if the full 17.5 mm open-to-seat travel lies
+    # within ~1 sigma of the policy's initial exploration. At init_std 0.5 that
+    # requires scale >= ~0.035; at 0.008 the seat is a 4.4-sigma action, a
+    # sustained close is ~1e-53 per window, and the fingers never move off the
+    # reset value — no reward term can rescue an action the policy cannot
+    # sample. PPO anneals its own std once contact income exists, converting
+    # discovered brushes into holds; the wide scale only has to make the first
+    # contact reachable.
     gripper_action = mdp.JointPositionActionCfg(
         asset_name="robot",
         joint_names=[GRIPPER_JOINT, GRIPPER_JOINT_R],
-        scale=0.008,
+        scale=0.05,
         use_default_offset=True,
         clip={".*": (-6.0, 6.0)},
     )
@@ -693,15 +703,6 @@ class EventCfg:
             # seeded states (mm-scale clearances).
             "noise": 0.0,
             "alpha_min": 1.0,
-            # 50/25/25: clamp-on-table grasped subset. The raised in-hand
-            # variant exists behind grasped_raise_m.
-            "grasped_fraction": 0.5,
-            # 0.0035, the takeoff-proven seat: the policy trained with it reached
-            # 36.3 reward and 50/50 home-start pickups; its minority ejections
-            # are priced into those numbers. Reseating attempts (0.006, 0.0045)
-            # both measured worse on the hold probe — refinement queued behind
-            # a per-subset instrument.
-            "grasped_carriage_m": 0.0035,
             "asset_cfg": SceneEntityCfg("robot"),
         },
     )
@@ -738,34 +739,6 @@ class TrossenMugLiftEnvCfg(ManagerBasedRLEnvCfg):
         oy = -(num_cols - 1) / 2 * self.scene.env_spacing
         self.sim.default_visualizer_cfg.eye = (ox - 0.02, oy - 1.4, 0.65)
         self.sim.default_visualizer_cfg.lookat = (ox - 0.02, oy + 0.15, 0.02)
-        self._validate_solver_substeps()
-
-    def _validate_solver_substeps(self):
-        """Reject the fixed MJWarp solver on a 1-substep boundary.
-
-        mj dt 0.01 sinks the resting blade into the tabletop and goes non-finite on
-        first grasp; only the adaptive solver may own the full 0.01 boundary.
-
-        Adaptivity is latched by a different cfg field per backend --
-        ``adaptive`` for MuJoCo-Warp, ``sap_adaptive`` for SAP -- so both must be
-        consulted: testing only the MuJoCo latch rejects the SAP step-doubling
-        solver, which owns the boundary exactly as the MuJoCo adaptive one does.
-        """
-        solver_cfg = getattr(self.sim.physics, "solver_cfg", None)
-        if solver_cfg is None:
-            return
-        num_substeps = getattr(self.sim.physics, "num_substeps", 1)
-        adaptive = getattr(solver_cfg, "adaptive", False) or getattr(solver_cfg, "sap_adaptive", False)
-        # Guard lifted: it was written for the placeholder contact material and
-        # the 1 cm speculative gap, neither of which the task now uses. A single
-        # 8.33 ms step is the coarse fixed point the comparison needs.
-        if False and not adaptive and num_substeps < 2:
-            raise ValueError(
-                "The spatula task requires num_substeps >= 2 (mj dt <= 0.005) under the fixed"
-                " MJWarp solver: dt 0.01 sinks the resting blade into the tabletop and goes"
-                " non-finite on first grasp. Use the default/newton_mjwarp preset, or pair"
-                " physics=newton_mjwarp_adaptive with --solver mujoco-adaptive."
-            )
 
     def __post_init__(self):
         # Exact 30 Hz control (decimation 3 x dt); dt is the closest integer-

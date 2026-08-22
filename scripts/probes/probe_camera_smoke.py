@@ -45,10 +45,11 @@ sys.argv = [sys.argv[0]] + hydra_args
 def main() -> int:
     import gymnasium as gym
     import torch
+    from isaaclab_newton.renderers import NewtonWarpRendererCfg
 
     import isaaclab.sim as sim_utils
     from isaaclab.sensors import TiledCameraCfg
-    from isaaclab_newton.renderers import NewtonWarpRendererCfg
+
     from isaaclab_tasks.utils.hydra import resolve_task_config
     from isaaclab_tasks.utils.physics_presets import apply_solver_choice
 
@@ -65,7 +66,6 @@ def main() -> int:
             if bank is not None:
                 bank.params["bank_fraction"] = 1.0
                 bank.params["noise"] = 0.0
-                bank.params["grasped_fraction"] = 0.0
         if not args_cli.no_camera:
             env_cfg.scene.cam_high = TiledCameraCfg(
                 prim_path="{ENV_REGEX_NS}/Robot/cam_high_link/cam_high_color_frame/cam_high_color_optical_frame/smoke_cam",
@@ -125,7 +125,7 @@ def main() -> int:
                 img = img.torch if hasattr(img, "torch") else img
                 flat = img.float()
                 # Per-env pixel spread: a rendered scene varies; a dead buffer is constant.
-                spread = (flat.amax(dim=(1, 2, 3)) - flat.amin(dim=(1, 2, 3)))
+                spread = flat.amax(dim=(1, 2, 3)) - flat.amin(dim=(1, 2, 3))
                 print(
                     f"[step {step}] shape {tuple(img.shape)} dtype {img.dtype}"
                     f"  mean {flat.mean():8.3f}  min {flat.min():6.1f}  max {flat.max():6.1f}"

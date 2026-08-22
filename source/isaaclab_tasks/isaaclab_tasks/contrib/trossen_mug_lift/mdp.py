@@ -194,10 +194,6 @@ def reset_arm_reverse_curriculum(
     bank_fraction: float,
     noise: float,
     alpha_min: float = 1.0,
-    grasped_fraction: float = 0.0,
-    grasped_carriage_m: float = 0.0035,
-    grasped_raise_m: float = 0.0,
-    in_hand_seed: dict | None = None,
     track_object_xy: list | None = None,
     nominal_object_pos: tuple | None = None,
     safe_yaw_range: tuple | None = None,
@@ -212,13 +208,10 @@ def reset_arm_reverse_curriculum(
     start distribution grows back along the approach path until home starts
     dominate — the Florensa reverse curriculum on our own two anchors.
 
-    ``grasped_fraction`` of the selected envs instead start exactly AT the
-    pose with the carriages written to the measured clamp seat: the episode
-    begins mid-grasp, so hold-and-raise income is on-policy from step 0
-    instead of gated behind sustained-close discovery — the deepest anchor
-    of the reverse curriculum. Discovered lifts otherwise die in the
-    variance valley (three runs: lifting found early, then abandoned for
-    the zero-variance hover annuity).
+    No start is ever seeded mid-grasp: closing is the policy's own act,
+    discoverable because the gripper action scale puts the full open-to-seat
+    travel inside the initial exploration envelope (see the DISCOVERY
+    CONSTRAINT note on the action cfg).
     """
     asset = env.scene[asset_cfg.name]
     joint_ids, resolved = asset.find_joints(list(pose.keys()), preserve_order=True)
@@ -235,13 +228,11 @@ def reset_arm_reverse_curriculum(
     start = home + alpha * (target.unsqueeze(0) - home)
     start = start + sample_uniform(-noise, noise, start.shape, start.device)
     # Under randomized placement the authored pose must FOLLOW the mug: one
-    # precomputed Jacobian step translates the pre-grasp (and the grasped
-    # seat) by each env's placement delta — sub-mm over the +-1 cm DR range
+    # precomputed Jacobian step translates the pre-grasp by each env's
+    # placement delta — sub-mm over the +-1 cm DR range
     # (probe_bank_jacobian.py). The handle is the mug's only asymmetric
     # part, so bank envs also re-sample yaw into the handle-safe arc before
     # the arm is placed around the mug.
-    dq_arm = None
-    arm_cols = None
     if track_object_xy is not None and sel.any():
         obj = env.scene[object_cfg.name]
         if safe_yaw_range is not None:
@@ -260,67 +251,11 @@ def reset_arm_reverse_curriculum(
         nominal = torch.tensor(nominal_object_pos, device=env.device)
         delta = obj.data.root_pos_w.torch[env_ids, :2] - env.scene.env_origins[env_ids, :2] - nominal
         M = torch.tensor(track_object_xy, device=env.device, dtype=torch.float32)
-        dq_arm = delta @ M.T
+        dq = delta @ M.T
         arm_cols = torch.tensor([resolved.index(f"follower_left_joint_{i}") for i in range(6)], device=env.device)
-        start[:, arm_cols] = torch.where(sel.unsqueeze(1), start[:, arm_cols] + dq_arm, start[:, arm_cols])
+        start[:, arm_cols] = torch.where(sel.unsqueeze(1), start[:, arm_cols] + dq, start[:, arm_cols])
     limits = asset.data.soft_joint_pos_limits.torch[env_ids[:, None], joint_ids]
     start = torch.where(sel.unsqueeze(1), start.clamp(limits[..., 0], limits[..., 1]), home)
-    if grasped_fraction > 0.0:
-        gsel = sel & (torch.rand(env_ids.shape[0], device=env.device) < grasped_fraction)
-        if gsel.any():
-            rows = torch.nonzero(gsel).squeeze(1)
-            if in_hand_seed is not None:
-                # The recorded fixed point of the dynamic close: arm joints,
-                # carriage, AND the mug displaced into the grip — a true wall
-                # pinch that contact settling re-establishes, robust to the
-                # tracking residual (teleporting only the joint values leaves
-                # the mug un-displaced and no pinch exists).
-                seed_q = torch.tensor(
-                    [in_hand_seed.get(n, 0.0) for n in resolved],
-                    device=env.device,
-                    dtype=torch.float32,
-                )
-                for c, n in enumerate(resolved):
-                    if "carriage" in n:
-                        seed_q[c] = in_hand_seed["carriage_m"]
-                start[rows] = seed_q
-            else:
-                # Exactly AT the pose (no alpha, no noise): a seated clamp only
-                # exists there; interpolated or jittered arms clamp air or wall.
-                start[rows] = target
-                for c, n in enumerate(resolved):
-                    if "carriage" in n:
-                        start[rows, c] = grasped_carriage_m
-            # The tracking translation must survive the row overwrite above,
-            # or grasped starts stop following the mug under randomized
-            # placement.
-            if dq_arm is not None:
-                start[rows[:, None], arm_cols[None, :]] += dq_arm[rows]
-            if in_hand_seed is not None:
-                obj = env.scene[object_cfg.name]
-                ids_g = env_ids[rows]
-                dxyz = in_hand_seed["mug_dxyz_m"]
-                pose7 = obj.data.root_pose_w.torch[ids_g].clone()
-                pose7[:, 0] += dxyz[0]
-                pose7[:, 1] += dxyz[1]
-                pose7[:, 2] += dxyz[2]
-                obj.write_root_pose_to_sim_index(root_pose=pose7, env_ids=ids_g)
-                obj.write_root_velocity_to_sim_index(
-                    root_velocity=torch.zeros(rows.shape[0], 6, device=env.device), env_ids=ids_g
-                )
-            # Optional raised (truly held) variant: measured stable, but the
-            # A/B record says the benchmark's clamp-on-table form trained
-            # faster (raised variant: success 0.001 at 222; benchmark: takeoff
-            # at ~150). Default 0 = benchmark behavior.
-            if grasped_raise_m > 0.0:
-                obj = env.scene[object_cfg.name]
-                ids_g = env_ids[rows]
-                pose7 = obj.data.root_pose_w.torch[ids_g].clone()
-                pose7[:, 2] += grasped_raise_m
-                obj.write_root_pose_to_sim_index(root_pose=pose7, env_ids=ids_g)
-                obj.write_root_velocity_to_sim_index(
-                    root_velocity=torch.zeros(rows.shape[0], 6, device=env.device), env_ids=ids_g
-                )
     # Zero action must HOLD the start pose: with a home-anchored offset the PD
     # rips a banked arm back toward home on the first steps — through the mug,
     # for an engaged pre-grasp. The arm action term's offset is a CLONE of
@@ -363,42 +298,6 @@ def anneal_reverse_curriculum(
     term = env.event_manager.get_term_cfg(event_name)
     term.params["alpha_min"] = 1.0 - frac
     return torch.tensor(term.params["alpha_min"])
-
-
-def reset_arm_to_grasp_bank(
-    env: ManagerBasedRLEnv,
-    env_ids: torch.Tensor,
-    pose: dict[str, float],
-    bank_fraction: float,
-    noise: float,
-    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
-):
-    """Start a fraction of the resetting envs with the arm posed at the object;
-    the rest keep the home pose the default reset already wrote.
-
-    Runs after the scene reset, overwriting only the joints named in ``pose``
-    for the selected envs. The gripper carriages are not in ``pose``: they keep
-    the default open state, so closing the grasp stays the policy's own first
-    action. Which envs draw a bank start re-randomizes every reset, so every
-    env sees both the straddle regime and the full approach from home. The
-    action term's position targets stay referenced to the default pose, so a
-    bank start begins with a home-ward PD pull the policy must learn to
-    counter-hold — the bank teaches holding near the object, not a frozen
-    start state.
-    """
-    asset = env.scene[asset_cfg.name]
-    sel = torch.rand(env_ids.shape[0], device=env.device) < bank_fraction
-    if not sel.any():
-        return
-    ids = env_ids[sel]
-    joint_ids, resolved_names = asset.find_joints(list(pose.keys()), preserve_order=True)
-    target = torch.tensor([pose[name] for name in resolved_names], device=env.device, dtype=torch.float32)
-    joint_pos = target.unsqueeze(0).expand(ids.shape[0], -1).clone()
-    joint_pos += sample_uniform(-noise, noise, joint_pos.shape, joint_pos.device)
-    limits = asset.data.soft_joint_pos_limits.torch[ids[:, None], joint_ids]
-    joint_pos = joint_pos.clamp_(limits[..., 0], limits[..., 1])
-    asset.write_joint_position_to_sim_index(position=joint_pos, joint_ids=joint_ids, env_ids=ids)
-    asset.write_joint_velocity_to_sim_index(velocity=torch.zeros_like(joint_pos), joint_ids=joint_ids, env_ids=ids)
 
 
 def _pad_force_mags(env: ManagerBasedRLEnv, sensor_name: str) -> torch.Tensor:

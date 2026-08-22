@@ -94,9 +94,8 @@ def main() -> int:
                 tcp = scene["ee_frame"].data.target_pos_w.torch[..., 0, :]
                 tcp_mug = torch.linalg.vector_norm(tcp - obj.data.root_pos_w.torch, dim=-1)
                 car = robot.data.joint_pos.torch[:, car_ids]
-                # The settled close, BEFORE the raise, is the in-hand seed
-                # state: teleporting it (joints AND mug displacement) must
-                # reproduce this pinch. Reported paste-ready; the raise phase
+                # The settled close, BEFORE the raise: pinch geometry and the
+                # mug displacement the dynamic close produces. The raise phase
                 # that follows is its liftability check.
                 if step == args_cli.close_steps - 1:
                     q = robot.data.joint_pos.torch[:, arm_ids]
@@ -113,10 +112,6 @@ def main() -> int:
                         f"  spread {(d.max(0).values - d.min(0).values).max() * 1000:.2f} mm"
                         f"  both-pad force mean {both_min.mean():.2f} N  min {both_min.min():.2f} N"
                     )
-                    seed = {n: round(float(q[:, i].mean()), 4) for i, n in enumerate(arm_names)}
-                    seed["carriage_m"] = round(float(car.mean()), 5)
-                    seed["mug_dxyz_m"] = tuple(round(float(d[:, i].mean()), 5) for i in range(3))
-                    print(f"IN_HAND_SEED = {seed}")
                 if step % 5 == 4 or step == n_steps - 1:
                     lifted = float((z > 0.04).float().mean())
                     print(

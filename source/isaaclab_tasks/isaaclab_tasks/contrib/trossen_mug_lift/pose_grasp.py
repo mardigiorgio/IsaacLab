@@ -22,7 +22,7 @@ Run::
     ... NEWTON_SOLVER=icf   # ICF physics instead of MuJoCo-Warp
 
 ``S`` (or the SAVE button) writes ``grasp_pose_authored.py``, shaped as the
-``pose`` dict ``mdp.reset_arm_to_grasp_bank`` takes -- the constant the env cfg
+``pose`` dict ``mdp.reset_arm_reverse_curriculum`` takes -- the constant the env cfg
 documents as "the grasp-bank reset pose" but never defines.
 """
 
@@ -48,8 +48,12 @@ with contextlib.suppress(ImportError):
 from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="Author a grasp pose for the Trossen mug-lift task.")
-parser.add_argument("--selftest", action="store_true", help="Drive every control surface headlessly; exit non-zero on failure.")
-parser.add_argument("--max_target_speed", type=float, default=1.5, help="rad/s cap between slider value and PD target (0 = snap).")
+parser.add_argument(
+    "--selftest", action="store_true", help="Drive every control surface headlessly; exit non-zero on failure."
+)
+parser.add_argument(
+    "--max_target_speed", type=float, default=1.5, help="rad/s cap between slider value and PD target (0 = snap)."
+)
 AppLauncher.add_app_launcher_args(parser)
 args_cli, _ = parser.parse_known_args()
 if args_cli.selftest:
@@ -62,15 +66,14 @@ import gymnasium as gym  # noqa: E402
 import torch  # noqa: E402
 
 import isaaclab_tasks  # noqa: F401,E402
-from isaaclab_tasks.utils import parse_env_cfg  # noqa: E402
-
 from isaaclab_tasks.contrib.trossen_mug_lift.trossen_mug_lift_env_cfg import (  # noqa: E402
     ARM_JOINTS,
     GRASP_BANK_POSE,
-    OBJECT_REST_Z,
     GRIPPER_JOINT,
     GRIPPER_JOINT_R,
+    OBJECT_REST_Z,
 )
+from isaaclab_tasks.utils import parse_env_cfg  # noqa: E402
 
 # 1:1 WITH TRAINING: the training launches export these; a bare lab launch
 # would otherwise build a DIFFERENT scene (mesh mug, no rails) and any pose
@@ -208,7 +211,7 @@ def build_env(num_envs: int = 1):
     return gym.make(TASK, cfg=cfg).unwrapped
 
 
-def main() -> int:
+def main() -> int:  # noqa: C901
     env = build_env()
     robot = env.scene["robot"]
     device = env.device
@@ -216,7 +219,6 @@ def main() -> int:
     arm_ids, arm_names = robot.find_joints([ARM_JOINTS], preserve_order=True)
     grip_ids, grip_names = robot.find_joints([GRIPPER_JOINT, GRIPPER_JOINT_R], preserve_order=True)
     editable = list(arm_names)
-    all_ids = list(arm_ids) + list(grip_ids)
 
     env.reset()
     for _ in range(2):
@@ -225,7 +227,6 @@ def main() -> int:
 
     lim_all = _t(robot.data.soft_joint_pos_limits)[0]
     lim = {n: (float(lim_all[i][0]), float(lim_all[i][1])) for n, i in zip(arm_names, arm_ids)}
-    q0 = _t(robot.data.joint_pos)[0].clone()
 
     # The single source of truth. The panel edits this; the loop commands it.
     grip_open = float(_t(robot.data.default_joint_pos)[0, grip_ids[0]])
@@ -318,10 +319,12 @@ def main() -> int:
         sys.stdout.write(
             f"\r\n[{tag}]\r\n"
             + "".join(f"  {n:28s} {v:+.6f}\r\n" for n, v in jd.items())
-            + f"  gripper {g*1000:.1f} mm/side ({100.0*g/grip_open:.0f}% open,"
-            f" gap ~{(CLOSED_GAP_M + 2*g)*1000:.1f} mm)\r\n"
+            + f"  gripper {g * 1000:.1f} mm/side ({100.0 * g / grip_open:.0f}% open,"
+            f" gap ~{(CLOSED_GAP_M + 2 * g) * 1000:.1f} mm)\r\n"
             + _pad_gauge()
-            + "  vector [" + ", ".join(f"{v:+.6f}" for v in jd.values()) + "]\r\n"
+            + "  vector ["
+            + ", ".join(f"{v:+.6f}" for v in jd.values())
+            + "]\r\n"
         )
         sys.stdout.flush()
         return jd
@@ -332,11 +335,11 @@ def main() -> int:
         body = "\n".join(f'    "{k}": {v:.6f},' for k, v in jd.items())
         text = (
             '"""Grasp pose authored with pose_grasp.py.\n\n'
-            "Shaped as the ``pose`` argument of ``mdp.reset_arm_to_grasp_bank``.\n"
+            "Shaped as the ``pose`` argument of ``mdp.reset_arm_reverse_curriculum``.\n"
             '"""\n\n'
-            f"# Gripper when authored: {g:.4f} m per carriage ({100.0*g/grip_open:.0f}% open,\n"
-            f"# finger gap ~{(CLOSED_GAP_M + 2*g)*1000:.1f} mm). NOT part of the dict:\n"
-            "# reset_arm_to_grasp_bank leaves the carriages at their default open state\n"
+            f"# Gripper when authored: {g:.4f} m per carriage ({100.0 * g / grip_open:.0f}% open,\n"
+            f"# finger gap ~{(CLOSED_GAP_M + 2 * g) * 1000:.1f} mm). NOT part of the dict:\n"
+            "# reset_arm_reverse_curriculum leaves the carriages at their default open state\n"
             "# so closing the grasp stays the policy's own first action.\n\n"
             f"GRASP_STRADDLE_POSE = {{\n{body}\n}}\n"
         )
@@ -449,8 +452,11 @@ def main() -> int:
 
         print("[selftest] driving the panel through a stub (no GUI)")
         mug_env = (_t(obj.data.root_pos_w)[0] - _t(env.scene.env_origins)[0]).tolist()
-        check("mug spawns 45.75 cm forward: env y = 0.000",
-              abs(mug_env[1]) < 1e-3, f"mug env = ({mug_env[0]:+.4f}, {mug_env[1]:+.4f}, {mug_env[2]:+.4f})")
+        check(
+            "mug spawns 45.75 cm forward: env y = 0.000",
+            abs(mug_env[1]) < 1e-3,
+            f"mug env = ({mug_env[0]:+.4f}, {mug_env[1]:+.4f}, {mug_env[2]:+.4f})",
+        )
         check("mug on the centerline: env x = -0.020", abs(mug_env[0] - (-0.020)) < 1e-3)
         q_now = _t(robot.data.joint_pos)[0]
         worst = max(abs(float(q_now[i]) - vals[n]) for n, i in zip(arm_names, arm_ids))
@@ -459,51 +465,71 @@ def main() -> int:
             # The READY pose must equal the rig's own init_state, not a restated copy.
             dflt = _t(robot.data.default_joint_pos)[0]
             worst_d = max(abs(vals[n] - float(dflt[i])) for n, i in zip(arm_names, arm_ids))
-            check("start pose IS the Trossen ready pose (articulation default)", worst_d < 1e-6,
-                  f"worst delta {worst_d:.2e} rad; j1={vals[arm_names[1]]:.4f} (pi/2={3.14159265/2:.4f})")
-            check("ready pose opens the carriages", abs(vals[GRIPPER_JOINT] - grip_open) < 1e-6,
-                  f"carriage {vals[GRIPPER_JOINT]:.4f}")
+            check(
+                "start pose IS the Trossen ready pose (articulation default)",
+                worst_d < 1e-6,
+                f"worst delta {worst_d:.2e} rad; j1={vals[arm_names[1]]:.4f} (pi/2={3.14159265 / 2:.4f})",
+            )
+            check(
+                "ready pose opens the carriages",
+                abs(vals[GRIPPER_JOINT] - grip_open) < 1e-6,
+                f"carriage {vals[GRIPPER_JOINT]:.4f}",
+            )
         stub = _StubImgui()
         draw_panel(stub)
-        check("panel draws a slider per arm joint + gripper",
-              len(stub.sliders) == len(editable) + 1, f"{len(stub.sliders)} sliders: {stub.sliders}")
+        check(
+            "panel draws a slider per arm joint + gripper",
+            len(stub.sliders) == len(editable) + 1,
+            f"{len(stub.sliders)} sliders: {stub.sliders}",
+        )
         check("panel draws RESET/PRINT/SAVE buttons", len(stub.buttons) == 3, f"{stub.buttons}")
 
         probe = editable[3]
         lo, hi = lim[probe]
         want = min(max(vals[probe] + 0.35, lo), hi)
         draw_panel(_StubImgui(drag=(f"{_short(probe)}##mugpose", want)))
-        check("dragging a slider updates the value dict", abs(vals[probe] - want) < 1e-6,
-              f"{probe} = {vals[probe]:+.4f}, wanted {want:+.4f}")
+        check(
+            "dragging a slider updates the value dict",
+            abs(vals[probe] - want) < 1e-6,
+            f"{probe} = {vals[probe]:+.4f}, wanted {want:+.4f}",
+        )
 
         before = float(_t(robot.data.joint_pos)[0, arm_ids[3]])
         for _ in range(240):
             step_once()
         after = float(_t(robot.data.joint_pos)[0, arm_ids[3]])
-        check("the slider actually MOVES the joint", abs(after - want) < 0.05,
-              f"{probe}: {before:+.4f} -> {after:+.4f}, target {want:+.4f}")
+        check(
+            "the slider actually MOVES the joint",
+            abs(after - want) < 0.05,
+            f"{probe}: {before:+.4f} -> {after:+.4f}, target {want:+.4f}",
+        )
 
         gwant = grip_open * 0.5
         draw_panel(_StubImgui(drag=("gripper##mugpose", gwant)))
         for _ in range(240):
             step_once()
         gafter = float(_t(robot.data.joint_pos)[0, grip_ids[0]])
-        check("the gripper slider reaches a PARTIAL opening", abs(gafter - gwant) < 0.006,
-              f"carriage {gafter:.4f}, wanted {gwant:.4f}")
-        check("both carriages track together",
-              abs(float(_t(robot.data.joint_pos)[0, grip_ids[1]]) - gafter) < 0.006)
+        check(
+            "the gripper slider reaches a PARTIAL opening",
+            abs(gafter - gwant) < 0.006,
+            f"carriage {gafter:.4f}, wanted {gwant:.4f}",
+        )
+        check("both carriages track together", abs(float(_t(robot.data.joint_pos)[0, grip_ids[1]]) - gafter) < 0.006)
 
         if _ghost:
             moved = float(torch.linalg.vector_norm(_t(obj.data.root_pos_w)[0] - mug_pose0[0, 0:3]))
             check("ghost mug stays pinned", moved < 0.02, f"moved {moved:.4f} m")
 
         draw_panel(_StubImgui(click="RESET ARM##mugpose"))
-        check("RESET ARM restores the session start pose",
-              abs(vals[probe] - _home_vals[probe]) < 1e-6,
-              f"{probe} = {vals[probe]:+.4f}, start {_home_vals[probe]:+.4f}")
+        check(
+            "RESET ARM restores the session start pose",
+            abs(vals[probe] - _home_vals[probe]) < 1e-6,
+            f"{probe} = {vals[probe]:+.4f}, start {_home_vals[probe]:+.4f}",
+        )
 
         path = save()
-        ok = os.path.exists(path) and "GRASP_STRADDLE_POSE" in open(path).read()
+        with open(path) as f:
+            ok = os.path.exists(path) and "GRASP_STRADDLE_POSE" in f.read()
         check("SAVE writes a loadable pose file", ok, path)
 
         print(f"[selftest] {'ALL PASSED' if not fails else str(len(fails)) + ' FAILED: ' + ', '.join(fails)}")
