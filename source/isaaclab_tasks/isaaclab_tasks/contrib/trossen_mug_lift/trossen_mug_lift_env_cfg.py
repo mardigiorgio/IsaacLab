@@ -618,6 +618,24 @@ class RewardsCfg:
         },
     )
 
+    # Post-success settle: the arm should carry the succeeded hold calmly,
+    # not vibrate at the goal. Same gates as success (at goal AND opposed
+    # grasp), times an arm-stillness kernel, so the income exists only on
+    # top of the already-optimal state -- it cannot fund hovering, and at
+    # weight 1 it stays subordinate to success (10) and grip depth (3), so
+    # a steadier hold is never worth a worse grip.
+    settled_hold = RewTerm(
+        func=mdp.settled_hold_at_goal,
+        weight=1.0,
+        params={
+            "command_name": "object_pose",
+            "pos_std": 0.05,
+            "vel_std": 0.5,
+            "sensor_name": "pad_object_contact",
+            "contact_threshold": 0.01,
+        },
+    )
+
     good_finger_contact = RewTerm(
         func=mdp.mug_grasped,
         params={"sensor_name": "pad_object_contact", "threshold": 0.01},
