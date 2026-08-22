@@ -232,6 +232,37 @@ def object_goal_distance_on_table(
     return _finite(gate * (1.0 - torch.tanh(distance / std)))
 
 
+def arm_settled_at_goal(
+    env: ManagerBasedRLEnv,
+    std: float,
+    vel_std: float,
+    command_name: str,
+    z_max: float = 0.06,
+    min_up_cos: float = 0.87,
+    max_speed: float = float("inf"),
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    arm_cfg: SceneEntityCfg = SceneEntityCfg("robot", joint_names="follower_left_joint_[0-5]"),
+) -> torch.Tensor:
+    """Post-delivery rest: the arrival payment (same kernel and gates as
+    :func:`object_goal_distance_on_table`) scaled by an arm-stillness kernel
+    on the arm joint speeds. Every factor of the arrival gate must already be
+    earned -- mug AT the commanded spot, upright, on the table, settled -- so
+    stillness income cannot fund hovering short of delivery; it only turns
+    the finished state's annuity into "collect it calmly"."""
+    robot = env.scene[robot_cfg.name]
+    obj = env.scene[object_cfg.name]
+    command = env.command_manager.get_command(command_name)
+    des_pos_w, _ = combine_frame_transforms(robot.data.root_pos_w.torch, robot.data.root_quat_w.torch, command[:, :3])
+    distance = torch.norm(des_pos_w[:, :2] - obj.data.root_pos_w.torch[:, :2], dim=1)
+    quat = obj.data.root_quat_w.torch
+    up_z = 1.0 - 2.0 * (quat[:, 0] * quat[:, 0] + quat[:, 1] * quat[:, 1])
+    z_local = obj.data.root_pos_w.torch[:, 2] - env.scene.env_origins[:, 2]
+    gate = (up_z > min_up_cos) & (z_local < z_max) & _object_calm(env, max_speed, object_cfg)
+    speed = torch.linalg.vector_norm(robot.data.joint_vel.torch[:, arm_cfg.joint_ids], dim=1)
+    return _finite(gate * (1.0 - torch.tanh(distance / std)) * (1.0 - torch.tanh(speed / vel_std)))
+
+
 class object_goal_progress_on_table(ManagerTermBase):
     """Slide-task ratchet: 1.0 per ``min_improvement`` [m] of NEW episode-best
     planar goal distance, credited only upright, on the table, at push speed.

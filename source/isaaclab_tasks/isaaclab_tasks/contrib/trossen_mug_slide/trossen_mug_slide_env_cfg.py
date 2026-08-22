@@ -160,6 +160,26 @@ class SlideRewardsCfg:
         },
         weight=16.0,
     )
+    # Post-delivery rest goal. After arrival nothing constrained the ARM: the
+    # mug annuity pays regardless of what the arm does, and the action
+    # penalties are orders below it, so a finished arm wanders on residual
+    # exploration. This pays the arrival annuity's own gates times arm
+    # stillness -- income exists only on top of a completed, settled delivery,
+    # so it cannot fund hovering short of one, and at weight 2 it stays far
+    # below the arrival term (16), so a calmer arm is never worth
+    # surrendering the delivery itself.
+    arm_settled = RewTerm(
+        func=mdp.arm_settled_at_goal,
+        weight=2.0,
+        params={
+            "std": 0.05,
+            "vel_std": 0.5,
+            "min_up_cos": 0.6,
+            "max_speed": PUSH_SPEED_MAX,
+            "command_name": "object_pose",
+        },
+    )
+
     # Scraping or pressing the tabletop with any robot body is never part of
     # a correct push.
     table_scrape = RewTerm(
