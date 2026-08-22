@@ -82,6 +82,21 @@ def arm_action_rate_l2(env: ManagerBasedRLEnv, term_name: str = "arm_action") ->
     return _finite(torch.sum(torch.square(delta), dim=1))
 
 
+def _sensor_force_mag(env: ManagerBasedRLEnv, sensor_name: str) -> torch.Tensor:
+    """Total filtered contact-force magnitude per env for a shape-filtered sensor.
+
+    Order-invariant reduction over sensor bodies and filtered shapes (the
+    resolved shape order is not stable across builds), NaN-safe like every
+    reward input in this task.
+    """
+    forces = env.scene.sensors[sensor_name].data.force_matrix_w
+    if forces is None:
+        return torch.zeros(env.num_envs, device=env.device)
+    net = forces.torch.sum(dim=2)
+    mag = torch.linalg.vector_norm(net, dim=-1)
+    return mag.reshape(env.num_envs, -1).sum(dim=-1).nan_to_num(0.0)
+
+
 def body_contact(env: ManagerBasedRLEnv, sensor_name: str, threshold: float = 0.1) -> torch.Tensor:
     """1.0 while any arm link presses the mug's BODY (wall/base) pieces."""
     return _finite((_sensor_force_mag(env, sensor_name) > threshold).float())
