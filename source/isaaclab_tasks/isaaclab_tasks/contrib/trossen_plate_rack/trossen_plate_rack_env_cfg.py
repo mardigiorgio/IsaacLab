@@ -127,9 +127,27 @@ class PlateEventCfg:
     )
 
 
+# IK pre-grasp hover for the settled plate's rim apex, generated and
+# VALIDATED by probe_generate_bank (2026-08-23): damped-least-squares IK to
+# 8.8 mm of the hover point, then the scripted close-and-raise existence
+# proof -- the pinch lifted the plate 398 mm and held. Placement-tracking
+# Jacobian omitted: the task is fixed-placement, and the perturbed-placement
+# re-solves did not converge (regenerate before any placement DR).
+PLATE_BANK_POSE = {
+    "follower_left_joint_0": 0.1759,
+    "follower_left_joint_1": 2.3190,
+    "follower_left_joint_2": 1.5155,
+    "follower_left_joint_3": 1.5698,
+    "follower_left_joint_4": 1.5698,
+    "follower_left_joint_5": 0.8560,
+    "follower_left_left_carriage_joint": 0.0440,
+    "follower_left_right_carriage_joint": 0.0440,
+}
+
+
 @configclass
 class PlateCurriculumCfg:
-    """No curriculum: there is no bank event to anneal."""
+    """Replaced by the bedrock anneal in __post_init__ (bank pose exists)."""
 
 
 @configclass
@@ -149,6 +167,11 @@ class TrossenPlatePickEnvCfg(TrossenMugLiftEnvCfg):
             params={"std": 0.2, "rim_height": PLATE_RIM_HEIGHT, "rim_radius": PLATE_RIM_RADIUS},
             weight=3.0,
         )
+        # The full lift-cracking recipe: existence-proven IK hover as the
+        # reverse-curriculum anchor, wide-scale discovery asserted inside.
+        from isaaclab_tasks.contrib.trossen_mug_lift.bedrock import apply_reverse_curriculum  # noqa: PLC0415
+
+        apply_reverse_curriculum(self, PLATE_BANK_POSE)
 
 
 @configclass
