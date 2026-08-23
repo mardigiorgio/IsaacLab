@@ -72,8 +72,14 @@ class PlateRackSceneCfg(TrossenMugLiftSceneCfg):
             prim_path="{ENV_REGEX_NS}/Object",
             init_state=RigidObjectCfg.InitialStateCfg(
                 pos=[_SPAWN_X + SLOT_X_OFFSET, _SPAWN_Y, PLATE_STAND_Z],
-                # rot is (x, y, z, w): +90 degrees about Y.
-                rot=[0.0, 0.70710678, 0.0, 0.70710678],
+                # rot is (x, y, z, w): pitched 84.55 degrees about Y -- the
+                # lbm_eval scenarios' AUTHORED resting lean of this plate in
+                # this rack (X_PC of the plate_slot_rail weld), 5.45 degrees
+                # off vertical against the wires. Spawning exactly vertical
+                # puts the plate on an unstable equilibrium instead of its
+                # settled pose. TRI's weld height lands the center at 0.1488
+                # over the table, agreeing with PLATE_STAND_Z to ~1 mm.
+                rot=[0.0, 0.67260, 0.0, 0.74000],
             ),
             spawn=sim_utils.UsdFileCfg(
                 usd_path=PLATE_USD_PATH,
