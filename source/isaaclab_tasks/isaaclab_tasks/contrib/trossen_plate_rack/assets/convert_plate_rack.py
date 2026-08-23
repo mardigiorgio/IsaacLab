@@ -237,11 +237,125 @@ def _write_rack(out_dir: str) -> None:
     print(f"[convert_plate_rack] wrote {out_path}: {n_boxes} box colliders, kinematic")
 
 
+# ------------------------------------------------------- TRI lbm_eval assets
+# Source: ToyotaResearchInstitute/lbm_eval release 1.1.0, staged in lbm_src/.
+# The IKEA Dinera 8" plate and the sweet_home drying rack are the validated
+# geometry the LBM benchmark itself runs; mass/COM/inertia below are the
+# plate SDF's authored values.
+_LBM_SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lbm_src")
+TRI_PLATE_GLTF = "ikea_dinera_plate_8in_blue.gltf"
+TRI_RACK_PARTS = ("sweet_home_dish_drying_rack_wireframe", "sweet_home_dish_drying_rack_base")
+TRI_PLATE_MASS = 0.375  # [kg]
+TRI_PLATE_COM = (0.0, 0.0, 0.00915)  # [m]
+TRI_PLATE_INERTIA = (8.6e-4, 8.6e-4, 1.71e-3)  # [kg m^2]
+
+
+def _load_zup(name: str) -> trimesh.Trimesh:
+    """Load a Y-up glTF, map its length axis onto X, floor to z = 0.
+
+    glTF (x, y, z) -> env (-z, -x, y): Y-up to Z-up plus a -90 degree yaw so
+    the rack's slot axis (glTF z) runs along env X, the direction the plate
+    task's tine-bracketing assumes. The plate is a surface of revolution, so
+    the yaw is inert for it and the shared mapping keeps one code path.
+    """
+    mesh = trimesh.load(os.path.join(_LBM_SRC, name), force="mesh")
+    v = np.asarray(mesh.vertices, dtype=np.float64)
+    # trimesh bakes each glTF's scene transform, so files arrive in mixed
+    # frames (the plate lands Z-up, the rack Y-up). Both assets' true up axis
+    # is their MIN-extent axis (plate: shell thickness; rack: its height is
+    # smaller than either footprint side), so detect rather than assume,
+    # exactly as convert_mug.py does.
+    if int(np.argmin(np.ptp(v, axis=0))) == 1:
+        v = np.stack([-v[:, 2], -v[:, 0], v[:, 1]], axis=1)
+    v[:, :2] -= (v[:, :2].max(0) + v[:, :2].min(0)) / 2.0
+    v[:, 2] -= v[:, 2].min()
+    return trimesh.Trimesh(vertices=v, faces=np.asarray(mesh.faces), process=False)
+
+
+def _write_plate_tri(out_dir: str) -> None:
+    mesh = _load_zup(TRI_PLATE_GLTF)
+    r_max = float(np.linalg.norm(mesh.vertices[:, :2], axis=1).max())
+    z_max = float(mesh.vertices[:, 2].max())
+    global PLATE_BASE_R, RIM_BAND_R  # noqa: PLW0603 -- partition thresholds scale with the asset
+    PLATE_BASE_R = 0.58 * r_max
+    RIM_BAND_R = 0.88 * r_max
+    groups = _partition_plate(mesh)
+    out_path = os.path.join(out_dir, "plate.usd")
+    stage = Usd.Stage.CreateNew(out_path)
+    UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
+    UsdGeom.SetStageMetersPerUnit(stage, 1.0)
+    root = UsdGeom.Xform.Define(stage, "/Plate")
+    stage.SetDefaultPrim(root.GetPrim())
+    UsdPhysics.RigidBodyAPI.Apply(root.GetPrim())
+    mass = UsdPhysics.MassAPI.Apply(root.GetPrim())
+    mass.GetMassAttr().Set(TRI_PLATE_MASS)
+    mass.GetCenterOfMassAttr().Set(Gf.Vec3f(*TRI_PLATE_COM))
+    mass.GetDiagonalInertiaAttr().Set(Gf.Vec3f(*TRI_PLATE_INERTIA))
+    _author_mesh(stage, "/Plate/visuals/visuals", mesh, collide=False, color=PLATE_COLOR)
+    for name, face_idx in groups.items():
+        piece = _hull_piece(mesh, face_idx)
+        _author_mesh(stage, f"/Plate/{name}/mesh", piece, collide=True, color=PLATE_COLOR)
+    stage.GetRootLayer().Save()
+    print(
+        f"[convert_plate_rack] wrote {out_path} (TRI ikea_dinera): {len(groups)} pieces, "
+        f"R={r_max:.4f} rim_z={z_max:.4f} -> cfg: PLATE_RIM_RADIUS~{0.97 * r_max:.3f} "
+        f"PLATE_RIM_HEIGHT~{z_max - 0.002:.3f} PLATE_STAND_Z~{0.02 + r_max:.3f}"
+    )
+
+
+def _write_rack_tri(out_dir: str) -> None:
+    out_path = os.path.join(out_dir, "dishrack.usd")
+    stage = Usd.Stage.CreateNew(out_path)
+    UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
+    UsdGeom.SetStageMetersPerUnit(stage, 1.0)
+    root = UsdGeom.Xform.Define(stage, "/Dishrack")
+    stage.SetDefaultPrim(root.GetPrim())
+    rb = UsdPhysics.RigidBodyAPI.Apply(root.GetPrim())
+    rb.GetKinematicEnabledAttr().Set(True)
+    UsdPhysics.MassAPI.Apply(root.GetPrim()).GetMassAttr().Set(1.0)
+    # The wireframe rests ON the base tray: stack it by the tray's height.
+    z_off = {"sweet_home_dish_drying_rack_wireframe": 0.032, "sweet_home_dish_drying_rack_base": 0.0}
+    for part in TRI_RACK_PARTS:
+        mesh = _load_zup(part + ".gltf")
+        mesh.vertices[:, 2] += z_off[part]
+        short = "wire" if "wireframe" in part else "base"
+        vis = UsdGeom.Mesh.Define(stage, f"/Dishrack/visuals_{short}/mesh")
+        vis.GetPointsAttr().Set([Gf.Vec3f(*p) for p in mesh.vertices])
+        vis.GetFaceVertexCountsAttr().Set([3] * len(mesh.faces))
+        vis.GetFaceVertexIndicesAttr().Set([int(i) for f in mesh.faces for i in f])
+        vis.GetDisplayColorAttr().Set([Gf.Vec3f(*RACK_COLOR)])
+        col = UsdGeom.Mesh.Define(stage, f"/Dishrack/collisions_{short}/mesh")
+        col.GetPointsAttr().Set([Gf.Vec3f(*p) for p in mesh.vertices])
+        col.GetFaceVertexCountsAttr().Set([3] * len(mesh.faces))
+        col.GetFaceVertexIndicesAttr().Set([int(i) for f in mesh.faces for i in f])
+        col.GetPurposeAttr().Set(UsdGeom.Tokens.guide)
+        UsdPhysics.CollisionAPI.Apply(col.GetPrim())
+        api = UsdPhysics.MeshCollisionAPI.Apply(col.GetPrim())
+        # Thin wires: hollow decomposition, the proven rig-cage path.
+        api.GetApproximationAttr().Set("convexDecomposition")
+        # Report slot centers along X at tine height for the env cfg.
+        v = mesh.vertices
+        if short == "wire":
+            hi = v[v[:, 2] > v[:, 2].max() * 0.6]
+            xs = np.sort(np.unique(np.round(hi[:, 0], 3)))
+            cols = xs[np.concatenate(([True], np.diff(xs) > 0.004))]
+            mids = np.round((cols[:-1] + cols[1:]) / 2.0, 4)
+            print(f"[convert_plate_rack] rack tine columns x: {np.round(cols, 3)}")
+            print(f"[convert_plate_rack] rack slot centers x: {mids}")
+    stage.GetRootLayer().Save()
+    print(f"[convert_plate_rack] wrote {out_path} (TRI sweet_home): wireframe+base, kinematic")
+
+
 def main():
     out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "usd")
     os.makedirs(out_dir, exist_ok=True)
-    _write_plate(out_dir)
-    _write_rack(out_dir)
+    if os.path.exists(os.path.join(_LBM_SRC, TRI_PLATE_GLTF)):
+        _write_plate_tri(out_dir)
+        _write_rack_tri(out_dir)
+    else:
+        # Fallback: the dimensioned procedural pair, same file layout.
+        _write_plate(out_dir)
+        _write_rack(out_dir)
 
 
 if __name__ == "__main__":

@@ -39,15 +39,18 @@ from isaaclab_tasks.contrib.trossen_mug_lift.trossen_mug_lift_env_cfg import (
 from . import mdp
 from .assets import DISHRACK_USD_PATH, PLATE_USD_PATH
 
-# Rim circle of the plate in its body frame (see assets/convert_plate_rack.py):
-# the pinch target ring. Height is the rim band's mean z along the disc axis;
-# the radius sits just inside the outer lip so the nearest-rim-point kernel
-# pulls the TCP onto the graspable edge rather than the outer face.
-PLATE_RIM_HEIGHT = 0.022
-PLATE_RIM_RADIUS = 0.098
-# A plate standing in the slot rests its bottom rim on the tabletop (slab top
-# z = 0.02) between the rack rails, so the disc center sits one radius up.
-PLATE_STAND_Z = 0.02 + 0.100
+# Rim circle of the TRI ikea_dinera plate in its body frame, measured by
+# assets/convert_plate_rack.py from the source mesh (R=0.0981, rim z=0.0178):
+# the pinch target ring sits just inside the outer lip so the nearest-rim-
+# point kernel pulls the TCP onto the graspable edge, not the outer face.
+PLATE_RIM_HEIGHT = 0.016
+PLATE_RIM_RADIUS = 0.095
+# A plate standing in a slot rests its bottom rim on the rack's base tray
+# (tabletop 0.02 + tray height 0.032), disc center one radius up.
+PLATE_STAND_Z = 0.02 + 0.032 + 0.098
+# Center-most slot of the sweet_home wireframe, from the converter's slot
+# census: slot center x = -0.017 in the rack frame.
+SLOT_X_OFFSET = -0.017
 
 
 @configclass
@@ -68,7 +71,7 @@ class PlateRackSceneCfg(TrossenMugLiftSceneCfg):
         self.object = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Object",
             init_state=RigidObjectCfg.InitialStateCfg(
-                pos=[_SPAWN_X, _SPAWN_Y, PLATE_STAND_Z],
+                pos=[_SPAWN_X + SLOT_X_OFFSET, _SPAWN_Y, PLATE_STAND_Z],
                 # rot is (x, y, z, w): +90 degrees about Y.
                 rot=[0.0, 0.70710678, 0.0, 0.70710678],
             ),
