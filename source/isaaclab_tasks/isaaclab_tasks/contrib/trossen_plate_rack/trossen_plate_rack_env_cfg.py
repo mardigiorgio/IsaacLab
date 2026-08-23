@@ -121,7 +121,14 @@ class PlateRackSceneCfg(TrossenMugLiftSceneCfg):
                     ),
                     self.object.spawn.collision_props[2],  # rig-matched MujocoCollisionCfg(solref)
                 ],
-                physics_material=self.object.spawn.physics_material,
+                # TRI's authored coefficient for THIS plate (its SDF's
+                # drake:mu_static/mu_dynamic = 0.3) -- NOT the mug's 0.2,
+                # which the earlier revision recycled.
+                physics_material=sim_utils.RigidBodyMaterialCfg(
+                    static_friction=0.3,
+                    dynamic_friction=0.3,
+                    restitution=0.0,
+                ),
                 rigid_props=self.object.spawn.rigid_props,
             ),
         )
