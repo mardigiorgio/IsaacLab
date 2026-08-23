@@ -19,6 +19,7 @@ from isaaclab_rl.rsl_rl import (
     RslRlMLPModelCfg,
     RslRlOnPolicyRunnerCfg,
     RslRlPpoAlgorithmCfg,
+    RslRlRNNModelCfg,
 )
 
 
@@ -69,38 +70,72 @@ class TrossenMugSlidePPORunnerCfg(RslRlOnPolicyRunnerCfg):
 
 @configclass
 class TrossenMugSlideDistillationRunnerCfg(RslRlDistillationRunnerCfg):
-    """Teacher->student distillation for the slide (anymal_d pattern).
-    Teacher dims must equal the trained slidev1 teacher's actor."""
+    """Teacher->student distillation for the slide, G1-true.
 
-    num_steps_per_env = 120
-    max_iterations = 300
-    save_interval = 50
+    The runner shape is the validated G1 sim2real pipeline's, verbatim where
+    the item is pipeline policy (24 steps/env, 2000 iterations, LSTM student,
+    epochs/gradient_length/lr/loss): an earlier revision carried anymal_d's
+    120x300 MLP shape while the sim2real cfg claimed G1 lineage. Only the
+    scene-specific pieces differ from G1: the teacher tower must equal the
+    TRAINED slide teacher's actor ([256,128,64] MLP), and the obs-group
+    mapping follows this env's group names (student = the heavy-noise
+    deployable group; teacher = the clean privileged group it trained on)."""
+
+    num_steps_per_env = 24
+    max_iterations = 2000
+    save_interval = 100
     experiment_name = "trossen_mug_lift"
     obs_groups = {"student": ["student"], "teacher": ["policy"]}
-    student = RslRlMLPModelCfg(
-        hidden_dims=[256, 128, 64],
+    student = RslRlRNNModelCfg(
+        hidden_dims=[256, 256, 128],
         activation="elu",
         obs_normalization=False,
-        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=0.1, std_type="log", std_range=(0.05, 3.0)),
+        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=0.1),
+        rnn_type="lstm",
+        rnn_hidden_dim=256,
+        rnn_num_layers=3,
     )
     teacher = RslRlMLPModelCfg(
         hidden_dims=[256, 128, 64],
         activation="elu",
         obs_normalization=False,
-        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=0.0, std_type="log", std_range=(0.0, 3.0)),
+        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=0.0),
     )
     algorithm = RslRlDistillationAlgorithmCfg(
-        num_learning_epochs=2,
-        learning_rate=1.0e-3,
-        gradient_length=15,
+        num_learning_epochs=5,
+        gradient_length=5,
+        learning_rate=1e-3,
+        loss_type="mse",
     )
 
 
 @configclass
 class TrossenMugSlideFinetunePPORunnerCfg(TrossenMugSlidePPORunnerCfg):
-    """RL finetune of the distilled slide student: asymmetric actor-critic."""
+    """RL finetune of the distilled slide student: asymmetric actor-critic.
+
+    G1 pattern: the actor MUST mirror the distillation student architecture
+    exactly so the distilled weights transfer (rsl-rl saves the student as
+    student_state_dict; loading into PPO needs the same tower under the
+    actor's name -- the checkpoint bridge the G1 cfg documents)."""
 
     obs_groups = {"actor": ["student"], "critic": ["policy"]}
+    actor = RslRlRNNModelCfg(
+        hidden_dims=[256, 256, 128],
+        activation="elu",
+        obs_normalization=False,
+        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=0.1),
+        rnn_type="lstm",
+        rnn_hidden_dim=256,
+        rnn_num_layers=3,
+    )
+    critic = RslRlRNNModelCfg(
+        hidden_dims=[256, 256, 128],
+        activation="elu",
+        obs_normalization=False,
+        rnn_type="lstm",
+        rnn_hidden_dim=256,
+        rnn_num_layers=3,
+    )
 
     def __post_init__(self):
         super().__post_init__()
