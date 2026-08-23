@@ -357,12 +357,43 @@ def _write_rack_tri(out_dir: str) -> None:
     print(f"[convert_plate_rack] wrote {out_path} (TRI sweet_home visuals): {n_col} fitted slab colliders, static")
 
 
+def _write_rack_mesh(out_dir: str) -> None:
+    """MESH-contact rack: TRI's raw wireframe+base as static collision meshes.
+
+    The mesh narrow phase is triangle-faithful, so no decomposition is needed
+    and the wire lattice is exact by construction -- this is the asset the
+    make-the-solver-fast-with-meshes program runs against. Static for the
+    same OpenUSD parser reason as the slab build."""
+    out_path = os.path.join(out_dir, "dishrack_mesh.usd")
+    stage = Usd.Stage.CreateNew(out_path)
+    UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
+    UsdGeom.SetStageMetersPerUnit(stage, 1.0)
+    root = UsdGeom.Xform.Define(stage, "/Dishrack")
+    stage.SetDefaultPrim(root.GetPrim())
+    z_off = {"sweet_home_dish_drying_rack_wireframe": 0.032, "sweet_home_dish_drying_rack_base": 0.0}
+    for part in TRI_RACK_PARTS:
+        mesh = _load_zup(part + ".gltf")
+        mesh.vertices[:, 2] += z_off[part]
+        short = "wire" if "wireframe" in part else "base"
+        prim = UsdGeom.Mesh.Define(stage, f"/Dishrack/collisions_{short}/mesh")
+        prim.GetPointsAttr().Set([Gf.Vec3f(*p) for p in mesh.vertices])
+        prim.GetFaceVertexCountsAttr().Set([3] * len(mesh.faces))
+        prim.GetFaceVertexIndicesAttr().Set([int(i) for f in mesh.faces for i in f])
+        prim.GetDisplayColorAttr().Set([Gf.Vec3f(*RACK_COLOR)])
+        UsdPhysics.CollisionAPI.Apply(prim.GetPrim())
+        api = UsdPhysics.MeshCollisionAPI.Apply(prim.GetPrim())
+        api.GetApproximationAttr().Set("none")
+    stage.GetRootLayer().Save()
+    print(f"[convert_plate_rack] wrote {out_path} (TRI raw-mesh contact, static)")
+
+
 def main():
     out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "usd")
     os.makedirs(out_dir, exist_ok=True)
     if os.path.exists(os.path.join(_LBM_SRC, TRI_PLATE_GLTF)):
         _write_plate_tri(out_dir)
         _write_rack_tri(out_dir)
+        _write_rack_mesh(out_dir)
     else:
         # Fallback: the dimensioned procedural pair, same file layout.
         _write_plate(out_dir)

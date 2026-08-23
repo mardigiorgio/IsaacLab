@@ -22,6 +22,8 @@ applies to the thinner plate rim a fortiori)."""
 
 from __future__ import annotations
 
+import os
+
 import isaaclab.sim as sim_utils
 from isaaclab.assets import AssetBaseCfg, RigidObjectCfg
 from isaaclab.managers import EventTermCfg as EventTerm
@@ -30,7 +32,6 @@ from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils.configclass import configclass
 
 from isaaclab_tasks.contrib.trossen_mug_lift.trossen_mug_lift_env_cfg import (
-    _SPAWN_X,
     _SPAWN_Y,
     TrossenMugLiftEnvCfg,
     TrossenMugLiftSceneCfg,
@@ -38,6 +39,12 @@ from isaaclab_tasks.contrib.trossen_mug_lift.trossen_mug_lift_env_cfg import (
 
 from . import mdp
 from .assets import DISHRACK_USD_PATH, PLATE_USD_PATH
+
+# Contact-representation switches for the mesh-speed program: hull/slab
+# contact is the trained default; PLATE_COLLISION=mesh and
+# RACK_COLLISION=mesh run TRI's raw collision meshes instead.
+_PLATE_MESH = os.environ.get("PLATE_COLLISION", "hull") == "mesh"
+_RACK_MESH = os.environ.get("RACK_COLLISION", "slabs") == "mesh"
 
 # Rim circle of the TRI ikea_dinera plate in its body frame, measured by
 # assets/convert_plate_rack.py from the source mesh (R=0.0981, rim z=0.0178):
@@ -64,14 +71,21 @@ class PlateRackSceneCfg(TrossenMugLiftSceneCfg):
         # plate grasp measured 10-25 mm past dexterous reach at the mug
         # placement; the plate protocol authors its own tape point.
         init_state=AssetBaseCfg.InitialStateCfg(
-            pos=(_SPAWN_X, _SPAWN_Y + 0.05, 0.02),
+            # Table-LEFT placement (screen-left of the front camera = -X):
+            # the spawn previously sat ~0.15 m from the fixed goal, inside
+            # its success kernel's skirt -- the episode began half-solved.
+            # -0.18 puts the rack edge near the table edge while keeping
+            # the rim inside the arm's measured reach envelope (~0.45 m).
+            pos=(-0.18, _SPAWN_Y + 0.05, 0.02),
             # Yawed 90 degrees so the slots run along X: the wrist closes
             # along X within ~10 degrees but cannot get closer than ~24
             # degrees to a Y closing anywhere in the rack region -- the
             # existence proof failed the tilted-Y grip (1.5 mm, no hold).
             rot=(0.0, 0.0, 0.70710678, 0.70710678),
         ),
-        spawn=sim_utils.UsdFileCfg(usd_path=DISHRACK_USD_PATH),
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=DISHRACK_USD_PATH.replace("dishrack.usd", "dishrack_mesh.usd") if _RACK_MESH else DISHRACK_USD_PATH
+        ),
     )
 
     def __post_init__(self):
@@ -91,7 +105,7 @@ class PlateRackSceneCfg(TrossenMugLiftSceneCfg):
                 # spawning AT the rest removes the drop-in transient whose
                 # bounce scattered tail envs out of the slot. Re-run the
                 # settle probe and re-adopt whenever rack or plate changes.
-                pos=[-0.0315, 0.0779, 0.1491],
+                pos=[-0.1915, 0.0779, 0.1491],
                 # rot is (x, y, z, w): -90 deg about X with a ~3-degree lean.
                 rot=[-0.4681, -0.5153, 0.4828, 0.5313],
             ),
@@ -102,7 +116,9 @@ class PlateRackSceneCfg(TrossenMugLiftSceneCfg):
                     sim_utils.schemas.UsdPhysicsCollisionCfg(),
                     # Hulls unconditionally: the pre-split pieces exist for
                     # exactly this, and the raw-mesh path is retired.
-                    sim_utils.schemas.UsdPhysicsMeshCollisionCfg(mesh_approximation_name="convexHull"),
+                    sim_utils.schemas.UsdPhysicsMeshCollisionCfg(
+                        mesh_approximation_name="none" if _PLATE_MESH else "convexHull"
+                    ),
                     self.object.spawn.collision_props[2],  # rig-matched MujocoCollisionCfg(solref)
                 ],
                 physics_material=self.object.spawn.physics_material,
@@ -170,6 +186,10 @@ class TrossenPlatePickEnvCfg(TrossenMugLiftEnvCfg):
 
     def __post_init__(self):
         super().__post_init__()
+        # Goal on the table's RIGHT (+X): with the rack at the left edge the
+        # commanded carry point is ~0.3 m from the spawn, outside the success
+        # kernel's skirt -- the transport has to be earned.
+        self.commands.object_pose.ranges.pos_x = (0.12, 0.12)
         # Reach shapes toward the plate's rim CIRCLE, not its root: the root
         # (disc center) sits inside the rack behind the tines, and a root pull
         # drags the fingers into the wires. The rim kernel reads the live
