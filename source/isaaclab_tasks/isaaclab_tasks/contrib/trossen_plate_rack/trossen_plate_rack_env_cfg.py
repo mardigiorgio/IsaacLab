@@ -60,7 +60,17 @@ class PlateRackSceneCfg(TrossenMugLiftSceneCfg):
     # Kinematic wire rack, centered on the tape-measure spot the mug used.
     rack: AssetBaseCfg = AssetBaseCfg(
         prim_path="{ENV_REGEX_NS}/Rack",
-        init_state=AssetBaseCfg.InitialStateCfg(pos=(_SPAWN_X, _SPAWN_Y, 0.02)),
+        # 50 mm toward the arm vs the mug spot: the wrist-constrained Y-closing
+        # plate grasp measured 10-25 mm past dexterous reach at the mug
+        # placement; the plate protocol authors its own tape point.
+        init_state=AssetBaseCfg.InitialStateCfg(
+            pos=(_SPAWN_X, _SPAWN_Y + 0.05, 0.02),
+            # Yawed 90 degrees so the slots run along X: the wrist closes
+            # along X within ~10 degrees but cannot get closer than ~24
+            # degrees to a Y closing anywhere in the rack region -- the
+            # existence proof failed the tilted-Y grip (1.5 mm, no hold).
+            rot=(0.0, 0.0, 0.70710678, 0.70710678),
+        ),
         spawn=sim_utils.UsdFileCfg(usd_path=DISHRACK_USD_PATH),
     )
 
@@ -81,9 +91,9 @@ class PlateRackSceneCfg(TrossenMugLiftSceneCfg):
                 # spawning AT the rest removes the drop-in transient whose
                 # bounce scattered tail envs out of the slot. Re-run the
                 # settle probe and re-adopt whenever rack or plate changes.
-                pos=[0.0079, 0.0115, 0.1491],
+                pos=[-0.0315, 0.0779, 0.1491],
                 # rot is (x, y, z, w): -90 deg about X with a ~3-degree lean.
-                rot=[-0.6956, -0.0335, -0.0344, 0.7168],
+                rot=[-0.4681, -0.5153, 0.4828, 0.5313],
             ),
             spawn=sim_utils.UsdFileCfg(
                 usd_path=PLATE_USD_PATH,
@@ -169,11 +179,14 @@ class TrossenPlatePickEnvCfg(TrossenMugLiftEnvCfg):
             params={"std": 0.2, "rim_height": PLATE_RIM_HEIGHT, "rim_radius": PLATE_RIM_RADIUS},
             weight=3.0,
         )
-        # The full lift-cracking recipe: existence-proven IK hover as the
-        # reverse-curriculum anchor, wide-scale discovery asserted inside.
-        from isaaclab_tasks.contrib.trossen_mug_lift.bedrock import apply_reverse_curriculum  # noqa: PLC0415
-
-        apply_reverse_curriculum(self, PLATE_BANK_POSE)
+        # BOOTSTRAP MODE: no bank. The generated pose above predates the
+        # rack reorientation and its proof was invalidated (contaminated by
+        # an interpenetrating spawn); regeneration on the final scene has not
+        # yet produced a pose that passes both gates. Home scatter plus the
+        # wide-gripper discovery scale is the recipe's bootstrap mode -- the
+        # mug's close was discovered exactly this way before its bank
+        # existed. Wire apply_reverse_curriculum back in only with a pose
+        # that passes the clearance AND hold gates on THIS scene.
 
 
 @configclass
