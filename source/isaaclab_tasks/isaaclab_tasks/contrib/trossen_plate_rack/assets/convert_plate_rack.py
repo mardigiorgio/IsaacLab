@@ -351,7 +351,13 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
     if os.path.exists(os.path.join(_LBM_SRC, TRI_PLATE_GLTF)):
         _write_plate_tri(out_dir)
-        _write_rack_tri(out_dir)
+        # The rack is the PRIMITIVE build, deliberately: a leaning plate needs
+        # the wire lattice as faithful contact geometry, and coacd on TRI's
+        # 33k-face wireframe merges thin wires into hulls the plate falls
+        # through (measured: progressive 85->109->156 degree topple across
+        # settle windows). Box primitives give exact narrow phase on exact
+        # 40 mm slots; TRI's wireframe can return as a visual-only dressing.
+        _write_rack(out_dir)
     else:
         # Fallback: the dimensioned procedural pair, same file layout.
         _write_plate(out_dir)

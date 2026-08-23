@@ -71,15 +71,17 @@ class PlateRackSceneCfg(TrossenMugLiftSceneCfg):
         self.object = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Object",
             init_state=RigidObjectCfg.InitialStateCfg(
-                pos=[_SPAWN_X + SLOT_X_OFFSET, _SPAWN_Y, PLATE_STAND_Z],
-                # rot is (x, y, z, w): pitched 84.55 degrees about Y -- the
-                # lbm_eval scenarios' AUTHORED resting lean of this plate in
-                # this rack (X_PC of the plate_slot_rail weld), 5.45 degrees
-                # off vertical against the wires. Spawning exactly vertical
-                # puts the plate on an unstable equilibrium instead of its
-                # settled pose. TRI's weld height lands the center at 0.1488
-                # over the table, agreeing with PLATE_STAND_Z to ~1 mm.
-                rot=[0.0, 0.67260, 0.0, 0.74000],
+                # MEASURED rest in the center slot: 64-env median after a
+                # zero-action settle under icf-adaptive (probe_scene_settle,
+                # 2026-08-23) -- the plate tips ~13 mm once, then holds
+                # frozen for 90+ steps. A 79.6-degree pitch = leaning 10.4
+                # degrees from vertical against a tine pair, the geometry a
+                # 34 mm slot dictates. Transient-free resets by construction;
+                # re-run the settle probe whenever rack or plate geometry
+                # changes and re-adopt.
+                pos=[-0.053, -0.001, 0.1134],
+                # rot is (x, y, z, w): 79.6-degree pitch about Y.
+                rot=[0.0017, 0.6399, 0.0021, 0.7685],
             ),
             spawn=sim_utils.UsdFileCfg(
                 usd_path=PLATE_USD_PATH,
