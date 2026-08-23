@@ -1,0 +1,10 @@
+#!/bin/bash
+# One-word launcher: pins the ONE correct environment (IsaacLabRubato's
+# uv-managed venv) so no command ever depends on ambient shell state, and
+# the stale-root-venv trap can never fire.
+#   ./run -p scripts/....py [args]      (anything isaaclab.sh accepts)
+exec env VIRTUAL_ENV="$HOME/Documents/code/IsaacLabRubato/.venv" \
+  ICF_MAX_RIGID_CONTACT="${ICF_MAX_RIGID_CONTACT:-1024}" \
+  MUG_COLLISION="${MUG_COLLISION:-hull}" \
+  TROSSEN_RAILS="${TROSSEN_RAILS:-1}" \
+  "$(dirname "$(readlink -f "$0")")/isaaclab.sh" "$@"
