@@ -71,17 +71,19 @@ class PlateRackSceneCfg(TrossenMugLiftSceneCfg):
         self.object = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Object",
             init_state=RigidObjectCfg.InitialStateCfg(
-                # MEASURED rest in the center slot: 64-env median after a
-                # zero-action settle under icf-adaptive (probe_scene_settle,
-                # 2026-08-23) -- the plate tips ~13 mm once, then holds
-                # frozen for 90+ steps. A 79.6-degree pitch = leaning 10.4
-                # degrees from vertical against a tine pair, the geometry a
-                # 34 mm slot dictates. Transient-free resets by construction;
-                # re-run the settle probe whenever rack or plate geometry
-                # changes and re-adopt.
-                pos=[-0.053, -0.001, 0.1134],
-                # rot is (x, y, z, w): 79.6-degree pitch about Y.
-                rot=[0.0017, 0.6399, 0.0021, 0.7685],
+                # MEASURED rest in the mid-rack slot (64-env median after a
+                # zero-action settle under icf-adaptive, 2026-08-23): the
+                # plate stands ON THE TRAY between adjacent loop slabs (bottom
+                # rim at the tray top to 1 mm), disc axis along Y, ~5.5
+                # degrees off vertical. The drop-in wedge higher up was
+                # friction-held momentum, not equilibrium: released from
+                # rest it slides 32 mm down the slot to here and freezes;
+                # spawning AT the rest removes the drop-in transient whose
+                # bounce scattered tail envs out of the slot. Re-run the
+                # settle probe and re-adopt whenever rack or plate changes.
+                pos=[0.0079, 0.0115, 0.1491],
+                # rot is (x, y, z, w): -90 deg about X with a ~3-degree lean.
+                rot=[-0.6956, -0.0335, -0.0344, 0.7168],
             ),
             spawn=sim_utils.UsdFileCfg(
                 usd_path=PLATE_USD_PATH,

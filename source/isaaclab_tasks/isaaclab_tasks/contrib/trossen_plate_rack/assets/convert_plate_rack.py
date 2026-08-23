@@ -182,13 +182,16 @@ def _write_plate(out_dir: str) -> None:
     print(f"[convert_plate_rack] wrote {out_path}: {len(groups)} collision pieces, mass {PLATE_MASS} kg")
 
 
-def _author_box(stage, path, center, half, color):
+def _author_box(stage, path, center, half, color, guide: bool = False):
     cube = UsdGeom.Cube.Define(stage, path)
     cube.GetSizeAttr().Set(2.0)
     xf = UsdGeom.Xformable(cube.GetPrim())
     xf.AddTranslateOp().Set(Gf.Vec3d(*center))
     xf.AddScaleOp().Set(Gf.Vec3f(*half))
     cube.GetDisplayColorAttr().Set([Gf.Vec3f(*color)])
+    if guide:
+        # Hidden collision stand-in: the render geometry is the real mesh.
+        cube.GetPurposeAttr().Set(UsdGeom.Tokens.guide)
     UsdPhysics.CollisionAPI.Apply(cube.GetPrim())
     return cube
 
@@ -310,11 +313,14 @@ def _write_rack_tri(out_dir: str) -> None:
     UsdGeom.SetStageMetersPerUnit(stage, 1.0)
     root = UsdGeom.Xform.Define(stage, "/Dishrack")
     stage.SetDefaultPrim(root.GetPrim())
-    rb = UsdPhysics.RigidBodyAPI.Apply(root.GetPrim())
-    rb.GetKinematicEnabledAttr().Set(True)
-    UsdPhysics.MassAPI.Apply(root.GetPrim()).GetMassAttr().Set(1.0)
+    # STATIC collider, deliberately no RigidBodyAPI (TableGuard pattern): the
+    # rack never moves, and OpenUSD 25.11's physics parser segfaults with
+    # probability rising in its rigid-body descriptor count -- at 80 hull
+    # prims under one rigid body the import died 5/5. Static colliders parse
+    # through a different descriptor class and dodge the bug entirely.
     # The wireframe rests ON the base tray: stack it by the tray's height.
     z_off = {"sweet_home_dish_drying_rack_wireframe": 0.032, "sweet_home_dish_drying_rack_base": 0.0}
+    n_col = 0
     for part in TRI_RACK_PARTS:
         mesh = _load_zup(part + ".gltf")
         mesh.vertices[:, 2] += z_off[part]
@@ -324,26 +330,31 @@ def _write_rack_tri(out_dir: str) -> None:
         vis.GetFaceVertexCountsAttr().Set([3] * len(mesh.faces))
         vis.GetFaceVertexIndicesAttr().Set([int(i) for f in mesh.faces for i in f])
         vis.GetDisplayColorAttr().Set([Gf.Vec3f(*RACK_COLOR)])
-        col = UsdGeom.Mesh.Define(stage, f"/Dishrack/collisions_{short}/mesh")
-        col.GetPointsAttr().Set([Gf.Vec3f(*p) for p in mesh.vertices])
-        col.GetFaceVertexCountsAttr().Set([3] * len(mesh.faces))
-        col.GetFaceVertexIndicesAttr().Set([int(i) for f in mesh.faces for i in f])
-        col.GetPurposeAttr().Set(UsdGeom.Tokens.guide)
-        UsdPhysics.CollisionAPI.Apply(col.GetPrim())
-        api = UsdPhysics.MeshCollisionAPI.Apply(col.GetPrim())
-        # Thin wires: hollow decomposition, the proven rig-cage path.
-        api.GetApproximationAttr().Set("convexDecomposition")
-        # Report slot centers along X at tine height for the env cfg.
-        v = mesh.vertices
-        if short == "wire":
-            hi = v[v[:, 2] > v[:, 2].max() * 0.6]
-            xs = np.sort(np.unique(np.round(hi[:, 0], 3)))
-            cols = xs[np.concatenate(([True], np.diff(xs) > 0.004))]
-            mids = np.round((cols[:-1] + cols[1:]) / 2.0, 4)
-            print(f"[convert_plate_rack] rack tine columns x: {np.round(cols, 3)}")
-            print(f"[convert_plate_rack] rack slot centers x: {mids}")
+    # Collision: primitives FITTED to the wireframe's measured lattice --
+    # the approach TRI's own SDF takes (its contact model is a separate
+    # low-res VTK, not the render mesh). Per-component hulls fail because
+    # components are welded subassemblies whose hulls wall off the slots
+    # (measured: the plate ends up lying flat on top). The measured facts,
+    # from the baked-frame vertices: 12 tine-loop planes perpendicular to Y
+    # at 23.53 mm pitch spanning y = -0.145..+0.139, loops rising to
+    # z = 0.114 over x = -0.19..+0.165; the base tray top at z = 0.032.
+    loop_ys = [-0.145, -0.107, -0.084, -0.060, -0.037, -0.013, 0.010, 0.034, 0.057, 0.081, 0.105, 0.139]
+    for k, y in enumerate(loop_ys):
+        _author_box(
+            stage,
+            f"/Dishrack/collisions_loop_{k}",
+            (-0.012, y, 0.030 + 0.084 / 2.0),
+            (0.18, 0.002, 0.084 / 2.0),
+            RACK_COLOR,
+            guide=True,
+        )
+        n_col += 1
+    _author_box(
+        stage, "/Dishrack/collisions_tray", (0.0, 0.0, 0.032 / 2.0), (0.21, 0.15, 0.032 / 2.0), RACK_COLOR, guide=True
+    )
+    n_col += 1
     stage.GetRootLayer().Save()
-    print(f"[convert_plate_rack] wrote {out_path} (TRI sweet_home): wireframe+base, kinematic")
+    print(f"[convert_plate_rack] wrote {out_path} (TRI sweet_home visuals): {n_col} fitted slab colliders, static")
 
 
 def main():
@@ -351,13 +362,7 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
     if os.path.exists(os.path.join(_LBM_SRC, TRI_PLATE_GLTF)):
         _write_plate_tri(out_dir)
-        # The rack is the PRIMITIVE build, deliberately: a leaning plate needs
-        # the wire lattice as faithful contact geometry, and coacd on TRI's
-        # 33k-face wireframe merges thin wires into hulls the plate falls
-        # through (measured: progressive 85->109->156 degree topple across
-        # settle windows). Box primitives give exact narrow phase on exact
-        # 40 mm slots; TRI's wireframe can return as a visual-only dressing.
-        _write_rack(out_dir)
+        _write_rack_tri(out_dir)
     else:
         # Fallback: the dimensioned procedural pair, same file layout.
         _write_plate(out_dir)
