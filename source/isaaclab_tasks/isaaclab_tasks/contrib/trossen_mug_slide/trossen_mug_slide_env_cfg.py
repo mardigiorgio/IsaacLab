@@ -168,12 +168,18 @@ class SlideRewardsCfg:
     # so it cannot fund hovering short of one, and at weight 2 it stays far
     # below the arrival term (16), so a calmer arm is never worth
     # surrendering the delivery itself.
+    # vel_std sits at the MEASURED median arm speed of a trained slide policy
+    # (|qd| L2 over the six arm joints: p50 4.2 rad/s deterministic, 5.3
+    # sampled). The kernel must place current behavior on its slope, not its
+    # saturated tail: at the original 0.5 every policy's speeds read as fully
+    # unstill, the term paid ~0 in every run, and no gradient toward slowing
+    # ever existed -- flail was baked into the MEAN policy unopposed.
     arm_settled = RewTerm(
         func=mdp.arm_settled_at_goal,
         weight=2.0,
         params={
             "std": 0.05,
-            "vel_std": 0.5,
+            "vel_std": 4.0,
             "min_up_cos": 0.6,
             "max_speed": PUSH_SPEED_MAX,
             "command_name": "object_pose",
