@@ -209,9 +209,10 @@ def build_env(num_envs: int = 1):
     if cfg.sim.default_visualizer_cfg is not None:
         cfg.sim.default_visualizer_cfg.headless = False
 
-    # GHOST MUG (POSE_MUG_GHOST=0 to disable): you pose the gripper straight through
-    # where the mug is, and a physical mug just gets batted across the table.
-    if os.environ.get("POSE_MUG_GHOST", "1") != "0":
+    # PLATE CONTACTS ON by default (POSE_MUG_GHOST=1 re-enables the ghost):
+    # the pinch must be feelable -- pads engage the physical plate and the
+    # panel's plate sliders re-place it between attempts.
+    if os.environ.get("POSE_MUG_GHOST", "0") != "0":
         for _c in cfg.scene.object.spawn.collision_props:
             if hasattr(_c, "collision_enabled"):
                 _c.collision_enabled = False
@@ -277,13 +278,25 @@ def main() -> int:  # noqa: C901
     # does not command a step the PD answers with a whip-crack.
     cmd = dict(vals)
 
-    _ghost = os.environ.get("POSE_MUG_GHOST", "1") != "0"
+    _ghost = os.environ.get("POSE_MUG_GHOST", "0") != "0"
     obj = env.scene["object"]
     # Pin to the SPAWN pose, not wherever it is now: with collisions off the ghost sinks
     # a little on every step before the first pin, and freezing that leaves the mug
     # buried in the slab (measured z = 0.0089 against a 0.021 spawn).
     mug_pose0 = _t(obj.data.root_pose_w).clone()
     mug_pose0[0, 2] = float(_t(env.scene.env_origins)[0][2]) + OBJECT_REST_Z
+    _org = _t(env.scene.env_origins)[0]
+    # Panel-editable plate placement (env frame). Sliders re-place the
+    # physical plate (zeroed velocity, so it settles from the new spot) and
+    # move the ghost pin when ghosting is enabled. PRINT reports it for
+    # adoption as the task spawn.
+    plate_pos = [float(mug_pose0[0, 0] - _org[0]), float(mug_pose0[0, 1] - _org[1]), float(mug_pose0[0, 2] - _org[2])]
+
+    def place_plate() -> None:
+        for k in range(3):
+            mug_pose0[0, k] = _org[k] + plate_pos[k]
+        obj.write_root_pose_to_sim_index(root_pose=mug_pose0)
+        obj.write_root_velocity_to_sim_index(root_velocity=torch.zeros_like(_t(obj.data.root_vel_w)))
 
     def joint_dict() -> dict[str, float]:
         return {n: vals[n] for n in editable}
@@ -390,6 +403,18 @@ def main() -> int:  # noqa: C901
         changed, v = imgui.slider_float("gripper##mugpose", vals[GRIPPER_JOINT], 0.0, grip_open)
         if changed:
             vals[GRIPPER_JOINT] = v
+        imgui.separator()
+        imgui.text("Plate placement (env frame)")
+        _moved = False
+        for k, (axn, lo2, hi2) in enumerate(
+            (("plate_x", -0.35, 0.35), ("plate_y", -0.25, 0.30), ("plate_z", 0.05, 0.35))
+        ):
+            changed, v = imgui.slider_float(f"{axn}##mugpose", plate_pos[k], lo2, hi2)
+            if changed:
+                plate_pos[k] = v
+                _moved = True
+        if _moved:
+            place_plate()
 
     def try_register_panel() -> bool:
         """Attach draw_panel to the Newton viewer; no-op once attached.
@@ -459,12 +484,14 @@ def main() -> int:  # noqa: C901
 
         print("[selftest] driving the panel through a stub (no GUI)")
         mug_env = (_t(obj.data.root_pos_w)[0] - _t(env.scene.env_origins)[0]).tolist()
+        # The plate's authored spawn: the measured rest in the left-edge
+        # rack's mid slot (see the task cfg). Contacts are ON in this lab, so
+        # allow the few mm the free plate settles by before this read.
         check(
-            "mug spawns 45.75 cm forward: env y = 0.000",
-            abs(mug_env[1]) < 1e-3,
-            f"mug env = ({mug_env[0]:+.4f}, {mug_env[1]:+.4f}, {mug_env[2]:+.4f})",
+            "plate at its authored spawn",
+            abs(mug_env[0] - (-0.1915)) < 0.02 and abs(mug_env[1] - 0.0779) < 0.02 and abs(mug_env[2] - 0.1491) < 0.02,
+            f"plate env = ({mug_env[0]:+.4f}, {mug_env[1]:+.4f}, {mug_env[2]:+.4f})",
         )
-        check("mug on the centerline: env x = -0.020", abs(mug_env[0] - (-0.020)) < 1e-3)
         q_now = _t(robot.data.joint_pos)[0]
         worst = max(abs(float(q_now[i]) - vals[n]) for n, i in zip(arm_names, arm_ids))
         check("session starts AT the configured start pose", worst < 0.02, f"worst joint error {worst:.4f} rad")
@@ -485,8 +512,8 @@ def main() -> int:  # noqa: C901
         stub = _StubImgui()
         draw_panel(stub)
         check(
-            "panel draws a slider per arm joint + gripper",
-            len(stub.sliders) == len(editable) + 1,
+            "panel draws a slider per arm joint + gripper + plate xyz",
+            len(stub.sliders) == len(editable) + 4,
             f"{len(stub.sliders)} sliders: {stub.sliders}",
         )
         check("panel draws RESET/PRINT/SAVE buttons", len(stub.buttons) == 3, f"{stub.buttons}")
