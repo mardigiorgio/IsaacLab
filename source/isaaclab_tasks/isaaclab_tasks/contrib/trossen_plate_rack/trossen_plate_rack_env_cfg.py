@@ -143,7 +143,12 @@ class PlateRackSceneCfg(TrossenMugLiftSceneCfg):
 
 @configclass
 class PlateEventCfg:
-    """Home starts only: exact plate spawn, scattered arm, no grasp bank."""
+    """Fixed starts: exact plate spawn, arm at home/ready, no grasp bank.
+
+    No arm scatter, deliberately: at this rack placement the mug task's
+    +/-0.6 rad scatter samples poses that spawn the gripper inside the
+    rack basket. Exploration is the policy's own noise plus the widened
+    wrist action scale."""
 
     reset_all = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
     reset_object_position = EventTerm(
@@ -153,15 +158,6 @@ class PlateEventCfg:
             "pose_range": {"x": (0.0, 0.0), "y": (0.0, 0.0), "z": (0.0, 0.0)},
             "velocity_range": {},
             "asset_cfg": SceneEntityCfg("object"),
-        },
-    )
-    randomize_arm_start = EventTerm(
-        func=mdp.reset_joints_by_offset,
-        mode="reset",
-        params={
-            "position_range": (-0.6, 0.6),
-            "velocity_range": (0.0, 0.0),
-            "asset_cfg": SceneEntityCfg("robot", joint_names="follower_left_joint_[0-5]"),
         },
     )
 
