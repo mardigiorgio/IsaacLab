@@ -71,14 +71,13 @@ class PlateRackSceneCfg(TrossenMugLiftSceneCfg):
         # plate grasp measured 10-25 mm past dexterous reach at the mug
         # placement; the plate protocol authors its own tape point.
         init_state=AssetBaseCfg.InitialStateCfg(
-            # Table-LEFT placement (screen-left of the front camera = -X):
             # the spawn previously sat ~0.15 m from the fixed goal, inside
             # its success kernel's skirt -- the episode began half-solved.
-            # -0.24 pulls the rack out of the front camera's center frame
+            # +0.24: table-RIGHT of the front camera, the side ordered off
             # +0.05 further along +Y moves it away from the front recording
             # camera (which sits beyond the table on -Y) so the rack does
             # not dominate the video frame.
-            pos=(-0.24, _SPAWN_Y + 0.10, 0.02),
+            pos=(0.24, _SPAWN_Y + 0.10, 0.02),
             # Yaw returned to identity (a further 180 from the rail-row-
             # toward-the-arm arrangement, ordered after pose-lab
             # inspection): slots still run along Y, rail row away from the
@@ -109,7 +108,7 @@ class PlateRackSceneCfg(TrossenMugLiftSceneCfg):
                 # under real contact, so a small settle slide off the
                 # authored pose is expected and TRI-faithful. Verify with
                 # the settle probe (in-slot, finite) after any rack change.
-                pos=[-0.3398, 0.1143, 0.1488],
+                pos=[0.1402, 0.1143, 0.1488],
                 # rot is (x, y, z, w).
                 rot=[0.6727, 0.0, 0.0, 0.7399],
             ),
@@ -200,7 +199,7 @@ class TrossenPlatePickEnvCfg(TrossenMugLiftEnvCfg):
         # Goal on the table's RIGHT (+X): with the rack at the left edge the
         # commanded carry point is ~0.3 m from the spawn, outside the success
         # kernel's skirt -- the transport has to be earned.
-        self.commands.object_pose.ranges.pos_x = (0.12, 0.12)
+        self.commands.object_pose.ranges.pos_x = (-0.12, -0.12)
         # Reach shapes toward the plate's rim CIRCLE, not its root: the root
         # (disc center) sits inside the rack behind the tines, and a root pull
         # drags the fingers into the wires. The rim kernel reads the live
