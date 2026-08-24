@@ -40,12 +40,11 @@ from isaaclab_tasks.contrib.trossen_mug_lift.trossen_mug_lift_env_cfg import (
 from . import mdp
 from .assets import DISHRACK_USD_PATH, PLATE_USD_PATH
 
-# Contact representation, fixed by decision (no switches): the plate is
-# TRI's geometry as sector hulls (a thin disc is represented faithfully by
-# its hulls, and the dynamic body keeps the convex fast path); the rack is
-# TRI's RAW wireframe mesh as a static collider -- fitted slabs looked
-# nothing like the visual at contact level, and the rack's whole role is
-# thin-wire fidelity.
+# Contact representation, fixed by decision (no switches): every TRI
+# model collides as its RAW authored triangle mesh -- plate and rack alike
+# (fitted slabs looked nothing like the visual at contact level, and the
+# scene's whole role is thin-geometry fidelity). Only the rig keeps
+# primitive/hull colliders, frame and table included.
 
 # Rim circle of the TRI ikea_dinera plate in its body frame, measured by
 # assets/convert_plate_rack.py from the source mesh (R=0.0981, rim z=0.0178):
@@ -119,9 +118,10 @@ class PlateRackSceneCfg(TrossenMugLiftSceneCfg):
                 activate_contact_sensors=True,
                 collision_props=[
                     sim_utils.schemas.UsdPhysicsCollisionCfg(),
-                    # Hulls unconditionally: the pre-split pieces exist for
-                    # exactly this, and the raw-mesh path is retired.
-                    sim_utils.schemas.UsdPhysicsMeshCollisionCfg(mesh_approximation_name="convexHull"),
+                    # Raw mesh, by the all-TRI-models-are-meshes ruling: the
+                    # plate collides as its authored triangle mesh like the
+                    # mug and the rack.
+                    sim_utils.schemas.UsdPhysicsMeshCollisionCfg(mesh_approximation_name="none"),
                     self.object.spawn.collision_props[2],  # rig-matched MujocoCollisionCfg(solref)
                 ],
                 # TRI's authored coefficient for THIS plate (its SDF's
