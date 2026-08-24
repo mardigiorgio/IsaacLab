@@ -204,15 +204,15 @@ class TrossenPlatePickEnvCfg(TrossenMugLiftEnvCfg):
             params={"std": 0.2, "rim_height": PLATE_RIM_HEIGHT, "rim_radius": PLATE_RIM_RADIUS},
             weight=3.0,
         )
-        # Wrist exploration: the Y-running slots put the plate grasp ~24
-        # degrees off the wrist's natural closing plane, so discovery has to
-        # search orientation, not just position. Tripling the wrist joints'
-        # action scale widens the per-step orientation search (init_std 0.5
-        # x scale 0.3 = +/-0.15 rad commanded jitter) while the proximal
-        # joints keep the seat-preserving 0.1.
+        # FULL articulation, ordered: the commandable set covers every
+        # joint's whole range (scale 0.5 x clip 6 = +/-3 rad, clamped to
+        # the hardware limits downstream), so any grasp posture the arm
+        # can physically reach is expressible. The mug tasks' 0.1 was a
+        # PD-transient guard tuned for a straight-in pinch; the plate
+        # grasp needs free orientation search and pays the transient
+        # cost knowingly.
         self.actions.arm_action.scale = {
-            "follower_left_joint_[0-2]": 0.1,
-            "follower_left_joint_[3-5]": 0.3,
+            "follower_left_joint_[0-5]": 0.5,
         }
         # BOOTSTRAP MODE: no bank. The generated pose above predates the
         # rack reorientation and its proof was invalidated (contaminated by
