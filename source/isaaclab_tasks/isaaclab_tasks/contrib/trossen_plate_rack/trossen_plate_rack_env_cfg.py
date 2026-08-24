@@ -75,17 +75,18 @@ class PlateRackSceneCfg(TrossenMugLiftSceneCfg):
             # the spawn previously sat ~0.15 m from the fixed goal, inside
             # its success kernel's skirt -- the episode began half-solved.
             # -0.18 puts the rack edge near the table edge while keeping
-            # the rim inside the arm's measured reach envelope (~0.45 m).
-            pos=(-0.18, _SPAWN_Y + 0.05, 0.02),
-            # Yawed a further 90 degrees from the slots-along-X arrangement
-            # (180 total): in the pose lab the arm could not reach a plate
-            # grasp there at all, which overrides the earlier closing-axis
-            # argument -- an unreachable grasp loses to a tilted one that
-            # exists. Slots run along Y again, rail row toward the arm;
-            # wrist exploration (widened action scale on joints 3-5) is the
-            # compensation for the ~24-degree Y-closing misalignment.
+            # the rim inside the arm's measured reach envelope (~0.45 m);
+            # +0.05 further along +Y moves it away from the front recording
+            # camera (which sits beyond the table on -Y) so the rack does
+            # not dominate the video frame.
+            pos=(-0.18, _SPAWN_Y + 0.10, 0.02),
+            # Yaw returned to identity (a further 180 from the rail-row-
+            # toward-the-arm arrangement, ordered after pose-lab
+            # inspection): slots still run along Y, rail row away from the
+            # arm. Wrist exploration (widened action scale on joints 3-5)
+            # compensates the ~24-degree Y-closing misalignment.
             # rot is (x, y, z, w).
-            rot=(0.0, 0.0, 1.0, 0.0),
+            rot=(0.0, 0.0, 0.0, 1.0),
         ),
         spawn=sim_utils.UsdFileCfg(
             usd_path=DISHRACK_USD_PATH.replace("dishrack.usd", "dishrack_mesh.usd") if _RACK_MESH else DISHRACK_USD_PATH
@@ -109,9 +110,9 @@ class PlateRackSceneCfg(TrossenMugLiftSceneCfg):
                 # under real contact, so a small settle slide off the
                 # authored pose is expected and TRI-faithful. Verify with
                 # the settle probe (in-slot, finite) after any rack change.
-                pos=[-0.0802, 0.0357, 0.1488],
+                pos=[-0.2798, 0.1143, 0.1488],
                 # rot is (x, y, z, w).
-                rot=[0.0, 0.6727, 0.7399, 0.0],
+                rot=[0.6727, 0.0, 0.0, 0.7399],
             ),
             spawn=sim_utils.UsdFileCfg(
                 usd_path=PLATE_USD_PATH,
