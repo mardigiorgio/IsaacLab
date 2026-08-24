@@ -698,11 +698,16 @@ class EventCfg:
     # overwrites its own subset with exact poses — so the net effect is wide
     # start-state coverage on the home half only. Mug-independent, hence
     # composes with placement/yaw DR unchanged.
+    # Zero range, deliberately: sim-only protocol starts every non-bank
+    # episode at the home/ready pose; exploration is the policy's own high
+    # entropy. The term must still exist (zeroed) because the bank event
+    # overwrites its subset AFTER this one -- the curriculum machinery
+    # checks for it by name and relies on that ordering.
     randomize_arm_start = EventTerm(
         func=mdp.reset_joints_by_offset,
         mode="reset",
         params={
-            "position_range": (-0.6, 0.6),
+            "position_range": (0.0, 0.0),
             "velocity_range": (0.0, 0.0),
             "asset_cfg": SceneEntityCfg("robot", joint_names="follower_left_joint_[0-5]"),
         },
