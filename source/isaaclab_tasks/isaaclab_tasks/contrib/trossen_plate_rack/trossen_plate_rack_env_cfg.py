@@ -78,7 +78,7 @@ class PlateRackSceneCfg(TrossenMugLiftSceneCfg):
             # +0.05 further along +Y moves it away from the front recording
             # camera (which sits beyond the table on -Y) so the rack does
             # not dominate the video frame.
-            pos=(-0.10, _SPAWN_Y + 0.10, 0.02),
+            pos=(-0.08, _SPAWN_Y + 0.08, 0.02),
             # Yaw returned to identity (a further 180 from the rail-row-
             # toward-the-arm arrangement, ordered after pose-lab
             # inspection): slots still run along Y, rail row away from the
@@ -109,7 +109,7 @@ class PlateRackSceneCfg(TrossenMugLiftSceneCfg):
                 # under real contact, so a small settle slide off the
                 # authored pose is expected and TRI-faithful. Verify with
                 # the settle probe (in-slot, finite) after any rack change.
-                pos=[-0.1998, 0.1143, 0.1488],
+                pos=[-0.1798, 0.0943, 0.1488],
                 # rot is (x, y, z, w).
                 rot=[0.6727, 0.0, 0.0, 0.7399],
             ),
