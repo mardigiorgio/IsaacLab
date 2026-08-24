@@ -75,9 +75,9 @@ from isaaclab_tasks.contrib.trossen_plate_rack.trossen_plate_rack_env_cfg import
     PLATE_BANK_POSE as GRASP_BANK_POSE,
 )
 
-# The plate's settled REST height above its env origin (measured spawn z):
-# the ghost object is pinned here, mirroring the mug lab's OBJECT_REST_Z.
-OBJECT_REST_Z = 0.1491
+# The plate's settled REST height above its env origin: read from the task
+# cfg at session start (see below), so scene revisions cannot strand it.
+OBJECT_REST_Z = None  # resolved from cfg.scene.object.init_state.pos[2]
 from isaaclab_tasks.utils import parse_env_cfg  # noqa: E402
 
 # 1:1 WITH TRAINING: the training launches export these; a bare lab launch
@@ -284,7 +284,7 @@ def main() -> int:  # noqa: C901
     # a little on every step before the first pin, and freezing that leaves the mug
     # buried in the slab (measured z = 0.0089 against a 0.021 spawn).
     mug_pose0 = _t(obj.data.root_pose_w).clone()
-    mug_pose0[0, 2] = float(_t(env.scene.env_origins)[0][2]) + OBJECT_REST_Z
+    mug_pose0[0, 2] = float(_t(env.scene.env_origins)[0][2]) + float(cfg.scene.object.init_state.pos[2])
     _org = _t(env.scene.env_origins)[0]
     # Panel-editable plate placement (env frame). Sliders re-place the
     # physical plate (zeroed velocity, so it settles from the new spot) and
@@ -484,13 +484,14 @@ def main() -> int:  # noqa: C901
 
         print("[selftest] driving the panel through a stub (no GUI)")
         mug_env = (_t(obj.data.root_pos_w)[0] - _t(env.scene.env_origins)[0]).tolist()
-        # The plate's authored spawn: the measured rest in the left-edge
-        # rack's mid slot (see the task cfg). Contacts are ON in this lab, so
+        # The plate's authored spawn, read from the TASK CFG so this check
+        # follows every scene revision. Contacts are ON in this lab, so
         # allow the few mm the free plate settles by before this read.
+        _sp = list(cfg.scene.object.init_state.pos)
         check(
             "plate at its authored spawn",
-            abs(mug_env[0] - (-0.1915)) < 0.02 and abs(mug_env[1] - 0.0779) < 0.02 and abs(mug_env[2] - 0.1491) < 0.02,
-            f"plate env = ({mug_env[0]:+.4f}, {mug_env[1]:+.4f}, {mug_env[2]:+.4f})",
+            all(abs(mug_env[i] - _sp[i]) < 0.02 for i in range(3)),
+            f"plate env = ({mug_env[0]:+.4f}, {mug_env[1]:+.4f}, {mug_env[2]:+.4f}) vs cfg {tuple(round(v, 4) for v in _sp)}",
         )
         q_now = _t(robot.data.joint_pos)[0]
         worst = max(abs(float(q_now[i]) - vals[n]) for n, i in zip(arm_names, arm_ids))
