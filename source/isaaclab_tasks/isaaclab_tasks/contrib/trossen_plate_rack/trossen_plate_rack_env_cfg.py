@@ -200,7 +200,7 @@ class TrossenPlatePickEnvCfg(TrossenMugLiftEnvCfg):
         # Goal on the table's RIGHT (+X): with the rack at the left edge the
         # commanded carry point is ~0.3 m from the spawn, outside the success
         # kernel's skirt -- the transport has to be earned.
-        self.commands.object_pose.ranges.pos_x = (0.12, 0.12)
+        self.commands.object_pose.ranges.pos_x = (0.18, 0.18)
         # Reach shapes toward the plate's rim CIRCLE, not its root: the root
         # (disc center) sits inside the rack behind the tines, and a root pull
         # drags the fingers into the wires. The rim kernel reads the live
