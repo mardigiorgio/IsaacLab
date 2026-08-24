@@ -303,18 +303,11 @@ class TrossenMugLiftSceneCfg(InteractiveSceneCfg):
             activate_contact_sensors=True,
             collision_props=[
                 sim_utils.schemas.UsdPhysicsCollisionCfg(),
-                # "none" = raw triangle meshes; MUG_COLLISION=hull hulls each
-                # pre-split near-convex piece instead — the asset's authored
-                # decomposition exists precisely so per-prim hulling preserves
-                # the rim and the handle opening, and hull-hull narrow phase
-                # replaces the per-triangle contact kernel. Any adoption of the
-                # hull path must revalidate rest penetration and the grip
-                # census, on BOTH solver arms together.
-                sim_utils.schemas.UsdPhysicsMeshCollisionCfg(
-                    mesh_approximation_name=(
-                        "convexHull" if os.environ.get("MUG_COLLISION", "mesh") == "hull" else "none"
-                    )
-                ),
+                # Raw triangle meshes, fixed by decision (no switch): the
+                # mug's authored TRI collision mesh is the contact geometry,
+                # rim and handle opening included. The hull override is gone
+                # with the batch that used it.
+                sim_utils.schemas.UsdPhysicsMeshCollisionCfg(mesh_approximation_name="none"),
                 # See the rig's collision_props: the contact response time is
                 # authored rather than derived from ke/kd, which would place it
                 # far below what a step of sim.dt can represent.
