@@ -77,11 +77,15 @@ class PlateRackSceneCfg(TrossenMugLiftSceneCfg):
             # -0.18 puts the rack edge near the table edge while keeping
             # the rim inside the arm's measured reach envelope (~0.45 m).
             pos=(-0.18, _SPAWN_Y + 0.05, 0.02),
-            # Yawed 90 degrees so the slots run along X: the wrist closes
-            # along X within ~10 degrees but cannot get closer than ~24
-            # degrees to a Y closing anywhere in the rack region -- the
-            # existence proof failed the tilted-Y grip (1.5 mm, no hold).
-            rot=(0.0, 0.0, 0.70710678, 0.70710678),
+            # Yawed a further 90 degrees from the slots-along-X arrangement
+            # (180 total): in the pose lab the arm could not reach a plate
+            # grasp there at all, which overrides the earlier closing-axis
+            # argument -- an unreachable grasp loses to a tilted one that
+            # exists. Slots run along Y again, rail row toward the arm;
+            # wrist exploration (widened action scale on joints 3-5) is the
+            # compensation for the ~24-degree Y-closing misalignment.
+            # rot is (x, y, z, w).
+            rot=(0.0, 0.0, 1.0, 0.0),
         ),
         spawn=sim_utils.UsdFileCfg(
             usd_path=DISHRACK_USD_PATH.replace("dishrack.usd", "dishrack_mesh.usd") if _RACK_MESH else DISHRACK_USD_PATH
@@ -95,19 +99,19 @@ class PlateRackSceneCfg(TrossenMugLiftSceneCfg):
         self.object = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Object",
             init_state=RigidObjectCfg.InitialStateCfg(
-                # MEASURED rest in the mid-rack slot (64-env median after a
-                # zero-action settle under icf-adaptive, 2026-08-23): the
-                # plate stands ON THE TRAY between adjacent loop slabs (bottom
-                # rim at the tray top to 1 mm), disc axis along Y, ~5.5
-                # degrees off vertical. The drop-in wedge higher up was
-                # friction-held momentum, not equilibrium: released from
-                # rest it slides 32 mm down the slot to here and freezes;
-                # spawning AT the rest removes the drop-in transient whose
-                # bounce scattered tail envs out of the slot. Re-run the
-                # settle probe and re-adopt whenever rack or plate changes.
-                pos=[-0.1915, 0.0779, 0.1491],
-                # rot is (x, y, z, w): -90 deg about X with a ~3-degree lean.
-                rot=[-0.4681, -0.5153, 0.4828, 0.5313],
+                # TRI's own plate-in-rack pose: the PutSpatulaInUtensilCrock
+                # FromDryingRack scenario welds the plate to a slot rail with
+                # X_PC t=[0.00922, 0.00230, 0.02007], rpy=[84.55, 0, 90] deg;
+                # center rail (plate_slot_rail_4) chosen, frames mapped into
+                # this rack USD by vertex registration of the wireframe mesh
+                # (rotation Rz(-90), translation (0, 0, 0.032), residual
+                # 2e-6 m). TRI holds this pose with a weld; here it lives
+                # under real contact, so a small settle slide off the
+                # authored pose is expected and TRI-faithful. Verify with
+                # the settle probe (in-slot, finite) after any rack change.
+                pos=[-0.0802, 0.0357, 0.1488],
+                # rot is (x, y, z, w).
+                rot=[0.0, 0.6727, 0.7399, 0.0],
             ),
             spawn=sim_utils.UsdFileCfg(
                 usd_path=PLATE_USD_PATH,
@@ -206,6 +210,16 @@ class TrossenPlatePickEnvCfg(TrossenMugLiftEnvCfg):
             params={"std": 0.2, "rim_height": PLATE_RIM_HEIGHT, "rim_radius": PLATE_RIM_RADIUS},
             weight=3.0,
         )
+        # Wrist exploration: the Y-running slots put the plate grasp ~24
+        # degrees off the wrist's natural closing plane, so discovery has to
+        # search orientation, not just position. Tripling the wrist joints'
+        # action scale widens the per-step orientation search (init_std 0.5
+        # x scale 0.3 = +/-0.15 rad commanded jitter) while the proximal
+        # joints keep the seat-preserving 0.1.
+        self.actions.arm_action.scale = {
+            "follower_left_joint_[0-2]": 0.1,
+            "follower_left_joint_[3-5]": 0.3,
+        }
         # BOOTSTRAP MODE: no bank. The generated pose above predates the
         # rack reorientation and its proof was invalidated (contaminated by
         # an interpenetrating spawn); regeneration on the final scene has not
