@@ -45,7 +45,7 @@ class TrossenMugSlidePPORunnerCfg(RslRlOnPolicyRunnerCfg):
         # std floor keeps the effectively-binary gripper dim from collapsing
         # sigma to zero (log-prob blowup); the cap bounds exploration drift,
         # which is otherwise unbounded and runs away.
-        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=1.0, std_type="log", std_range=(0.05, 3.0)),
+        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=1.0, std_type="log", std_range=(0.05, 1.5)),
     )
     critic = RslRlMLPModelCfg(
         hidden_dims=[256, 128, 64],

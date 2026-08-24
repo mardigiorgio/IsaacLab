@@ -630,7 +630,14 @@ class RewardsCfg:
         weight=0.1,
     )
 
-    early_termination = RewTerm(func=mdp.is_terminated_term, weight=-50, params={"term_keys": ["robot_abnormal"]})
+    early_termination = RewTerm(
+        func=mdp.is_terminated_term,
+        weight=-50,
+        # physics_diverged included: with negative early returns, an
+        # unpenalized divergence termination is a paid exit -- the policy
+        # learns to break the contact solve to end the episode.
+        params={"term_keys": ["robot_abnormal", "physics_diverged"]},
+    )
 
 
 @configclass

@@ -132,6 +132,17 @@ class SlideRewardsCfg:
     tipped, airborne, or smacked mug's income; there is no tip fine, which at
     any size taught hovering (measured twice)."""
 
+    # The one fine that exists targets a different exploit class: with
+    # negative early returns, an unpenalized termination is a paid exit,
+    # and the divergence termination in particular taught the policy to
+    # crush the mug until the contact solve broke. The gates cannot
+    # unpay an exit; only a fine prices it.
+    early_termination = RewTerm(
+        func=mdp.is_terminated_term,
+        weight=-50,
+        params={"term_keys": ["robot_abnormal", "physics_diverged"]},
+    )
+
     # Reach toward the mug root: for a push, low on the wall IS the right
     # approach point.
     reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.2}, weight=0.5)

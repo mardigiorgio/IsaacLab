@@ -46,7 +46,7 @@ class TrossenMugLiftPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         # jitter stays inside the clamp's seat; at std 1 the seat breaks in
         # 1-2 steps and the grasp income stream cannot exist to be learned.
         # The slide keeps its trained recipe in its own package.
-        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=0.5, std_type="log", std_range=(0.05, 3.0)),
+        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=0.5, std_type="log", std_range=(0.05, 1.5)),
     )
     critic = RslRlMLPModelCfg(
         hidden_dims=[256, 128, 64],
@@ -84,7 +84,7 @@ class TrossenMugLiftDistillationRunnerCfg(RslRlDistillationRunnerCfg):
         hidden_dims=[256, 128, 64],
         activation="elu",
         obs_normalization=False,
-        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=0.1, std_type="log", std_range=(0.05, 3.0)),
+        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=0.1, std_type="log", std_range=(0.05, 1.5)),
     )
     teacher = RslRlMLPModelCfg(
         hidden_dims=[256, 128, 64],
