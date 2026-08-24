@@ -1942,22 +1942,9 @@ class NewtonManager(PhysicsManager):
         # Adaptive solvers that support it get the pipeline for mid-march
         # geometry re-query (CENIC's two narrow-phase queries per attempted
         # step: at x^n and x^{n+1/2}), instead of marching a whole control
-        # boundary on one frozen contact set. NEWTON_ICF_REQUERY=0 keeps the
-        # boundary-frozen cadence for A/B comparisons.
-        if (
-            cls._solver is not None
-            and hasattr(cls._solver, "attach_collision_pipeline")
-            and os.environ.get("NEWTON_ICF_REQUERY", "1") == "1"
-        ):
-            # NEWTON_ICF_MASK_REQUERY=0: finished worlds keep colliding (the
-            # pre-mask behavior, for A/B timing). NEWTON_ICF_REQUERY_HALF=0:
-            # one query per attempt instead of the paper's two — a DEVIATIONS
-            # departure gated on penetration-census evidence.
-            cls._solver.attach_collision_pipeline(
-                NewtonManager._collision_pipeline,
-                mask_requery=os.environ.get("NEWTON_ICF_MASK_REQUERY", "1") == "1",
-                half_query=os.environ.get("NEWTON_ICF_REQUERY_HALF", "1") == "1",
-            )
+        # boundary on one frozen contact set.
+        if cls._solver is not None and hasattr(cls._solver, "attach_collision_pipeline"):
+            cls._solver.attach_collision_pipeline(NewtonManager._collision_pipeline)
 
     # ----- Solver construction (subclass contract) ------------------------
 
