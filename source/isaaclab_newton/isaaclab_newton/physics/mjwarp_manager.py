@@ -443,7 +443,7 @@ class NewtonMJWarpManager(NewtonManager):
             # the same way the SAP backend does (override with ICF_WARP_PATH).
             import sys as _sys
 
-            _icf_root = os.environ.get("ICF_WARP_PATH", "/home/mdigiorgio/Documents/code/icf_warp_isaaclab")
+            _icf_root = os.environ.get("ICF_WARP_PATH", "/home/mdigiorgio/Documents/code/icf_warp_adaptive")
             if _icf_root not in _sys.path:
                 _sys.path.insert(0, _icf_root)
             from icf_warp import IcfParams, SolverICF
