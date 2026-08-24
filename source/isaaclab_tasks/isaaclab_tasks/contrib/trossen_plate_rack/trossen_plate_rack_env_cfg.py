@@ -74,12 +74,11 @@ class PlateRackSceneCfg(TrossenMugLiftSceneCfg):
             # Table-LEFT placement (screen-left of the front camera = -X):
             # the spawn previously sat ~0.15 m from the fixed goal, inside
             # its success kernel's skirt -- the episode began half-solved.
-            # -0.18 puts the rack edge near the table edge while keeping
-            # the rim inside the arm's measured reach envelope (~0.45 m);
+            # -0.24 pulls the rack out of the front camera's center frame
             # +0.05 further along +Y moves it away from the front recording
             # camera (which sits beyond the table on -Y) so the rack does
             # not dominate the video frame.
-            pos=(-0.18, _SPAWN_Y + 0.10, 0.02),
+            pos=(-0.24, _SPAWN_Y + 0.10, 0.02),
             # Yaw returned to identity (a further 180 from the rail-row-
             # toward-the-arm arrangement, ordered after pose-lab
             # inspection): slots still run along Y, rail row away from the
@@ -110,7 +109,7 @@ class PlateRackSceneCfg(TrossenMugLiftSceneCfg):
                 # under real contact, so a small settle slide off the
                 # authored pose is expected and TRI-faithful. Verify with
                 # the settle probe (in-slot, finite) after any rack change.
-                pos=[-0.2798, 0.1143, 0.1488],
+                pos=[-0.3398, 0.1143, 0.1488],
                 # rot is (x, y, z, w).
                 rot=[0.6727, 0.0, 0.0, 0.7399],
             ),
