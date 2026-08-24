@@ -157,24 +157,11 @@ def main():
 
     _author_mesh(stage, "/Mug/visuals/visuals", mesh, purpose_guide=False)
     for name, face_idx in groups.items():
-        raw = mesh.submesh([face_idx], append=True)
-        # Author the piece as a LOW-VERTEX convex hull, not the raw submesh:
-        # the pipeline hulls each prim anyway, and pair-broadphase demand
-        # scales with the triangle product of overlapping shapes — the mug is
-        # one side of every grasp-phase pair, so its triangle budget bounds
-        # the whole scene's pair demand. Farthest-point subsample to <= 24
-        # vertices before hulling.
-        verts = raw.vertices
-        if len(verts) > 24:
-            import numpy as _np
-
-            sel = [int(_np.argmax(_np.linalg.norm(verts - verts.mean(0), axis=1)))]
-            d = _np.linalg.norm(verts - verts[sel[0]], axis=1)
-            for _ in range(23):
-                sel.append(int(_np.argmax(d)))
-                d = _np.minimum(d, _np.linalg.norm(verts - verts[sel[-1]], axis=1))
-            verts = verts[sel]
-        piece = trimesh.convex.convex_hull(verts)
+        # RAW submesh, not a hull: with mesh_approximation "none" the
+        # authored geometry IS the contact geometry. The old low-vertex
+        # hulls existed for the hull-approximation era's broadphase budget
+        # and died with it.
+        piece = mesh.submesh([face_idx], append=True)
         _author_mesh(stage, f"/Mug/{name}/mesh", piece, purpose_guide=True)
         ext = piece.vertices.max(0) - piece.vertices.min(0)
         print(f"[convert_mug] {name}: {len(face_idx)} faces, extent {np.round(ext, 4)}")

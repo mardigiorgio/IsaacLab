@@ -296,7 +296,10 @@ def _write_plate_tri(out_dir: str) -> None:
     mass.GetDiagonalInertiaAttr().Set(Gf.Vec3f(*TRI_PLATE_INERTIA))
     _author_mesh(stage, "/Plate/visuals/visuals", mesh, collide=False, color=PLATE_COLOR)
     for name, face_idx in groups.items():
-        piece = _hull_piece(mesh, face_idx)
+        # RAW submesh, not a hull: with mesh_approximation "none" the
+        # authored geometry IS the contact geometry, and the whole point of
+        # the piece split is per-piece sensor filtering, not convexity.
+        piece = mesh.submesh([face_idx], append=True)
         _author_mesh(stage, f"/Plate/{name}/mesh", piece, collide=True, color=PLATE_COLOR)
     stage.GetRootLayer().Save()
     print(
