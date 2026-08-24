@@ -166,12 +166,10 @@ class PlateEventCfg:
     )
 
 
-# IK pre-grasp hover for the settled plate's rim apex, generated and
-# VALIDATED by probe_generate_bank (2026-08-23): damped-least-squares IK to
-# 8.8 mm of the hover point, then the scripted close-and-raise existence
-# proof -- the pinch lifted the plate 398 mm and held. Placement-tracking
-# Jacobian omitted: the task is fixed-placement, and the perturbed-placement
-# re-solves did not converge (regenerate before any placement DR).
+# UNWIRED and UNVALIDATED for the current scene: this pose was generated
+# on a pre-rotation rack and its existence proof is void. Kept only as a
+# starting seed for the pose lab / a future probe_generate_bank rerun;
+# nothing reads it at runtime.
 PLATE_BANK_POSE = {
     "follower_left_joint_0": 0.1759,
     "follower_left_joint_1": 2.3190,
@@ -186,7 +184,7 @@ PLATE_BANK_POSE = {
 
 @configclass
 class PlateCurriculumCfg:
-    """Replaced by the bedrock anneal in __post_init__ (bank pose exists)."""
+    """Empty: bootstrap mode trains from home scatter, no curriculum."""
 
 
 @configclass
