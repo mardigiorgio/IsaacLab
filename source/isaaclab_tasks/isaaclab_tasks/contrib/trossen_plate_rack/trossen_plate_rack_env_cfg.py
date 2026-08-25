@@ -211,8 +211,19 @@ class TrossenPlatePickEnvCfg(TrossenMugLiftEnvCfg):
         # grasp needs free orientation search and pays the transient
         # cost knowingly.
         self.actions.arm_action.scale = {
-            "follower_left_joint_[0-5]": 0.5,
+            # Shoulders position the wrist; the pre-grasp search itself is a
+            # wrist-orientation problem, so the distal axes get the widest
+            # band: at policy std 1.5 the doorknob axes (4-5) sample ~2.2 rad
+            # of commanded rotation per step — real turning motions, not
+            # dithering. PD transients accepted knowingly (see above).
+            "follower_left_joint_[0-2]": 0.5,
+            "follower_left_joint_3": 1.0,
+            "follower_left_joint_[4-5]": 1.5,
         }
+        # Finger discovery: the lift's gripper scale guards a settled pinch;
+        # the plate first needs fingers that actually open and close during
+        # search. 0.15 commands the full 0.044 m stroke well inside 1 sigma.
+        self.actions.gripper_action.scale = 0.15
         # Online success in the logger (Metrics/success_rate): the command
         # measures the OBJECT against the commanded pose with the committed
         # evaluator's gates. Logging-only — no reward or dynamics change.
