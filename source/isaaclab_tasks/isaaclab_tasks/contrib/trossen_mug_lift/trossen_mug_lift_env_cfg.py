@@ -310,8 +310,15 @@ class TrossenMugLiftSceneCfg(InteractiveSceneCfg):
                 sim_utils.schemas.UsdPhysicsMeshCollisionCfg(mesh_approximation_name="none"),
                 # See the rig's collision_props: the contact response time is
                 # authored rather than derived from ke/kd, which would place it
-                # far below what a step of sim.dt can represent.
-                MujocoCollisionCfg(solref=(0.02, 1.0)),
+                # far below what a step of sim.dt can represent. condim=6 puts
+                # torsional (and rolling) friction rows on the object's own
+                # pairs: at the default condim=3 the object-table pair has no
+                # torsional row, so a tapped free body spins on a frictionless
+                # vertical axis, winds up to the engine's angular-velocity
+                # ceiling (~270 rad/s measured), and the adaptive march pays
+                # tiny-dt integration for a state no physical object reaches.
+                # The arm's pairs already carry condim=6 from the rig side.
+                MujocoCollisionCfg(condim=6, solref=(0.02, 1.0)),
             ],
             # TRI's authored ceramic coefficient, from this asset's own
             # drake:mu_static/mu_dynamic. Scoped to the mug so it governs only
