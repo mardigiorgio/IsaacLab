@@ -37,14 +37,10 @@ class TrossenMugLiftPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         hidden_dims=[256, 128, 64],
         activation="elu",
         obs_normalization=False,
-        # std floor keeps the gripper dim from collapsing sigma to zero
-        # (log-prob blowup); the cap bounds exploration drift, which is
-        # otherwise unbounded and runs away.
-        # init_std 0.5 (was 1.0): a held pinch survives only while sampled
-        # jitter stays inside the clamp's seat; at std 1 the seat breaks in
-        # 1-2 steps and the grasp income stream cannot exist to be learned.
-        # The slide keeps its trained recipe in its own package.
-        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=0.5, std_type="log", std_range=(0.05, 1.5)),
+        # ONE exploration setting for the whole campaign, by ruling: start
+        # hot and let PPO taper. The floor keeps sigma from collapsing to
+        # zero (log-prob blowup); the cap sits high enough to never bind.
+        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=1.5, std_type="log", std_range=(0.05, 3.0)),
     )
     critic = RslRlMLPModelCfg(
         hidden_dims=[256, 128, 64],

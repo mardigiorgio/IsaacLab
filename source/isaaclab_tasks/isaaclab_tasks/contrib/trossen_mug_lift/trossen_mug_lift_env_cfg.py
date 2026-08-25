@@ -466,16 +466,20 @@ class ActionsCfg:
     # clip at 6 sigma of the initial policy: harmless for any sane policy, and it
     # bounds the action-rate penalty against the last_action feedback runaway (see
     # the clipped actions observation term).
-    # scale 0.25 (was 0.5): the commanded PD-target jump per step is a hard
-    # kinematic speed bound the policy cannot learn around — halved after the
-    # slow-mo review showed approach speeds no real rig should attempt.
-    # scale 0.1 (was 0.25): a rim pinch dies under commanded jitter that a
-    # push shrugs off — at init std ~1 the policy commands +/-scale rad of
-    # target jitter per step, and grasped starts measured seated clamps
-    # breaking within 1-2 steps at 0.25. The slide pins its own 0.25 (its
-    # recipe is frozen with trained baselines).
+    # ONE action space for the whole campaign, by ruling: shoulders position
+    # the wrist; the distal (doorknob) axes carry the widest band so full
+    # orientation search is expressible; PD transients are the accepted
+    # price, and PPO's own std taper is the only narrowing mechanism.
     arm_action = mdp.JointPositionActionCfg(
-        asset_name="robot", joint_names=[ARM_JOINTS], scale=0.1, use_default_offset=True, clip={".*": (-6.0, 6.0)}
+        asset_name="robot",
+        joint_names=[ARM_JOINTS],
+        scale={
+            "follower_left_joint_[0-2]": 0.5,
+            "follower_left_joint_3": 1.0,
+            "follower_left_joint_[4-5]": 1.5,
+        },
+        use_default_offset=True,
+        clip={".*": (-6.0, 6.0)},
     )
     # POSITION-controlled carriages with the same hold-at-offset machinery as
     # the arm, NOT the binary open/close term: a binary gripper cannot HOLD a
@@ -502,7 +506,9 @@ class ActionsCfg:
     gripper_action = mdp.JointPositionActionCfg(
         asset_name="robot",
         joint_names=[GRIPPER_JOINT, GRIPPER_JOINT_R],
-        scale=0.05,
+        # 0.15 commands the full 0.044 m stroke well inside one sigma:
+        # position-controlled fingers with real discovery range, campaign-wide.
+        scale=0.15,
         use_default_offset=True,
         clip={".*": (-6.0, 6.0)},
     )

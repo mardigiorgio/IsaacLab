@@ -85,6 +85,32 @@ def main() -> int:
     for t in ("lift", "flip"):
         check(tuple(tasks[t][0].scene.object.init_state.pos[:2]) == (sx, sy), f"{t}: mug spawn differs from slide")
 
+    # ONE exploration setting and ONE action space, by ruling (2026-08-25):
+    # full exploration, position-controlled gripper, identical scales.
+    ref_env, ref_agent = tasks["lift"]
+    ref_dist = ref_agent.actor.distribution_cfg
+    check(ref_dist.init_std == 1.5 and tuple(ref_dist.std_range) == (0.05, 3.0), "lift: exploration not the full setting")
+    for t, (env, agent) in tasks.items():
+        d = agent.actor.distribution_cfg
+        check(
+            d.init_std == ref_dist.init_std and tuple(d.std_range) == tuple(ref_dist.std_range),
+            f"{t}: exploration differs from the campaign setting",
+        )
+        check(
+            type(env.actions.gripper_action).__name__ == "JointPositionActionCfg",
+            f"{t}: gripper is not position-controlled",
+        )
+        check(env.actions.gripper_action.scale == 0.15, f"{t}: gripper scale != 0.15")
+        check(
+            env.actions.arm_action.scale == ref_env.actions.arm_action.scale,
+            f"{t}: arm action scale differs from the campaign scheme",
+        )
+
+    # lift starts pinned: zero home scatter, exact bank poses
+    lift_ev = tasks["lift"][0].events
+    check(lift_ev.randomize_arm_start.params["position_range"] == (0.0, 0.0), "lift: home-start scatter nonzero")
+    check(lift_ev.reset_arm_grasp_bank.params["noise"] == 0.0, "lift: grasp-bank noise nonzero")
+
     if failures:
         print("AUDIT FAILED:")
         for f in failures:

@@ -98,20 +98,25 @@ class SlideCommandsCfg:
 
 @configclass
 class SlideActionsCfg:
-    """The slide's action set, pinned verbatim to the slidev1 recipe.
-
-    The lift retunes its actions for pinch survival (smaller arm scale,
-    position-controlled gripper); the slide's trained ladder used arm scale
-    0.25 and the binary gripper, so the frozen recipe is declared here."""
+    """The campaign's ONE action space (see the lift ActionsCfg ruling)."""
 
     arm_action = mdp.JointPositionActionCfg(
-        asset_name="robot", joint_names=[ARM_JOINTS], scale=0.25, use_default_offset=True, clip={".*": (-6.0, 6.0)}
+        asset_name="robot",
+        joint_names=[ARM_JOINTS],
+        scale={
+            "follower_left_joint_[0-2]": 0.5,
+            "follower_left_joint_3": 1.0,
+            "follower_left_joint_[4-5]": 1.5,
+        },
+        use_default_offset=True,
+        clip={".*": (-6.0, 6.0)},
     )
-    gripper_action = mdp.BinaryJointPositionActionCfg(
+    gripper_action = mdp.JointPositionActionCfg(
         asset_name="robot",
         joint_names=[GRIPPER_JOINT, GRIPPER_JOINT_R],
-        open_command_expr={GRIPPER_JOINT: 0.044, GRIPPER_JOINT_R: 0.044},
-        close_command_expr={GRIPPER_JOINT: 0.0, GRIPPER_JOINT_R: 0.0},
+        scale=0.15,
+        use_default_offset=True,
+        clip={".*": (-6.0, 6.0)},
     )
 
 

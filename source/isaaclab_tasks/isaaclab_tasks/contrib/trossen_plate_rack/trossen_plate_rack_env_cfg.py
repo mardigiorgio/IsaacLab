@@ -203,27 +203,8 @@ class TrossenPlatePickEnvCfg(TrossenMugLiftEnvCfg):
             params={"std": 0.2, "rim_height": PLATE_RIM_HEIGHT, "rim_radius": PLATE_RIM_RADIUS},
             weight=3.0,
         )
-        # FULL articulation, ordered: the commandable set covers every
-        # joint's whole range (scale 0.5 x clip 6 = +/-3 rad, clamped to
-        # the hardware limits downstream), so any grasp posture the arm
-        # can physically reach is expressible. The mug tasks' 0.1 was a
-        # PD-transient guard tuned for a straight-in pinch; the plate
-        # grasp needs free orientation search and pays the transient
-        # cost knowingly.
-        self.actions.arm_action.scale = {
-            # Shoulders position the wrist; the pre-grasp search itself is a
-            # wrist-orientation problem, so the distal axes get the widest
-            # band: at policy std 1.5 the doorknob axes (4-5) sample ~2.2 rad
-            # of commanded rotation per step — real turning motions, not
-            # dithering. PD transients accepted knowingly (see above).
-            "follower_left_joint_[0-2]": 0.5,
-            "follower_left_joint_3": 1.0,
-            "follower_left_joint_[4-5]": 1.5,
-        }
-        # Finger discovery: the lift's gripper scale guards a settled pinch;
-        # the plate first needs fingers that actually open and close during
-        # search. 0.15 commands the full 0.044 m stroke well inside 1 sigma.
-        self.actions.gripper_action.scale = 0.15
+        # Actions and exploration come from the inherited lift cfgs — the
+        # campaign's ONE action space and ONE exploration setting.
         # Metrics/success_rate comes from the inherited lift command cfg,
         # which already wires the shared ObjectPoseSuccessCommand and gates.
         # BOOTSTRAP MODE: no bank. The generated pose above predates the
