@@ -288,6 +288,16 @@ class MovingGoalCommand(UniformPoseCommand):  # noqa: F405
         self.pose_command_b[:, :2] += delta / dist.clamp(min=1e-9) * step
 
     def _compute_error(self):
+        # Refresh the world-frame command like the base does: the debug
+        # marker reads pose_command_w, so this line is what makes the goal
+        # visibly GLIDE in the viewer and the training clips.
+        self.pose_command_w[:, :3], self.pose_command_w[:, 3:] = combine_frame_transforms(
+            self.robot.data.root_pos_w.torch,
+            self.robot.data.root_quat_w.torch,
+            self.pose_command_b[:, :3],
+            self.pose_command_b[:, 3:],
+        )
+        # Error and success measure the FINAL target, not the gliding one.
         des_pos_w, _ = combine_frame_transforms(
             self.robot.data.root_pos_w.torch, self.robot.data.root_quat_w.torch, self._final
         )
