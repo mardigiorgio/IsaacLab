@@ -128,7 +128,7 @@ def _author_mesh(stage, path, mesh: trimesh.Trimesh, purpose_guide: bool):
         prim.GetPurposeAttr().Set(UsdGeom.Tokens.guide)
         UsdPhysics.CollisionAPI.Apply(prim.GetPrim())
         api = UsdPhysics.MeshCollisionAPI.Apply(prim.GetPrim())
-        api.GetApproximationAttr().Set("convexHull")
+        api.GetApproximationAttr().Set("none")
         p = prim.GetPrim()
         p.CreateAttribute("mjc:solimp", Sdf.ValueTypeNames.FloatArray, custom=True).Set(
             Vt.FloatArray([float(v) for v in MUG_SOLIMP])
