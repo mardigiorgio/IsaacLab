@@ -2023,7 +2023,38 @@ class NewtonManager(PhysicsManager):
 
         Default no-op.  Subclasses override to log solver-specific debug info
         (e.g. constraint violations, contact forces, etc.) after stepping.
+
+        Additionally: NEWTON_ICF_STEP_TELEMETRY=<path> appends one CSV row per
+        control step -- wall-clock, cumulative march iterations, cumulative
+        convex solves, and the contact buffer's live count -- the per-step
+        forensics that separate march-DEPTH growth from per-trip WIDTH growth
+        when hunting wall-time regressions. One device sync per control step;
+        debug runs only.
         """
+        import os
+        import time
+
+        path = os.environ.get("NEWTON_ICF_STEP_TELEMETRY")
+        if not path:
+            return
+        try:
+            solver = cls._solver
+            row = [f"{time.monotonic():.3f}"]
+            if hasattr(solver, "status_summary"):
+                st = solver.status_summary()
+                row += [str(st.get("march_iterations", "")), str(st.get("convex_solves", "")), str(st.get("boundaries", ""))]
+            else:
+                row += ["", "", ""]
+            contacts = cls.get_contacts() if hasattr(cls, "get_contacts") else None
+            if contacts is not None and hasattr(contacts, "rigid_contact_count"):
+                row.append(str(int(contacts.rigid_contact_count.numpy()[0])))
+                row.append(str(int(contacts.rigid_contact_max)))
+            else:
+                row += ["", ""]
+            with open(path, "a") as f:
+                f.write(",".join(row) + "\n")
+        except Exception:
+            pass
 
     @classmethod
     def _reset_solver_internals(cls, world_mask: wp.array | None) -> None:
