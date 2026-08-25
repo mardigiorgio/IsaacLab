@@ -1256,6 +1256,7 @@ class NewtonMJWarpManager(NewtonManager):
     @classmethod
     def _log_solver_debug(cls) -> None:
         """Adaptive dt/substep telemetry (to a file) + optional MuJoCo convergence logging."""
+        super()._log_solver_debug()  # base hook: NEWTON_ICF_STEP_TELEMETRY per-step CSV
         if cls._adaptive:
             cls._log_adaptive_telemetry()
         cfg = PhysicsManager._cfg
