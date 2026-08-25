@@ -1259,7 +1259,24 @@ class NewtonMJWarpManager(NewtonManager):
                     W = cls._model.world_count
                     per = jq.shape[0] // W
                     seg = jq[amin * per:(amin + 1) * per]
-                    extra += f" w{amin}_qd_maxabs={float(_np.abs(seg).max()):.3e}"
+                    _j = int(_np.abs(seg).argmax())
+                    extra += f" w{amin}_qd_maxabs={float(_np.abs(seg).max()):.3e} argmax_dof={_j}"
+                    try:
+                        bqd = st.body_qd.numpy().reshape(-1, 6)
+                        W2 = cls._model.world_count
+                        bpw = bqd.shape[0] // W2
+                        bseg = bqd[amin * bpw:(amin + 1) * bpw]
+                        bmax = int(_np.abs(bseg).max(axis=1).argmax())
+                        for attr in ("body_key", "body_name", "body_label"):
+                            names = getattr(cls._model, attr, None)
+                            if names is not None:
+                                extra += f" argmax_body={list(names)[bmax]}"
+                                break
+                        else:
+                            extra += f" argmax_body_idx={bmax} of {bpw}"
+                        extra += f" argmax_body_speed={float(_np.abs(bseg[bmax]).max()):.3e}"
+                    except Exception as _e2:
+                        extra += f" body_table_err={type(_e2).__name__}"
                     ideal = cls._solver.ideal_dt.numpy() if hasattr(cls._solver, "ideal_dt") else None
                     if ideal is not None:
                         extra += f" w{amin}_ideal_dt={float(ideal[amin]):.3e}"
