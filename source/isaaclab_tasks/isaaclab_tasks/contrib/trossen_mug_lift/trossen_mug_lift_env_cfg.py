@@ -452,6 +452,12 @@ class CommandsCfg:
             pitch=(0.0, 0.0),
             yaw=(0.0, 0.0),
         ),
+        # Online Metrics/success_rate with the shared campaign gates,
+        # measured on the OBJECT (tilt-only): the mug delivered upright to
+        # the carry target, not the empty gripper arriving there.
+        class_type=mdp.ObjectPoseSuccessCommand,
+        position_success_threshold=mdp.SUCCESS_POS_THRESHOLD,
+        orientation_success_threshold=mdp.SUCCESS_TILT_THRESHOLD,
     )
 
 

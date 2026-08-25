@@ -50,6 +50,8 @@ from isaaclab_tasks.contrib.trossen_mug_lift.trossen_mug_lift_env_cfg import (
     TrossenMugLiftSceneCfg,
 )
 
+from isaaclab_tasks.contrib.trossen_mug_lift.mdp import SUCCESS_POS_THRESHOLD, SUCCESS_TILT_THRESHOLD
+
 from . import mdp
 
 # Push speed cap [m/s]: below the lift task's carry cap — a controlled push
@@ -87,10 +89,10 @@ class SlideCommandsCfg:
             pitch=(0.0, 0.0),
             yaw=(0.0, 0.0),
         ),
-        # Online Metrics/success_rate against the FINAL target, tilt-only
-        # orientation (the mug may spin about z while sliding).
-        position_success_threshold=0.05,
-        orientation_success_threshold=0.5156,
+        # Online Metrics/success_rate against the FINAL target, the shared
+        # campaign gates, tilt-only (the mug may spin about z while sliding).
+        position_success_threshold=SUCCESS_POS_THRESHOLD,
+        orientation_success_threshold=SUCCESS_TILT_THRESHOLD,
     )
 
 

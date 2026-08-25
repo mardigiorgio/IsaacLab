@@ -126,7 +126,7 @@ class FlipCommandsCfg:
     )
 
     def __post_init__(self):
-        self.object_pose.class_type = mdp.FlipSuccessCommand
+        self.object_pose.class_type = mdp.ObjectPoseSuccessCommand
 
 
 @configclass

@@ -40,11 +40,11 @@ from isaaclab_tasks.contrib.trossen_mug_lift.trossen_mug_lift_env_cfg import (
 from . import mdp
 from .assets import DISHRACK_USD_PATH, PLATE_USD_PATH
 
-# Contact representation, fixed by decision (no switches): every TRI
-# model collides as its RAW authored triangle mesh -- plate and rack alike
-# (fitted slabs looked nothing like the visual at contact level, and the
-# scene's whole role is thin-geometry fidelity). Only the rig keeps
-# primitive/hull colliders, frame and table included.
+# Contact representation, fixed by decision (no switches): arm, plate and
+# mug collide as per-piece convex hulls; ONLY the dishrack is a raw
+# triangle mesh. Full tri-tri plate contact needs thousands of contacts
+# per env and is unaffordable at batch scale; per-piece hulls of the
+# 25-piece plate keep the rim/wall structure at hull cost.
 
 # Rim circle of the TRI ikea_dinera plate in its body frame, measured by
 # assets/convert_plate_rack.py from the source mesh (R=0.0981, rim z=0.0178):
@@ -224,12 +224,8 @@ class TrossenPlatePickEnvCfg(TrossenMugLiftEnvCfg):
         # the plate first needs fingers that actually open and close during
         # search. 0.15 commands the full 0.044 m stroke well inside 1 sigma.
         self.actions.gripper_action.scale = 0.15
-        # Online success in the logger (Metrics/success_rate): the command
-        # measures the OBJECT against the commanded pose with the committed
-        # evaluator's gates. Logging-only — no reward or dynamics change.
-        self.commands.object_pose.class_type = mdp.ObjectPoseSuccessCommand
-        self.commands.object_pose.position_success_threshold = mdp.SUCCESS_POS_THRESHOLD
-        self.commands.object_pose.orientation_success_threshold = mdp.SUCCESS_ORI_THRESHOLD
+        # Metrics/success_rate comes from the inherited lift command cfg,
+        # which already wires the shared ObjectPoseSuccessCommand and gates.
         # BOOTSTRAP MODE: no bank. The generated pose above predates the
         # rack reorientation and its proof was invalidated (contaminated by
         # an interpenetrating spawn); regeneration on the final scene has not

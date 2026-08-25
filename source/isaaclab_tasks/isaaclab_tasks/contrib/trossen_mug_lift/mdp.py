@@ -477,3 +477,46 @@ def object_position_in_robot_root_frame(
         robot.data.root_pos_w.torch, robot.data.root_quat_w.torch, obj.data.root_pos_w.torch
     )
     return object_pos_b
+
+
+# ---------------------------------------------------------------------------- shared success metric
+
+# ONE success semantics for every task in the campaign, the committed
+# evaluator's gates (scripts/probes/probe_eval_success.py): the OBJECT within
+# 5 cm of the commanded position and upright within acos(0.87), yaw free —
+# every object in the family is rotationally symmetric about z for the
+# purpose of "delivered". Logged by the command term as Metrics/success_rate.
+import math as _math  # noqa: E402
+
+SUCCESS_POS_THRESHOLD = 0.05
+SUCCESS_TILT_THRESHOLD = _math.acos(0.87)
+
+
+class ObjectPoseSuccessCommand(UniformPoseCommand):  # noqa: F405
+    """UniformPoseCommand whose error — and success metric — is the OBJECT's
+    root pose against the commanded pose, with TILT-only orientation.
+
+    The stock command gates success on the commanded robot body reaching the
+    pose, which counts an empty gripper at the goal; and its quaternion error
+    charges yaw, which a delivered round object may hold at any value. The
+    campaign's claim is "the object arrived upright", so that is the metric.
+    """
+
+    def __init__(self, cfg, env):
+        super().__init__(cfg, env)
+        self._object = env.scene["object"]
+
+    def _compute_error(self):
+        self.pose_command_w[:, :3], self.pose_command_w[:, 3:] = combine_frame_transforms(
+            self.robot.data.root_pos_w.torch,
+            self.robot.data.root_quat_w.torch,
+            self.pose_command_b[:, :3],
+            self.pose_command_b[:, 3:],
+        )
+        position_error = torch.linalg.vector_norm(
+            self.pose_command_w[:, :3] - self._object.data.root_pos_w.torch, dim=1
+        )
+        quat = self._object.data.root_quat_w.torch
+        up = 1.0 - 2.0 * (quat[:, 0] * quat[:, 0] + quat[:, 1] * quat[:, 1])
+        tilt = torch.acos(up.clamp(-1.0, 1.0))
+        return position_error, tilt

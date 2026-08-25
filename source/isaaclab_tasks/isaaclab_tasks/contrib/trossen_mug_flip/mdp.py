@@ -24,8 +24,9 @@ from isaaclab.utils.math import combine_frame_transforms
 
 from isaaclab_tasks.contrib.trossen_mug_slide.mdp import *  # noqa: F401,F403
 from isaaclab_tasks.contrib.trossen_mug_slide.mdp import _finite, _object_calm, _sensor_force_mag
-from isaaclab_tasks.contrib.trossen_plate_rack.mdp import (  # noqa: F401
+from isaaclab_tasks.contrib.trossen_mug_lift.mdp import (  # noqa: F401
     SUCCESS_POS_THRESHOLD,
+    SUCCESS_TILT_THRESHOLD,
     ObjectPoseSuccessCommand,
 )
 
@@ -36,7 +37,6 @@ if TYPE_CHECKING:
 # evaluator's strict cos(30 deg) — no slide-style loosening, a half-righted
 # mug is not a righted mug.
 UPRIGHT_MIN_COS = 0.87
-SUCCESS_TILT_THRESHOLD = math.acos(UPRIGHT_MIN_COS)
 
 
 def _up_cos(env: ManagerBasedRLEnv, object_cfg: SceneEntityCfg) -> torch.Tensor:
@@ -49,21 +49,6 @@ def _up_cos(env: ManagerBasedRLEnv, object_cfg: SceneEntityCfg) -> torch.Tensor:
     return 1.0 - 2.0 * (quat[:, 0] * quat[:, 0] + quat[:, 1] * quat[:, 1])
 
 
-class FlipSuccessCommand(ObjectPoseSuccessCommand):
-    """Object-pose success whose orientation error is TILT only.
-
-    The stock quaternion error charges yaw, but a righted mug may rest at
-    any yaw — the handle ends wherever the flip leaves it. Success must
-    read "upright at the spot", not "upright at the spawn yaw".
-    """
-
-    def _compute_error(self):
-        position_error, _ = super()._compute_error()
-        up = 1.0 - 2.0 * (
-            self._object.data.root_quat_w.torch[:, 0] ** 2 + self._object.data.root_quat_w.torch[:, 1] ** 2
-        )
-        tilt = torch.acos(up.clamp(-1.0, 1.0))
-        return position_error, tilt
 
 
 def handle_held(
