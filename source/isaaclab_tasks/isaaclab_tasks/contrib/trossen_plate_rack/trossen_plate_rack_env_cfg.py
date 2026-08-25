@@ -213,6 +213,12 @@ class TrossenPlatePickEnvCfg(TrossenMugLiftEnvCfg):
         self.actions.arm_action.scale = {
             "follower_left_joint_[0-5]": 0.5,
         }
+        # Online success in the logger (Metrics/success_rate): the command
+        # measures the OBJECT against the commanded pose with the committed
+        # evaluator's gates. Logging-only — no reward or dynamics change.
+        self.commands.object_pose.class_type = mdp.ObjectPoseSuccessCommand
+        self.commands.object_pose.position_success_threshold = mdp.SUCCESS_POS_THRESHOLD
+        self.commands.object_pose.orientation_success_threshold = mdp.SUCCESS_ORI_THRESHOLD
         # BOOTSTRAP MODE: no bank. The generated pose above predates the
         # rack reorientation and its proof was invalidated (contaminated by
         # an interpenetrating spawn); regeneration on the final scene has not
