@@ -1244,6 +1244,36 @@ class NewtonMJWarpManager(NewtonManager):
             if eng_fn is not None:
                 ra_cross, ra_fires = eng_fn()
                 extra += f" ra_cross={int(ra_cross)} ra_fires={int(ra_fires)}"
+            # Trap forensics: name the slowest world, and below the dump
+            # threshold capture its physical state -- the observables that
+            # identify a persistently stiff configuration taxing the
+            # batch-synchronized march.
+            import numpy as _np
+
+            amin = int(_np.argmin(dt))
+            extra += f" argmin_world={amin} min_dt={float(dt[amin]):.3e}"
+            if float(dt[amin]) < float(os.environ.get("NEWTON_ADAPTIVE_DUMP_BELOW", "0")):
+                try:
+                    st = cls._state_0
+                    jq = st.joint_qd.numpy()
+                    W = cls._model.world_count
+                    per = jq.shape[0] // W
+                    seg = jq[amin * per:(amin + 1) * per]
+                    extra += f" w{amin}_qd_maxabs={float(_np.abs(seg).max()):.3e}"
+                    ideal = cls._solver.ideal_dt.numpy() if hasattr(cls._solver, "ideal_dt") else None
+                    if ideal is not None:
+                        extra += f" w{amin}_ideal_dt={float(ideal[amin]):.3e}"
+                    vf = getattr(getattr(cls._solver, "contact_solve", None), "v_flat", None)
+                    if vf is not None:
+                        v = vf.numpy()
+                        pv = v.shape[0] // W
+                        vseg = v[amin * pv:(amin + 1) * pv]
+                        extra += f" w{amin}_vflat_maxabs={float(_np.abs(vseg).max()):.3e}"
+                    bq = st.body_q.numpy()
+                    pb = bq.shape[0] // W
+                    extra += f" w{amin}_bodyq_maxabs={float(_np.abs(bq[amin * pb:(amin + 1) * pb]).max()):.3e}"
+                except Exception as _exc:
+                    extra += f" dump_err={type(_exc).__name__}"
             path = os.environ.get("NEWTON_ADAPTIVE_LOG", "/tmp/newton_adaptive.log")
             with open(path, "a") as f:
                 f.write(
