@@ -118,10 +118,10 @@ class PlateRackSceneCfg(TrossenMugLiftSceneCfg):
                 activate_contact_sensors=True,
                 collision_props=[
                     sim_utils.schemas.UsdPhysicsCollisionCfg(),
-                    # Raw mesh, by the all-TRI-models-are-meshes ruling: the
-                    # plate collides as its authored triangle mesh like the
-                    # mug and the rack.
-                    sim_utils.schemas.UsdPhysicsMeshCollisionCfg(mesh_approximation_name="none"),
+                    # Per-piece convex hulls: the plate's 25 collision pieces
+                    # approximate as hulls (arm likewise, via the rig USD);
+                    # only the dishrack collides as a raw triangle mesh.
+                    sim_utils.schemas.UsdPhysicsMeshCollisionCfg(mesh_approximation_name="convexHull"),
                     self.object.spawn.collision_props[2],  # rig-matched MujocoCollisionCfg(solref)
                 ],
                 # TRI's authored coefficient for THIS plate (its SDF's
