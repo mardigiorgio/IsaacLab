@@ -54,6 +54,22 @@ parser.add_argument(
 parser.add_argument(
     "--max_target_speed", type=float, default=1.5, help="rad/s cap between slider value and PD target (0 = snap)."
 )
+parser.add_argument(
+    "--task", type=str, default="IsaacContrib-PlatePick-Trossen-v0", help="Gym id of the scene to open (any rig-family task)."
+)
+parser.add_argument(
+    "--solver",
+    type=str,
+    default="icf",
+    choices=["icf", "icf-adaptive", "mujoco", "mujoco-adaptive", "sap", "sap-adaptive"],
+    help="Physics preset for the session (training's --solver): fixed-step icf by default.",
+)
+parser.add_argument(
+    "--object-at-goal",
+    dest="object_at_goal",
+    action="store_true",
+    help="After reset, drop the object at the task's commanded GOAL pose (position + rpy) instead of its spawn.",
+)
 AppLauncher.add_app_launcher_args(parser)
 args_cli, _ = parser.parse_known_args()
 if args_cli.selftest:
@@ -89,7 +105,7 @@ os.environ.setdefault("PLATE_COLLISION", "hull")
 os.environ.setdefault("RACK_COLLISION", "slabs")
 os.environ.setdefault("TROSSEN_RAILS", "1")
 
-TASK = "IsaacContrib-PlatePick-Trossen-v0"
+TASK = args_cli.task
 _RENDER = not args_cli.selftest  # selftest is the only path that must not draw
 OUT_PATH = os.path.join(os.path.dirname(__file__), "grasp_pose_authored.py")
 
@@ -192,7 +208,7 @@ def build_env(num_envs: int = 1):
     # Same solver as the training runs (--solver icf): the realized pose is a
     # PD equilibrium under the solver, so posing under a different one would
     # hand back vectors authored against different sag.
-    apply_solver_choice(cfg, "icf")
+    apply_solver_choice(cfg, args_cli.solver)
     cfg.sim.physics.collision_cfg.rigid_contact_max = POSE_RIGID_CONTACT_MAX
     cfg.sim.physics.collision_cfg.max_triangle_pairs = POSE_MAX_TRIANGLE_PAIRS
 
@@ -280,23 +296,87 @@ def main() -> int:  # noqa: C901
 
     _ghost = os.environ.get("POSE_MUG_GHOST", "0") != "0"
     obj = env.scene["object"]
+    if args_cli.object_at_goal:
+        # The task's commanded goal pose (the range minima: every rig task pins ONE
+        # goal), placed as the object's pose. Contacts stay on, so a wrong goal shows
+        # itself: the object falls, jams, or rests exactly where it was put.
+        from isaaclab.utils.math import quat_from_euler_xyz  # noqa: PLC0415
+
+        rg = env.cfg.commands.object_pose.ranges
+        org = _t(env.scene.env_origins)[0]
+        g_pos = torch.tensor([[rg.pos_x[0], rg.pos_y[0], rg.pos_z[0]]], device=device, dtype=torch.float32) + org
+        eul = torch.tensor([[rg.roll[0], rg.pitch[0], rg.yaw[0]]], device=device, dtype=torch.float32)
+        g_quat = quat_from_euler_xyz(eul[:, 0], eul[:, 1], eul[:, 2])  # (x, y, z, w)
+        obj.write_root_pose_to_sim_index(root_pose=torch.cat([g_pos, g_quat], dim=-1))
+        obj.write_root_velocity_to_sim_index(root_velocity=torch.zeros_like(_t(obj.data.root_vel_w)))
+        env.scene.write_data_to_sim()
+        env.sim.step(render=False)
+        env.scene.update(env.physics_dt)
+        print(
+            f"[pose_lab] object placed at the GOAL pose: env pos=({rg.pos_x[0]:+.4f}, {rg.pos_y[0]:+.4f}, {rg.pos_z[0]:+.4f})"
+            f" rpy=({rg.roll[0]:+.4f}, {rg.pitch[0]:+.4f}, {rg.yaw[0]:+.4f})"
+        )
     # Pin to the SPAWN pose, not wherever it is now: with collisions off the ghost sinks
     # a little on every step before the first pin, and freezing that leaves the mug
     # buried in the slab (measured z = 0.0089 against a 0.021 spawn).
     mug_pose0 = _t(obj.data.root_pose_w).clone()
-    mug_pose0[0, 2] = float(_t(env.scene.env_origins)[0][2]) + float(cfg.scene.object.init_state.pos[2])
+    if not args_cli.object_at_goal:
+        mug_pose0[0, 2] = float(_t(env.scene.env_origins)[0][2]) + float(env.cfg.scene.object.init_state.pos[2])
     _org = _t(env.scene.env_origins)[0]
-    # Panel-editable plate placement (env frame). Sliders re-place the
-    # physical plate (zeroed velocity, so it settles from the new spot) and
-    # move the ghost pin when ghosting is enabled. PRINT reports it for
-    # adoption as the task spawn.
-    plate_pos = [float(mug_pose0[0, 0] - _org[0]), float(mug_pose0[0, 1] - _org[1]), float(mug_pose0[0, 2] - _org[2])]
+    from isaaclab.utils.math import euler_xyz_from_quat, quat_from_euler_xyz  # noqa: PLC0415
+
+    # Panel-editable OBJECT POSE (env frame): position AND roll/pitch/yaw.
+    # HOLD ON  -> the object is frozen at the slider pose every step (sim paused
+    #             for the object; the arm still moves). Adjust freely.
+    # HOLD OFF -> physics owns the object: it falls, settles, rests.
+    # PRINT OBJECT POSE reads the LIVE pose (where it actually rests);
+    # SNAP pulls the sliders to that live pose so it can be held again.
+    _q0 = mug_pose0[0, 3:7].unsqueeze(0)
+    _r0, _p0, _y0 = euler_xyz_from_quat(_q0)
+    obj_pose = {
+        "pos": [float(mug_pose0[0, 0] - _org[0]), float(mug_pose0[0, 1] - _org[1]), float(mug_pose0[0, 2] - _org[2])],
+        "rpy": [float(_r0[0]), float(_p0[0]), float(_y0[0])],
+    }
+    hold = {"on": True, "released": False}
+    _watch = {"n": 0}
+    plate_pos = obj_pose["pos"]  # alias kept for the selftest's slider names
+
+    def _slider_pose_tensor() -> torch.Tensor:
+        pos = torch.tensor([[_org[k] + obj_pose["pos"][k] for k in range(3)]], device=device, dtype=torch.float32)
+        e = torch.tensor([obj_pose["rpy"]], device=device, dtype=torch.float32)
+        q = quat_from_euler_xyz(e[:, 0], e[:, 1], e[:, 2])  # (x, y, z, w)
+        return torch.cat([pos, q], dim=-1)
 
     def place_plate() -> None:
-        for k in range(3):
-            mug_pose0[0, k] = _org[k] + plate_pos[k]
-        obj.write_root_pose_to_sim_index(root_pose=mug_pose0)
+        pose = _slider_pose_tensor()
+        mug_pose0.copy_(pose)
+        obj.write_root_pose_to_sim_index(root_pose=pose)
         obj.write_root_velocity_to_sim_index(root_velocity=torch.zeros_like(_t(obj.data.root_vel_w)))
+
+    def live_object_pose() -> tuple[list[float], list[float], list[float]]:
+        """(pos_env, rpy, quat_xyzw) of the object as simulated right now."""
+        pw = _t(obj.data.root_pos_w)[0] - _org
+        q = _t(obj.data.root_quat_w)[0].unsqueeze(0)
+        r, pch, y = euler_xyz_from_quat(q)
+        return [float(v) for v in pw], [float(r[0]), float(pch[0]), float(y[0])], [float(v) for v in q[0]]
+
+    def print_object_pose() -> None:
+        pos, rpy, q = live_object_pose()
+        msg = (
+            f"OBJECT POSE (env frame, live): pos=({pos[0]:+.4f}, {pos[1]:+.4f}, {pos[2]:+.4f})"
+            f"  rpy=({rpy[0]:+.4f}, {rpy[1]:+.4f}, {rpy[2]:+.4f}) rad"
+            f"  quat_xyzw=({q[0]:+.4f}, {q[1]:+.4f}, {q[2]:+.4f}, {q[3]:+.4f})"
+            f"  hold={'ON' if hold['on'] else 'OFF'}"
+        )
+        sys.stdout.write("\r\n  " + msg + "\r\n")
+        sys.stdout.flush()
+        pending["status"] = msg
+
+    def snap_sliders_to_object() -> None:
+        pos, rpy, _ = live_object_pose()
+        obj_pose["pos"][:] = pos
+        obj_pose["rpy"][:] = rpy
+        pending["status"] = "sliders snapped to the live object pose"
 
     def joint_dict() -> dict[str, float]:
         return {n: vals[n] for n in editable}
@@ -404,17 +484,34 @@ def main() -> int:  # noqa: C901
         if changed:
             vals[GRIPPER_JOINT] = v
         imgui.separator()
-        imgui.text("Plate placement (env frame)")
+        imgui.text(f"Object pose (env frame)  --  HOLD {'ON: frozen at sliders' if hold['on'] else 'OFF: physics live'}")
+        if imgui.button(f"HOLD OBJECT: {'ON -> release' if hold['on'] else 'OFF -> hold'}##mugpose"):
+            if not hold["on"]:
+                snap_sliders_to_object()  # hold it where it is, not where the sliders were
+            hold["on"] = not hold["on"]
+            if hold["on"]:
+                place_plate()
+            else:
+                hold["released"] = True
+        if imgui.button("PRINT OBJECT POSE##mugpose"):
+            print_object_pose()
+        if imgui.button("SNAP SLIDERS TO OBJECT##mugpose"):
+            snap_sliders_to_object()
         _moved = False
         for k, (axn, lo2, hi2) in enumerate(
-            (("plate_x", -0.35, 0.35), ("plate_y", -0.25, 0.30), ("plate_z", 0.05, 0.35))
+            (("plate_x", -0.35, 0.35), ("plate_y", -0.35, 0.35), ("plate_z", 0.0, 0.45))
         ):
-            changed, v = imgui.slider_float(f"{axn}##mugpose", plate_pos[k], lo2, hi2)
+            changed, v = imgui.slider_float(f"{axn}##mugpose", obj_pose["pos"][k], lo2, hi2)
             if changed:
-                plate_pos[k] = v
+                obj_pose["pos"][k] = v
+                _moved = True
+        for k, axn in enumerate(("plate_roll", "plate_pitch", "plate_yaw")):
+            changed, v = imgui.slider_float(f"{axn}##mugpose", obj_pose["rpy"][k], -3.1416, 3.1416)
+            if changed:
+                obj_pose["rpy"][k] = v
                 _moved = True
         if _moved:
-            place_plate()
+            place_plate()  # HOLD ON: the pin follows; HOLD OFF: one teleport, then physics
 
     def try_register_panel() -> bool:
         """Attach draw_panel to the Newton viewer; no-op once attached.
@@ -460,18 +557,44 @@ def main() -> int:  # noqa: C901
         robot.set_joint_position_target_index(target=arm_t, joint_ids=arm_ids)
         robot.set_joint_position_target_index(target=grip_t, joint_ids=grip_ids)
         if _ghost:
-            # A ghost mug has no collisions, so nothing holds it up: without this pin
-            # it free-falls through the tabletop. RigidObject's *_index setters are
-            # keyword-only and take root_pose/root_velocity (NOT position=/velocity=).
-            obj.write_root_pose_to_sim_index(root_pose=mug_pose0)
-            obj.write_root_velocity_to_sim_index(root_velocity=torch.zeros_like(_t(obj.data.root_vel_w)))
-        env.scene.write_data_to_sim()
-        # NOT `not args_cli.headless`: AppLauncher OVERWRITES args_cli.headless to True
-        # for '--viz newton' (only the Kit visualizer implies non-headless), so that
-        # spelling renders nothing and the Newton window stays blank. Render whenever
-        # this is not the selftest.
-        env.sim.step(render=_RENDER)
-        env.scene.update(env.physics_dt)
+            # A ghost has no collisions and would free-fall: pin it every step.
+            place_plate()
+        if hold["on"] and not _ghost:
+            # HOLD = the sim is PAUSED for everything: the object sits at the slider
+            # pose with no physics step, so no contact state can build up under a
+            # pin and unload as a kick on release (measured: a mug pinned in contact
+            # for 60 steps and then freed falls off the branch; the same pose
+            # written once and stepped hangs). Arm sliders take effect on release.
+            place_plate()
+            env.scene.write_data_to_sim()
+            if _RENDER:
+                env.sim.render()
+        else:
+            if hold["released"]:
+                # First live step after HOLD: one clean pose + zero-velocity write.
+                place_plate()
+                hold["released"] = False
+            else:
+                # Physics live: print the object's pose at most once a second, and
+                # only when it has MOVED since the last print (> 1 mm or > 1 deg),
+                # so a resting object goes quiet instead of spamming the console.
+                _watch["n"] += 1
+                if _watch["n"] % 90 == 0:
+                    _pos, _rpy, _ = live_object_pose()
+                    _last = _watch.get("last")
+                    _moved = _last is None or max(abs(a - b) for a, b in zip(_pos, _last[0])) > 0.001 or max(
+                        abs(a - b) for a, b in zip(_rpy, _last[1])
+                    ) > 0.0175
+                    if _moved:
+                        print_object_pose()
+                        _watch["last"] = (_pos, _rpy)
+            env.scene.write_data_to_sim()
+            # NOT `not args_cli.headless`: AppLauncher OVERWRITES args_cli.headless to True
+            # for '--viz newton' (only the Kit visualizer implies non-headless), so that
+            # spelling renders nothing and the Newton window stays blank. Render whenever
+            # this is not the selftest.
+            env.sim.step(render=_RENDER)
+            env.scene.update(env.physics_dt)
 
     # ---- selftest ------------------------------------------------------------
     if args_cli.selftest:
@@ -487,7 +610,7 @@ def main() -> int:  # noqa: C901
         # The plate's authored spawn, read from the TASK CFG so this check
         # follows every scene revision. Contacts are ON in this lab, so
         # allow the few mm the free plate settles by before this read.
-        _sp = list(cfg.scene.object.init_state.pos)
+        _sp = list(env.cfg.scene.object.init_state.pos)
         check(
             "plate at its authored spawn",
             all(abs(mug_env[i] - _sp[i]) < 0.02 for i in range(3)),
@@ -513,11 +636,11 @@ def main() -> int:  # noqa: C901
         stub = _StubImgui()
         draw_panel(stub)
         check(
-            "panel draws a slider per arm joint + gripper + plate xyz",
-            len(stub.sliders) == len(editable) + 4,
+            "panel draws a slider per arm joint + gripper + object xyz + rpy",
+            len(stub.sliders) == len(editable) + 7,
             f"{len(stub.sliders)} sliders: {stub.sliders}",
         )
-        check("panel draws RESET/PRINT/SAVE buttons", len(stub.buttons) == 3, f"{stub.buttons}")
+        check("panel draws RESET/PRINT/SAVE + object HOLD/PRINT/SNAP buttons", len(stub.buttons) == 6, f"{stub.buttons}")
 
         probe = editable[3]
         lo, hi = lim[probe]

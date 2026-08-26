@@ -477,3 +477,94 @@ def object_position_in_robot_root_frame(
         robot.data.root_pos_w.torch, robot.data.root_quat_w.torch, obj.data.root_pos_w.torch
     )
     return object_pos_b
+
+
+def object_pose_match(
+    env: ManagerBasedRLEnv,
+    pos_std: float,
+    command_name: str,
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """Match the object's POSE to the commanded pose: position kernel times an
+    up-axis alignment kernel (yaw-free -- a mug is a surface of revolution).
+
+    Ungated by design: it pays exactly when the object rests in the goal pose,
+    held or not, so together with an arm-finish term it rewards placing and
+    withdrawing rather than hovering.
+    """
+    robot = env.scene[robot_cfg.name]
+    obj = env.scene[object_cfg.name]
+    command = env.command_manager.get_command(command_name)
+    des_pos_w, des_quat_w = combine_frame_transforms(
+        robot.data.root_pos_w.torch, robot.data.root_quat_w.torch, command[:, :3], command[:, 3:7]
+    )
+    err = torch.linalg.vector_norm(des_pos_w - obj.data.root_pos_w.torch, dim=1)
+    up = torch.tensor([0.0, 0.0, 1.0], device=err.device).expand(env.num_envs, 3)
+    cos_tilt = (quat_apply(obj.data.root_quat_w.torch, up) * quat_apply(des_quat_w, up)).sum(dim=-1)
+    return _finite((1.0 - torch.tanh(err / pos_std)) * (1.0 + cos_tilt) / 2.0)
+
+
+def arm_finish_pose_match(
+    env: ManagerBasedRLEnv,
+    pose: dict[str, float],
+    std: float,
+    pos_std: float,
+    command_name: str,
+    sensor_name: str,
+    contact_threshold: float = 0.01,
+    max_speed: float = 0.1,
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """Arm parked at the authored FINISH pose, GATED ON SUCCESS: credited only
+    times the object's pose match, only with both pads OFF the object, and only
+    while the object is settled. The withdrawal annuity exists strictly on top
+    of a completed, released, calm placement.
+    """
+    robot = env.scene[robot_cfg.name]
+    obj = env.scene[object_cfg.name]
+    ids, _ = robot.find_joints(list(pose.keys()), preserve_order=True)
+    target = torch.tensor([pose[n] for n in pose], device=env.device)
+    err = torch.linalg.vector_norm(robot.data.joint_pos.torch[:, ids] - target, dim=1)
+    arm_k = 1.0 - torch.tanh(err / std)
+    released = ~opposed_grasp(env, sensor_name, contact_threshold) & (
+        _pad_force_mags(env, sensor_name).max(dim=1).values < contact_threshold
+    )
+    calm = torch.linalg.vector_norm(obj.data.root_lin_vel_w.torch, dim=-1) < max_speed
+    gate = (released & calm).float()
+    return _finite(arm_k * gate * object_pose_match(env, pos_std, command_name, robot_cfg, object_cfg))
+
+
+def finished_at_pose(
+    env: ManagerBasedRLEnv,
+    pose: dict[str, float],
+    joint_tol: float,
+    pos_tol: float,
+    min_up_cos: float,
+    command_name: str,
+    sensor_name: str,
+    contact_threshold: float = 0.01,
+    max_speed: float = 0.1,
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """The POSITIVE termination: object at the commanded pose, released and calm,
+    AND the arm parked at the finish pose. Ends the episode as a completed job;
+    pay the completion through ``is_terminated_term`` with a positive weight.
+    """
+    robot = env.scene[robot_cfg.name]
+    obj = env.scene[object_cfg.name]
+    command = env.command_manager.get_command(command_name)
+    des_pos_w, des_quat_w = combine_frame_transforms(
+        robot.data.root_pos_w.torch, robot.data.root_quat_w.torch, command[:, :3], command[:, 3:7]
+    )
+    pos_ok = torch.linalg.vector_norm(des_pos_w - obj.data.root_pos_w.torch, dim=1) < pos_tol
+    up = torch.tensor([0.0, 0.0, 1.0], device=env.device).expand(env.num_envs, 3)
+    tilt_ok = (quat_apply(obj.data.root_quat_w.torch, up) * quat_apply(des_quat_w, up)).sum(dim=-1) > min_up_cos
+    released = _pad_force_mags(env, sensor_name).max(dim=1).values < contact_threshold
+    calm = torch.linalg.vector_norm(obj.data.root_lin_vel_w.torch, dim=-1) < max_speed
+    ids, _ = robot.find_joints(list(pose.keys()), preserve_order=True)
+    target = torch.tensor([pose[n] for n in pose], device=env.device)
+    arm_ok = torch.abs(robot.data.joint_pos.torch[:, ids] - target).max(dim=1).values < joint_tol
+    return pos_ok & tilt_ok & released & calm & arm_ok

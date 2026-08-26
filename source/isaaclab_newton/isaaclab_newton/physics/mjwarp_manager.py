@@ -469,9 +469,15 @@ class NewtonMJWarpManager(NewtonManager):
             # silently changes the physics rather than failing. Buffers scale
             # as max_rigid_contact * num_envs, so it is a memory/fidelity
             # trade and must be sized from the scene's measured peak.
+            # Raw-mesh contact (the representation ruling, 2026-08-24) multiplies
+            # per-world demand: a mug base resting on the slab is dozens of
+            # triangle contacts, a handle around a branch dozens more, and the
+            # IcfParams default of 128 was sized for hull pieces -- the excess is
+            # dropped with a warning and the grasp geometry silently thins out.
+            # 1024 matches the MJWarp arm's nconmax so both solvers see the same
+            # contact set; buffers scale as max_rigid_contact x num_envs.
             _c = _env("ICF_MAX_RIGID_CONTACT")
-            if _c:
-                _icf_kwargs["max_rigid_contact"] = int(_c)
+            _icf_kwargs["max_rigid_contact"] = int(_c) if _c else 1024
             _icf_params = IcfParams(**_icf_kwargs)
             if not adaptive:
                 logger.info("NewtonMJWarpManager: SolverICF (fixed-step ICF convex contact) kwargs=%s", _icf_kwargs)

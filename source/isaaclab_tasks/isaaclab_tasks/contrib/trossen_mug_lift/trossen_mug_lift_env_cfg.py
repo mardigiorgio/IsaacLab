@@ -157,8 +157,12 @@ def _mjwarp_solver_cfg() -> MJWarpSolverCfg:
     return MJWarpSolverCfg(
         solver="newton",
         integrator="implicitfast",
-        njmax=4096,
-        nconmax=400,
+        # Per-world caps, raised for RAW-MESH contact (2026-08-25): hull pieces
+        # fit in 400 contacts; TRI's triangle meshes on the slab, the rack and
+        # the mug tree do not, and mjwarp drops the overflow silently. Elliptic
+        # condim-3 contacts cost 3 constraint rows each, so njmax follows.
+        njmax=6144,
+        nconmax=1024,
         # Friction-to-normal constraint impedance, and the cone it is enforced
         # over. At impratio 1 the tangential direction is no stiffer than the
         # normal one, so a loaded contact slides before the normal constraint
@@ -228,7 +232,13 @@ def _newton_shape_cfg() -> NewtonShapeCfg:
     # generate its first pair already in contact. The candidate triangle-pair
     # count the narrow phase scans grows with this band, and it dominates the
     # adaptive march's cost.
-    return NewtonShapeCfg(ke=_CONTACT_KE, kd=_CONTACT_KD, gap=0.003)
+    # 0.5 mm (3 mm -> 1 mm -> 0.5 mm, 2026-08-25): the mug handle's loop has ~4 mm of play
+    # around a 9 mm branch, so a 3 mm band put the branch "in contact" with
+    # both inner walls at once. 1 mm still leads the adaptive step floor
+    # (0.14 mm per floored step at 0.1 m/s) by ~7 steps.
+    # margin 1 mm (2026-08-25): the contact rest offset; the mug settled visibly
+    # into the stem with margin 0, so surfaces now rest a millimeter apart.
+    return NewtonShapeCfg(ke=_CONTACT_KE, kd=_CONTACT_KD, margin=0.001, gap=0.0005)
 
 
 @configclass

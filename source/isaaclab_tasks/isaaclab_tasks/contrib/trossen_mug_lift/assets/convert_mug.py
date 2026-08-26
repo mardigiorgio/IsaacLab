@@ -39,17 +39,19 @@ import trimesh
 
 from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics, Vt
 
-_LBM_MUG_DIRS = [
+# The banked TRI source next to this script first; the historical stash paths
+# stay as fallbacks for machines that still carry them.
+_LBM_MUG_DIRS = [os.path.join(os.path.dirname(os.path.abspath(__file__)), "lbm_src")] + [
     os.path.expanduser(f"~/Documents/{d}")
     for d in (
-        "code/IsaacLab/source/isaaclab_tasks/isaaclab_tasks/contrib/trossen_mug_lift/assets/lbm_src",
-        "code",
+        "research/newton-adaptive/scripts/assets/lbm/mugs/assets",
+        "code/newton-adaptive/scripts/assets/lbm/mugs/assets",
     )
-] + [
-    "/tmp/claude-1002/-home-mdigiorgio-Documents-code/fe8a844e-d1b0-4d64-833c-48934ee6d700/scratchpad/lbm_extract/lbm_eval_models/tableware/mugs/assets"
 ]
 
 MUG_GLTF_NAME = "mug_inomata_white_mesh_collision.gltf"
+# TRI's <collision> mesh for this mug (the SDF references it; the glTF is the <visual>).
+MUG_COLLISION_VTK = "mug_inomata_white_low_16faces.vtk"
 # from mug_inomata_white_mesh_collision.sdf
 MUG_MASS = 0.0181  # [kg]
 MUG_COM = (0.0017863, 0.0, 0.045564)  # [m], body frame
@@ -83,6 +85,86 @@ def _load_mesh() -> trimesh.Trimesh:
     height = verts[:, 2].max()
     assert abs(height - MUG_HEIGHT) < 0.01, f"height {height:.4f} vs SDF {MUG_HEIGHT}"
     return trimesh.Trimesh(vertices=verts, faces=faces, process=False)
+
+
+def _load_collision_vtk(path: str) -> trimesh.Trimesh:
+    """TRI's COLLISION mesh: the boundary surface of the SDF's ``_low*.vtk`` tet
+    mesh, faces oriented outward. This is the geometry TRI's own simulator
+    collides with (the SDF's <collision> element); the glTF is the <visual>."""
+    import meshio  # noqa: PLC0415
+
+    m = meshio.read(path)
+    tets = np.vstack([c.data for c in m.cells if c.type == "tetra"])
+    pts = np.asarray(m.points, dtype=np.float64)
+    faces = np.vstack([tets[:, [0, 1, 2]], tets[:, [0, 1, 3]], tets[:, [0, 2, 3]], tets[:, [1, 2, 3]]])
+    opposite = np.concatenate([tets[:, 3], tets[:, 2], tets[:, 1], tets[:, 0]])
+    key = np.sort(faces, axis=1)
+    _, first, counts = np.unique(key, axis=0, return_index=True, return_counts=True)
+    bidx = first[counts == 1]
+    bfaces = faces[bidx].copy()
+    opp = pts[opposite[bidx]]
+    a, b, c = pts[bfaces[:, 0]], pts[bfaces[:, 1]], pts[bfaces[:, 2]]
+    inward = np.einsum("ij,ij->i", np.cross(b - a, c - a), opp - a) > 0
+    bfaces[inward] = bfaces[inward][:, [0, 2, 1]]
+    surf = trimesh.Trimesh(vertices=pts, faces=bfaces, process=False)
+    surf.remove_unreferenced_vertices()
+    return surf
+
+
+def _load_collision_tets(path: str):
+    """TRI's <collision> tet mesh: (points, tets)."""
+    import meshio  # noqa: PLC0415
+
+    m = meshio.read(path)
+    return np.asarray(m.points, dtype=np.float64), np.vstack([c.data for c in m.cells if c.type == "tetra"])
+
+
+def _closed_boundary(pts: np.ndarray, tets: np.ndarray) -> trimesh.Trimesh:
+    """Boundary surface of a tet subset, outward-oriented: CLOSED by construction
+    (cut faces between groups are included), which mesh-mesh contact needs --
+    an open patch has no inside, and the narrow phase manufactures phantom
+    penetrations against it (measured 2026-08-25: a mug in free air 20 mm from
+    the trunk was 'supported' by a bogus contact and pulled in)."""
+    faces = np.vstack([tets[:, [0, 1, 2]], tets[:, [0, 1, 3]], tets[:, [0, 2, 3]], tets[:, [1, 2, 3]]])
+    opposite = np.concatenate([tets[:, 3], tets[:, 2], tets[:, 1], tets[:, 0]])
+    key = np.sort(faces, axis=1)
+    _, first, counts = np.unique(key, axis=0, return_index=True, return_counts=True)
+    bidx = first[counts == 1]
+    bfaces = faces[bidx].copy()
+    a, b, c = pts[bfaces[:, 0]], pts[bfaces[:, 1]], pts[bfaces[:, 2]]
+    inward = np.einsum("ij,ij->i", np.cross(b - a, c - a), pts[opposite[bidx]] - a) > 0
+    bfaces[inward] = bfaces[inward][:, [0, 2, 1]]
+    surf = trimesh.Trimesh(vertices=pts, faces=bfaces, process=True)  # merges the VTK's duplicate points
+    # Closed = every edge is used an even number of times (a tet group may touch
+    # itself along an edge, which is non-manifold but still encloses a volume).
+    edges = np.sort(surf.faces[:, [[0, 1], [1, 2], [2, 0]]].reshape(-1, 2), axis=1)
+    _, cnt = np.unique(edges, axis=0, return_counts=True)
+    assert (cnt % 2 == 0).all(), f"piece boundary is open: {(cnt % 2).sum()} odd edges"
+    assert surf.volume > 0, "piece boundary must be outward-wound"
+    return surf
+
+
+def _partition_tets(pts: np.ndarray, tets: np.ndarray) -> dict[str, np.ndarray]:
+    """The mug's piece rules (base / 8 wall sectors / 3 handle bands) applied to TET centroids."""
+    cen = pts[tets].mean(axis=1)
+    handle = cen[:, 0] > HANDLE_X_MIN
+    base = (~handle) & (cen[:, 2] < BASE_Z_MAX)
+    wall = ~handle & ~base
+    groups: dict[str, np.ndarray] = {"collisions_base": np.flatnonzero(base)}
+    ang = np.arctan2(cen[:, 1], cen[:, 0])
+    sector = ((ang + np.pi) / (2 * np.pi) * N_SECTORS).astype(int) % N_SECTORS
+    for s in range(N_SECTORS):
+        idx = np.flatnonzero(wall & (sector == s))
+        if len(idx):
+            groups[f"collisions_wall_{s}"] = idx
+    lo, mid, hi = HANDLE_Z_SPLITS
+    z = cen[:, 2]
+    bands = [z < (lo + mid) / 2, (z >= (lo + mid) / 2) & (z < (mid + hi) / 2), z >= (mid + hi) / 2]
+    for k, band in enumerate(bands):
+        idx = np.flatnonzero(handle & band)
+        if len(idx):
+            groups[f"collisions_handle_{k}"] = idx
+    return groups
 
 
 def _partition(mesh: trimesh.Trimesh) -> dict[str, np.ndarray]:
@@ -128,7 +210,7 @@ def _author_mesh(stage, path, mesh: trimesh.Trimesh, purpose_guide: bool):
         prim.GetPurposeAttr().Set(UsdGeom.Tokens.guide)
         UsdPhysics.CollisionAPI.Apply(prim.GetPrim())
         api = UsdPhysics.MeshCollisionAPI.Apply(prim.GetPrim())
-        api.GetApproximationAttr().Set("convexHull")
+        api.GetApproximationAttr().Set("none")
         p = prim.GetPrim()
         p.CreateAttribute("mjc:solimp", Sdf.ValueTypeNames.FloatArray, custom=True).Set(
             Vt.FloatArray([float(v) for v in MUG_SOLIMP])
@@ -138,8 +220,12 @@ def _author_mesh(stage, path, mesh: trimesh.Trimesh, purpose_guide: bool):
 
 
 def main():
-    mesh = _load_mesh()
-    groups = _partition(mesh)
+    mesh = _load_mesh()  # the <visual> glTF
+    pts, tets = _load_collision_tets(os.path.join(os.path.dirname(_find_gltf()), MUG_COLLISION_VTK))  # the <collision> VTK
+    pts[:, 2] -= pts[:, 2].min()
+    assert abs(pts[:, 2].max() - MUG_HEIGHT) < 0.01, f"collision height {pts[:, 2].max():.4f} vs SDF {MUG_HEIGHT}"
+    groups = _partition_tets(pts, tets)
+    assert sum(len(g) for g in groups.values()) == len(tets), "every tet must land in exactly one piece"
     out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "usd")
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, "mug_inomata_white.usd")
@@ -157,30 +243,18 @@ def main():
 
     _author_mesh(stage, "/Mug/visuals/visuals", mesh, purpose_guide=False)
     for name, face_idx in groups.items():
-        raw = mesh.submesh([face_idx], append=True)
-        # Author the piece as a LOW-VERTEX convex hull, not the raw submesh:
-        # the pipeline hulls each prim anyway, and pair-broadphase demand
-        # scales with the triangle product of overlapping shapes — the mug is
-        # one side of every grasp-phase pair, so its triangle budget bounds
-        # the whole scene's pair demand. Farthest-point subsample to <= 24
-        # vertices before hulling.
-        verts = raw.vertices
-        if len(verts) > 24:
-            import numpy as _np
-
-            sel = [int(_np.argmax(_np.linalg.norm(verts - verts.mean(0), axis=1)))]
-            d = _np.linalg.norm(verts - verts[sel[0]], axis=1)
-            for _ in range(23):
-                sel.append(int(_np.argmax(d)))
-                d = _np.minimum(d, _np.linalg.norm(verts - verts[sel[-1]], axis=1))
-            verts = verts[sel]
-        piece = trimesh.convex.convex_hull(verts)
+        # RAW TRI sub-mesh per piece, by the representation ruling (2026-08-24):
+        # every TRI model collides as its authored triangles. The pre-split
+        # survives only because the contact sensors and the handle-grasp gate
+        # filter by piece name; the geometry inside each piece is TRI's own.
+        piece = _closed_boundary(pts, tets[face_idx])  # CLOSED piece from its own tets
         _author_mesh(stage, f"/Mug/{name}/mesh", piece, purpose_guide=True)
         ext = piece.vertices.max(0) - piece.vertices.min(0)
         print(f"[convert_mug] {name}: {len(face_idx)} faces, extent {np.round(ext, 4)}")
 
+    n_col = sum(len(g) for g in groups.values())
     stage.GetRootLayer().Save()
-    print(f"[convert_mug] wrote {out_path}: {len(groups)} collision pieces, mass {MUG_MASS} kg")
+    print(f"[convert_mug] wrote {out_path}: {len(groups)} CLOSED TRI-collision pieces from {n_col} tets, mass {MUG_MASS} kg")
 
 
 if __name__ == "__main__":

@@ -281,8 +281,16 @@ class VideoRecorder:
                     base_fps = round(1.0 / step_dt) if step_dt else 30
                 # frame_stride subsamples: one frame every N steps, so playback fps scales down.
                 fps = max(1, round(base_fps / self.cfg.frame_stride))
+            # Belt and braces: a None/0 fps reaches ffmpeg as '-r %.02f' % None and
+            # kills every clip (observed 2026-08-25); no fps is worth losing video.
+            fps = float(fps) if fps else 30.0
             clip = ImageSequenceClip(self._frames, fps=fps)
-            clip.write_videofile(path, codec="libx264", audio=False, logger=None)
+            # NOT clip.write_videofile: moviepy 1.0.3's decorator chain drops the
+            # fps argument on this Python (delivers None; reproduced 2026-08-25)
+            # and every clip dies in ffmpeg. The undecorated writer works.
+            from moviepy.video.io.ffmpeg_writer import ffmpeg_write_video  # noqa: PLC0415
+
+            ffmpeg_write_video(clip, path, fps, codec="libx264", logger=None)
             logger.info("[VideoRecorder] Wrote %d frames to %s", len(self._frames), path)
             self._clip_index += 1
             self._maybe_delete_old_clips()
