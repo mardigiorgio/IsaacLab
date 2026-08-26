@@ -77,18 +77,20 @@ class SlideCommandsCfg:
         # training clips.
         debug_vis=True,
         start_pos=(_SPAWN_X, _SPAWN_Y, OBJECT_REST_Z),
-        # Trajectory program randomization: endpoint (direction), speed,
-        # phase, pauses, reversals — the policy must track the program, not
-        # memorize one path.
-        speed_range=(0.05, 0.12),
-        start_delay_range=(0.0, 1.0),
-        pause_prob=0.5,
+        # ONE controlled slide at a FIXED velocity, by ruling: canonical
+        # endpoint, canonical speed, a fixed 0.75 s start delay so the arm
+        # reaches the mug before the goal moves, no pauses, no reversals.
+        # (The randomization knobs live in the command for the sim2real
+        # teacher; the campaign task pins them.)
+        speed_range=(CANONICAL_SPEED, CANONICAL_SPEED),
+        start_delay_range=(0.75, 0.75),
+        pause_prob=0.0,
         pause_len_range=(0.3, 1.5),
-        reversal_prob=0.3,
+        reversal_prob=0.0,
         reversal_len_range=(0.3, 0.8),
         ranges=mdp.MovingPoseCommandCfg.Ranges(
-            pos_x=(0.15, 0.30),
-            pos_y=(-0.12, 0.12),
+            pos_x=(CANONICAL_GOAL[0], CANONICAL_GOAL[0]),
+            pos_y=(CANONICAL_GOAL[1], CANONICAL_GOAL[1]),
             pos_z=(OBJECT_REST_Z, OBJECT_REST_Z),
             roll=(0.0, 0.0),
             pitch=(0.0, 0.0),
@@ -343,9 +345,4 @@ class TrossenMugSlideEnvCfg_PLAY(TrossenMugSlideEnvCfg):
         # The hardware protocol's single deterministic program: canonical
         # endpoint, canonical speed, no delay, no pauses, no reversals.
         cmd = self.commands.object_pose
-        cmd.ranges.pos_x = (CANONICAL_GOAL[0], CANONICAL_GOAL[0])
-        cmd.ranges.pos_y = (CANONICAL_GOAL[1], CANONICAL_GOAL[1])
-        cmd.speed_range = (CANONICAL_SPEED, CANONICAL_SPEED)
-        cmd.start_delay_range = (0.0, 0.0)
-        cmd.pause_prob = 0.0
-        cmd.reversal_prob = 0.0
+        cmd.start_delay_range = (0.75, 0.75)
