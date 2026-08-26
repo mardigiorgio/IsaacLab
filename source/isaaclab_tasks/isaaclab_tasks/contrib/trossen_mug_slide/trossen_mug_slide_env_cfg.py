@@ -4,20 +4,24 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 """Trossen Stationary AI mug SLIDE: push the mug from its tape-measure spawn
-to a commanded position on the table WITHOUT tipping it.
+to the commanded target WITHOUT tipping it, at the PACE of a MOVING goal.
+
+The commanded goal starts ON the mug's spawn and glides to the final
+tape-measured target at ``GOAL_SPEED``: tracking income exists only near the
+current goal, so the mug must follow the pace — a controlled, sustained
+frictional slide. A fixed goal let the policy pick the push speed, and the
+trained solution was an unphysical shove; the pace is also the harder regime
+for fixed step, which distorts sustained frictional contact.
 
 A standalone task package, isaaclab-style: every manager is declared in this
-file; nothing is inherited from the lift task, so no lift retune can leak into
-the slide's frozen slidev1 recipe. The PLATFORM pieces — rig scene, physics
-stack, wiring constants — are imported from the mug-lift package the way
-isaaclab tasks import robots from ``isaaclab_assets``: they define the shared
-Stationary AI setup, not either task's behavior, and the adaptive-vs-fixed
-comparison requires both tasks to share them exactly.
+file; nothing is inherited from the lift task. The PLATFORM pieces — rig
+scene, physics stack, wiring constants — are imported from the mug-lift
+package the way isaaclab tasks import robots from ``isaaclab_assets``: they
+define the shared Stationary AI setup, not either task's behavior, and the
+adaptive-vs-fixed comparison requires both tasks to share them exactly.
 
 The grasp machinery is absent by construction: pushing is discoverable from
-plain reach shaping, and the physics of interest is sustained frictional
-sliding — the regime where fixed-step contact distorts normal forces and tips
-the mug.
+plain reach shaping.
 """
 
 from isaaclab.envs import ManagerBasedRLEnvCfg
@@ -33,6 +37,8 @@ from isaaclab.sensors.frame_transformer import OffsetCfg
 from isaaclab.utils.configclass import configclass
 
 from isaaclab_tasks.contrib.trossen_mug_lift.trossen_mug_lift_env_cfg import (
+    _SPAWN_X,
+    _SPAWN_Y,
     ARM_JOINTS,
     BASE_LINK,
     EE_LINK,
@@ -44,6 +50,8 @@ from isaaclab_tasks.contrib.trossen_mug_lift.trossen_mug_lift_env_cfg import (
     TrossenMugLiftSceneCfg,
 )
 
+from isaaclab_tasks.contrib.trossen_mug_lift.mdp import SUCCESS_POS_THRESHOLD, SUCCESS_TILT_THRESHOLD
+
 from . import mdp
 
 # Push speed cap [m/s]: below the lift task's carry cap — a controlled push
@@ -51,49 +59,64 @@ from . import mdp
 # transients do not zero honest pushes.
 PUSH_SPEED_MAX = 0.75
 
+# The tape-measured final target: ON the table at the SIDE edge across from
+# the mounted camera, one mug-base-radius before the rail, nudged inward per
+# the operator view. Probe-measured mapping (scripts/probes/probe_goal_map.py):
+# command frame IS the env frame. The hardware protocol is a single
+# tape-measured target.
+FINAL_GOAL = (0.285, 0.0)
+# Goal glide speed [m/s]: 0.305 m of travel in ~3.8 s, inside the 6 s episode
+# with reach and settle margin. PROVISIONAL until Marco confirms the number.
+GOAL_SPEED = 0.08
+
 
 @configclass
 class SlideCommandsCfg:
-    object_pose = mdp.UniformPoseCommandCfg(
+    object_pose = mdp.MovingPoseCommandCfg(
         asset_name="robot",
         body_name=EE_LINK,
-        resampling_time_range=(5.0, 5.0),
+        resampling_time_range=(1.0e9, 1.0e9),
         # Marker visualization on, so the target is visible in the viewer and
         # training clips.
         debug_vis=True,
-        ranges=mdp.UniformPoseCommandCfg.Ranges(
-            # Goal ON the table at the SIDE edge across from the mounted
-            # camera, one mug-base-radius before the rail, nudged inward per
-            # the operator view. Probe-measured mapping
-            # (scripts/probes/probe_goal_map.py): command frame IS the env
-            # frame. ONE fixed goal, never resampled elsewhere — the hardware
-            # protocol is a single tape-measured target.
-            pos_x=(0.285, 0.285),
-            pos_y=(0.0, 0.0),
+        start_pos=(_SPAWN_X, _SPAWN_Y, OBJECT_REST_Z),
+        goal_speed=GOAL_SPEED,
+        ranges=mdp.MovingPoseCommandCfg.Ranges(
+            pos_x=(FINAL_GOAL[0], FINAL_GOAL[0]),
+            pos_y=(FINAL_GOAL[1], FINAL_GOAL[1]),
             pos_z=(OBJECT_REST_Z, OBJECT_REST_Z),
             roll=(0.0, 0.0),
             pitch=(0.0, 0.0),
             yaw=(0.0, 0.0),
         ),
+        # Online Metrics/success_rate against the FINAL target, the shared
+        # campaign gates, tilt-only (the mug may spin about z while sliding).
+        position_success_threshold=SUCCESS_POS_THRESHOLD,
+        orientation_success_threshold=SUCCESS_TILT_THRESHOLD,
     )
 
 
 @configclass
 class SlideActionsCfg:
-    """The slide's action set, pinned verbatim to the slidev1 recipe.
-
-    The lift retunes its actions for pinch survival (smaller arm scale,
-    position-controlled gripper); the slide's trained ladder used arm scale
-    0.25 and the binary gripper, so the frozen recipe is declared here."""
+    """The campaign's ONE action space (see the lift ActionsCfg ruling)."""
 
     arm_action = mdp.JointPositionActionCfg(
-        asset_name="robot", joint_names=[ARM_JOINTS], scale=0.25, use_default_offset=True, clip={".*": (-6.0, 6.0)}
+        asset_name="robot",
+        joint_names=[ARM_JOINTS],
+        scale={
+            "follower_left_joint_[0-2]": 0.5,
+            "follower_left_joint_3": 1.0,
+            "follower_left_joint_[4-5]": 1.5,
+        },
+        use_default_offset=True,
+        clip={".*": (-6.0, 6.0)},
     )
-    gripper_action = mdp.BinaryJointPositionActionCfg(
+    gripper_action = mdp.JointPositionActionCfg(
         asset_name="robot",
         joint_names=[GRIPPER_JOINT, GRIPPER_JOINT_R],
-        open_command_expr={GRIPPER_JOINT: 0.044, GRIPPER_JOINT_R: 0.044},
-        close_command_expr={GRIPPER_JOINT: 0.0, GRIPPER_JOINT_R: 0.0},
+        scale=0.15,
+        use_default_offset=True,
+        clip={".*": (-6.0, 6.0)},
     )
 
 
@@ -146,28 +169,31 @@ class SlideRewardsCfg:
     # Reach toward the mug root: for a push, low on the wall IS the right
     # approach point.
     reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.2}, weight=0.5)
-    # Transport = progress ratchet (a parked mug earns nothing, ever): pays
-    # per 5 mm of NEW episode-best planar goal distance, upright (gate at
-    # ~53 degrees — a pushed mug rocks well past 30, and a gate that zeroes
-    # every real push teaches hovering), on the table, at push speed.
+    # Pacing income: pays near the CURRENT (gliding) goal, upright (gate at
+    # ~53 degrees — a pushed mug rocks well past 30), on the table, at push
+    # speed. A parked mug's income vanishes as the goal walks away, so the
+    # moving goal itself closes the parked-mug exploit the old fixed-goal
+    # recipe needed a progress ratchet for. std 0.08 ~= one goal-second of
+    # lag tolerance.
     object_goal_tracking = RewTerm(
-        func=mdp.object_goal_progress_on_table,
+        func=mdp.object_goal_distance_on_table,
         params={
-            "min_improvement": 0.005,
+            "std": 0.08,
             "min_up_cos": 0.6,
             "max_speed": PUSH_SPEED_MAX,
             "command_name": "object_pose",
         },
         weight=5.0,
     )
-    # Tight arrival kernel that only pays AT the goal, same gates.
+    # Tight arrival kernel that only pays AT the FINAL target, same gates —
+    # it must not pay mid-path, so it reads the fixed end spot.
     object_goal_tracking_fine_grained = RewTerm(
-        func=mdp.object_goal_distance_on_table,
+        func=mdp.object_fixed_goal_distance_on_table,
         params={
             "std": 0.05,
+            "goal_pos": FINAL_GOAL,
             "min_up_cos": 0.6,
             "max_speed": PUSH_SPEED_MAX,
-            "command_name": "object_pose",
         },
         weight=16.0,
     )
@@ -186,14 +212,14 @@ class SlideRewardsCfg:
     # unstill, the term paid ~0 in every run, and no gradient toward slowing
     # ever existed -- flail was baked into the MEAN policy unopposed.
     arm_settled = RewTerm(
-        func=mdp.arm_settled_at_goal,
+        func=mdp.arm_settled_at_fixed_goal,
         weight=2.0,
         params={
             "std": 0.05,
             "vel_std": 4.0,
+            "goal_pos": FINAL_GOAL,
             "min_up_cos": 0.6,
             "max_speed": PUSH_SPEED_MAX,
-            "command_name": "object_pose",
         },
     )
 
@@ -288,10 +314,11 @@ class TrossenMugSlideEnvCfg(ManagerBasedRLEnvCfg):
     def __post_init__(self):
         # Exact 30 Hz control (decimation 3 x dt); dt is the closest integer-
         # decimation solution to a 10 ms physics step at that exact rate.
-        # 5 s episodes. Identical to the lift's boundary by construction: the
+        # 6 s episodes: ~3.8 s of goal travel plus reach and settle margin.
+        # Identical control boundary to the lift by construction: the
         # adaptive-vs-fixed comparison holds the control rate across tasks.
         self.decimation = 3
-        self.episode_length_s = 5.0
+        self.episode_length_s = 6.0
         self.sim.dt = 1 / 90
         self.sim.render_interval = self.decimation
         # Recorded video camera: FRONT view facing the Trossen (the arm faces

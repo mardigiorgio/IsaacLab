@@ -14,8 +14,6 @@ the Franka cube lift does.
 from isaaclab.utils.configclass import configclass
 
 from isaaclab_rl.rsl_rl import (
-    RslRlDistillationAlgorithmCfg,
-    RslRlDistillationRunnerCfg,
     RslRlMLPModelCfg,
     RslRlOnPolicyRunnerCfg,
     RslRlPpoAlgorithmCfg,
@@ -39,14 +37,10 @@ class TrossenMugLiftPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         hidden_dims=[256, 128, 64],
         activation="elu",
         obs_normalization=False,
-        # std floor keeps the gripper dim from collapsing sigma to zero
-        # (log-prob blowup); the cap bounds exploration drift, which is
-        # otherwise unbounded and runs away.
-        # init_std 0.5 (was 1.0): a held pinch survives only while sampled
-        # jitter stays inside the clamp's seat; at std 1 the seat breaks in
-        # 1-2 steps and the grasp income stream cannot exist to be learned.
-        # The slide keeps its trained recipe in its own package.
-        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=0.5, std_type="log", std_range=(0.05, 1.5)),
+        # ONE exploration setting for the whole campaign, by ruling: start
+        # hot and let PPO taper. The floor keeps sigma from collapsing to
+        # zero (log-prob blowup); the cap sits high enough to never bind.
+        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=1.5, std_type="log", std_range=(0.05, 3.0)),
     )
     critic = RslRlMLPModelCfg(
         hidden_dims=[256, 128, 64],
@@ -68,46 +62,3 @@ class TrossenMugLiftPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         max_grad_norm=1.0,
     )
 
-
-@configclass
-class TrossenMugLiftDistillationRunnerCfg(RslRlDistillationRunnerCfg):
-    """Teacher->student distillation (anymal_d pattern): the frozen teacher
-    reads the clean privileged group, the student learns to match it from the
-    heavy-noise group. Teacher dims must equal the trained teacher's actor."""
-
-    num_steps_per_env = 120
-    max_iterations = 300
-    save_interval = 50
-    experiment_name = "trossen_mug_lift"
-    obs_groups = {"student": ["student"], "teacher": ["policy"]}
-    student = RslRlMLPModelCfg(
-        hidden_dims=[256, 128, 64],
-        activation="elu",
-        obs_normalization=False,
-        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=0.1, std_type="log", std_range=(0.05, 1.5)),
-    )
-    teacher = RslRlMLPModelCfg(
-        hidden_dims=[256, 128, 64],
-        activation="elu",
-        obs_normalization=False,
-        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=0.0, std_type="log", std_range=(0.0, 3.0)),
-    )
-    algorithm = RslRlDistillationAlgorithmCfg(
-        num_learning_epochs=2,
-        learning_rate=1.0e-3,
-        gradient_length=15,
-    )
-
-
-@configclass
-class TrossenMugLiftFinetunePPORunnerCfg(TrossenMugLiftPPORunnerCfg):
-    """RL finetune of the distilled student: asymmetric actor-critic — the
-    actor sees only the heavy-noise student group (what hardware provides),
-    the critic keeps clean privileged state. Resume from the distilled
-    checkpoint; the low LR polishes rather than relearns."""
-
-    obs_groups = {"actor": ["student"], "critic": ["policy"]}
-
-    def __post_init__(self):
-        super().__post_init__()
-        self.algorithm.learning_rate = 3.0e-5

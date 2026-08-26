@@ -1250,6 +1250,53 @@ class NewtonMJWarpManager(NewtonManager):
             if eng_fn is not None:
                 ra_cross, ra_fires = eng_fn()
                 extra += f" ra_cross={int(ra_cross)} ra_fires={int(ra_fires)}"
+            # Trap forensics: name the slowest world, and below the dump
+            # threshold capture its physical state -- the observables that
+            # identify a persistently stiff configuration taxing the
+            # batch-synchronized march.
+            import numpy as _np
+
+            amin = int(_np.argmin(dt))
+            extra += f" argmin_world={amin} min_dt={float(dt[amin]):.3e}"
+            if float(dt[amin]) < float(os.environ.get("NEWTON_ADAPTIVE_DUMP_BELOW", "0")):
+                try:
+                    st = cls._state_0
+                    jq = st.joint_qd.numpy()
+                    W = cls._model.world_count
+                    per = jq.shape[0] // W
+                    seg = jq[amin * per:(amin + 1) * per]
+                    _j = int(_np.abs(seg).argmax())
+                    extra += f" w{amin}_qd_maxabs={float(_np.abs(seg).max()):.3e} argmax_dof={_j}"
+                    try:
+                        bqd = st.body_qd.numpy().reshape(-1, 6)
+                        W2 = cls._model.world_count
+                        bpw = bqd.shape[0] // W2
+                        bseg = bqd[amin * bpw:(amin + 1) * bpw]
+                        bmax = int(_np.abs(bseg).max(axis=1).argmax())
+                        for attr in ("body_key", "body_name", "body_label"):
+                            names = getattr(cls._model, attr, None)
+                            if names is not None:
+                                extra += f" argmax_body={list(names)[bmax]}"
+                                break
+                        else:
+                            extra += f" argmax_body_idx={bmax} of {bpw}"
+                        extra += f" argmax_body_speed={float(_np.abs(bseg[bmax]).max()):.3e}"
+                    except Exception as _e2:
+                        extra += f" body_table_err={type(_e2).__name__}"
+                    ideal = cls._solver.ideal_dt.numpy() if hasattr(cls._solver, "ideal_dt") else None
+                    if ideal is not None:
+                        extra += f" w{amin}_ideal_dt={float(ideal[amin]):.3e}"
+                    vf = getattr(getattr(cls._solver, "contact_solve", None), "v_flat", None)
+                    if vf is not None:
+                        v = vf.numpy()
+                        pv = v.shape[0] // W
+                        vseg = v[amin * pv:(amin + 1) * pv]
+                        extra += f" w{amin}_vflat_maxabs={float(_np.abs(vseg).max()):.3e}"
+                    bq = st.body_q.numpy()
+                    pb = bq.shape[0] // W
+                    extra += f" w{amin}_bodyq_maxabs={float(_np.abs(bq[amin * pb:(amin + 1) * pb]).max()):.3e}"
+                except Exception as _exc:
+                    extra += f" dump_err={type(_exc).__name__}"
             path = os.environ.get("NEWTON_ADAPTIVE_LOG", "/tmp/newton_adaptive.log")
             with open(path, "a") as f:
                 f.write(
@@ -1262,6 +1309,7 @@ class NewtonMJWarpManager(NewtonManager):
     @classmethod
     def _log_solver_debug(cls) -> None:
         """Adaptive dt/substep telemetry (to a file) + optional MuJoCo convergence logging."""
+        super()._log_solver_debug()  # base hook: NEWTON_ICF_STEP_TELEMETRY per-step CSV
         if cls._adaptive:
             cls._log_adaptive_telemetry()
         cfg = PhysicsManager._cfg

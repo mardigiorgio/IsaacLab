@@ -129,6 +129,11 @@ STATIONARY_AI_CFG = ArticulationCfg(
             armature=0.032,
             friction=0.1,
             effort_limit_sim=27.0,
+            # Vendor velocity limit (URDF, authored in the rig USD only as
+            # PhysX-namespaced attrs Newton never reads: 193.37 deg/s).
+            # Without it the arm explores 20-30 rad/s whips no hardware can
+            # reach, and the adaptive march pays for integrating them.
+            velocity_limit_sim=3.375,
         ),
         "left_wrist_pitch": ImplicitActuatorCfg(
             joint_names_expr=["follower_left_joint_3"],
@@ -137,6 +142,8 @@ STATIONARY_AI_CFG = ArticulationCfg(
             armature=0.0018,
             friction=0.1,
             effort_limit_sim=7.0,
+            # Vendor 401.07 deg/s (see shoulder note).
+            velocity_limit_sim=7.0,
         ),
         "left_wrist_distal": ImplicitActuatorCfg(
             joint_names_expr=["follower_left_joint_[4-5]"],
@@ -145,6 +152,7 @@ STATIONARY_AI_CFG = ArticulationCfg(
             armature=0.0018,
             friction=0.1,
             effort_limit_sim=7.0,
+            velocity_limit_sim=7.0,
         ),
         "left_gripper": ImplicitActuatorCfg(
             joint_names_expr=["follower_left_left_carriage_joint", "follower_left_right_carriage_joint"],
@@ -153,6 +161,8 @@ STATIONARY_AI_CFG = ArticulationCfg(
             armature=0.1,
             friction=0.1,
             effort_limit_sim=400.0,
+            # Vendor carriage limit (USD: 0.0875 m/s, PhysX-namespaced).
+            velocity_limit_sim=0.0875,
         ),
     },
     soft_joint_pos_limit_factor=1.0,

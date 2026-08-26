@@ -247,35 +247,10 @@ def _write_rack(out_dir: str) -> None:
 # plate SDF's authored values.
 _LBM_SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lbm_src")
 TRI_PLATE_GLTF = "ikea_dinera_plate_8in_blue.gltf"
-TRI_PLATE_COLLISION_VTK = "ikea_dinera_plate_8in_low_8faces.vtk"  # the SDF's <collision> mesh
 TRI_RACK_PARTS = ("sweet_home_dish_drying_rack_wireframe", "sweet_home_dish_drying_rack_base")
 TRI_PLATE_MASS = 0.375  # [kg]
 TRI_PLATE_COM = (0.0, 0.0, 0.00915)  # [m]
 TRI_PLATE_INERTIA = (8.6e-4, 8.6e-4, 1.71e-3)  # [kg m^2]
-
-
-def _load_collision_vtk(path: str) -> trimesh.Trimesh:
-    """TRI's COLLISION mesh: the boundary surface of the SDF's ``_low*.vtk`` tet
-    mesh, faces oriented outward. This is the geometry TRI's own simulator
-    collides with (the SDF's <collision> element); the glTF is the <visual>."""
-    import meshio  # noqa: PLC0415
-
-    m = meshio.read(path)
-    tets = np.vstack([c.data for c in m.cells if c.type == "tetra"])
-    pts = np.asarray(m.points, dtype=np.float64)
-    faces = np.vstack([tets[:, [0, 1, 2]], tets[:, [0, 1, 3]], tets[:, [0, 2, 3]], tets[:, [1, 2, 3]]])
-    opposite = np.concatenate([tets[:, 3], tets[:, 2], tets[:, 1], tets[:, 0]])
-    key = np.sort(faces, axis=1)
-    _, first, counts = np.unique(key, axis=0, return_index=True, return_counts=True)
-    bidx = first[counts == 1]
-    bfaces = faces[bidx].copy()
-    opp = pts[opposite[bidx]]
-    a, b, c = pts[bfaces[:, 0]], pts[bfaces[:, 1]], pts[bfaces[:, 2]]
-    inward = np.einsum("ij,ij->i", np.cross(b - a, c - a), opp - a) > 0
-    bfaces[inward] = bfaces[inward][:, [0, 2, 1]]
-    surf = trimesh.Trimesh(vertices=pts, faces=bfaces, process=False)
-    surf.remove_unreferenced_vertices()
-    return surf
 
 
 def _load_zup(name: str) -> trimesh.Trimesh:
@@ -301,15 +276,13 @@ def _load_zup(name: str) -> trimesh.Trimesh:
 
 
 def _write_plate_tri(out_dir: str) -> None:
-    mesh = _load_zup(TRI_PLATE_GLTF)  # the <visual>
-    col = _load_collision_vtk(os.path.join(_LBM_SRC, TRI_PLATE_COLLISION_VTK))  # the <collision>
-    col.vertices[:, :2] -= (mesh.vertices[:, :2].max(0) + mesh.vertices[:, :2].min(0)) / 2.0 * 0.0  # VTK is already in the SDF body frame
+    mesh = _load_zup(TRI_PLATE_GLTF)
     r_max = float(np.linalg.norm(mesh.vertices[:, :2], axis=1).max())
     z_max = float(mesh.vertices[:, 2].max())
     global PLATE_BASE_R, RIM_BAND_R  # noqa: PLW0603 -- partition thresholds scale with the asset
     PLATE_BASE_R = 0.58 * r_max
     RIM_BAND_R = 0.88 * r_max
-    groups = _partition_plate(col)
+    groups = _partition_plate(mesh)
     out_path = os.path.join(out_dir, "plate.usd")
     stage = Usd.Stage.CreateNew(out_path)
     UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
@@ -322,16 +295,15 @@ def _write_plate_tri(out_dir: str) -> None:
     mass.GetCenterOfMassAttr().Set(Gf.Vec3f(*TRI_PLATE_COM))
     mass.GetDiagonalInertiaAttr().Set(Gf.Vec3f(*TRI_PLATE_INERTIA))
     _author_mesh(stage, "/Plate/visuals/visuals", mesh, collide=False, color=PLATE_COLOR)
-    # RAW TRI sub-mesh per piece (representation ruling, 2026-08-24): the
-    # sector split is kept for the piece-named contact sensors only.
     for name, face_idx in groups.items():
-        piece = col.submesh([face_idx], append=True)
+        # RAW submesh, not a hull: with mesh_approximation "none" the
+        # authored geometry IS the contact geometry, and the whole point of
+        # the piece split is per-piece sensor filtering, not convexity.
+        piece = mesh.submesh([face_idx], append=True)
         _author_mesh(stage, f"/Plate/{name}/mesh", piece, collide=True, color=PLATE_COLOR)
-    n_col = sum(len(g) for g in groups.values())
-    assert n_col == len(col.faces), f"collision pieces cover {n_col} of {len(col.faces)} collision-mesh faces"
     stage.GetRootLayer().Save()
     print(
-        f"[convert_plate_rack] wrote {out_path} (TRI ikea_dinera): {len(groups)} TRI-collision-mesh pieces, {n_col} faces (VTK boundary), "
+        f"[convert_plate_rack] wrote {out_path} (TRI ikea_dinera): {len(groups)} pieces, "
         f"R={r_max:.4f} rim_z={z_max:.4f} -> cfg: PLATE_RIM_RADIUS~{0.97 * r_max:.3f} "
         f"PLATE_RIM_HEIGHT~{z_max - 0.002:.3f} PLATE_STAND_Z~{0.02 + r_max:.3f}"
     )
@@ -426,8 +398,9 @@ def main():
         _write_rack_tri(out_dir)
         _write_rack_mesh(out_dir)
     else:
-        # No procedural fallback: every TRI model is TRI's own mesh, or nothing.
-        raise FileNotFoundError(f"TRI source {TRI_PLATE_GLTF!r} missing from {_LBM_SRC}; stage lbm_src first.")
+        # Fallback: the dimensioned procedural pair, same file layout.
+        _write_plate(out_dir)
+        _write_rack(out_dir)
 
 
 if __name__ == "__main__":

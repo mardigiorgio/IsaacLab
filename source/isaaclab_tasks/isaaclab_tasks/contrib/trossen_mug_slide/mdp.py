@@ -232,93 +232,6 @@ def object_goal_distance_on_table(
     return _finite(gate * (1.0 - torch.tanh(distance / std)))
 
 
-def arm_settled_at_goal(
-    env: ManagerBasedRLEnv,
-    std: float,
-    vel_std: float,
-    command_name: str,
-    z_max: float = 0.06,
-    min_up_cos: float = 0.87,
-    max_speed: float = float("inf"),
-    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
-    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
-    arm_cfg: SceneEntityCfg = SceneEntityCfg("robot", joint_names="follower_left_joint_[0-5]"),
-) -> torch.Tensor:
-    """Post-delivery rest: the arrival payment (same kernel and gates as
-    :func:`object_goal_distance_on_table`) scaled by an arm-stillness kernel
-    on the arm joint speeds. Every factor of the arrival gate must already be
-    earned -- mug AT the commanded spot, upright, on the table, settled -- so
-    stillness income cannot fund hovering short of delivery; it only turns
-    the finished state's annuity into "collect it calmly"."""
-    robot = env.scene[robot_cfg.name]
-    obj = env.scene[object_cfg.name]
-    command = env.command_manager.get_command(command_name)
-    des_pos_w, _ = combine_frame_transforms(robot.data.root_pos_w.torch, robot.data.root_quat_w.torch, command[:, :3])
-    distance = torch.norm(des_pos_w[:, :2] - obj.data.root_pos_w.torch[:, :2], dim=1)
-    quat = obj.data.root_quat_w.torch
-    up_z = 1.0 - 2.0 * (quat[:, 0] * quat[:, 0] + quat[:, 1] * quat[:, 1])
-    z_local = obj.data.root_pos_w.torch[:, 2] - env.scene.env_origins[:, 2]
-    gate = (up_z > min_up_cos) & (z_local < z_max) & _object_calm(env, max_speed, object_cfg)
-    speed = torch.linalg.vector_norm(robot.data.joint_vel.torch[:, arm_cfg.joint_ids], dim=1)
-    return _finite(gate * (1.0 - torch.tanh(distance / std)) * (1.0 - torch.tanh(speed / vel_std)))
-
-
-class object_goal_progress_on_table(ManagerTermBase):
-    """Slide-task ratchet: 1.0 per ``min_improvement`` [m] of NEW episode-best
-    planar goal distance, credited only upright, on the table, at push speed.
-
-    The absolute kernel pays a parked mug whenever goals land near spawn; the
-    ratchet pays nothing until the mug actually gains ground, and ground given
-    back cannot be re-earned. Bar re-seeds when the command resamples.
-    """
-
-    def __init__(self, cfg, env: ManagerBasedRLEnv):
-        super().__init__(cfg, env)
-        self.best = torch.full((env.num_envs,), float("inf"), device=env.device)
-        self._prev_cmd: torch.Tensor | None = None
-
-    def reset(self, env_ids=None):
-        if env_ids is None:
-            env_ids = slice(None)
-        self.best[env_ids] = float("inf")
-
-    def __call__(
-        self,
-        env: ManagerBasedRLEnv,
-        command_name: str,
-        min_improvement: float = 0.005,
-        z_max: float = 0.06,
-        min_up_cos: float = 0.87,
-        max_speed: float = float("inf"),
-        robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
-        object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
-    ) -> torch.Tensor:
-        robot = env.scene[robot_cfg.name]
-        obj = env.scene[object_cfg.name]
-        command = env.command_manager.get_command(command_name)
-        des_pos_w, _ = combine_frame_transforms(
-            robot.data.root_pos_w.torch, robot.data.root_quat_w.torch, command[:, :3]
-        )
-        error = torch.norm(des_pos_w[:, :2] - obj.data.root_pos_w.torch[:, :2], dim=1).nan_to_num(
-            nan=float("inf"), posinf=float("inf"), neginf=float("inf")
-        )
-        quat = obj.data.root_quat_w.torch
-        up_z = 1.0 - 2.0 * (quat[:, 0] * quat[:, 0] + quat[:, 1] * quat[:, 1])
-        z_local = obj.data.root_pos_w.torch[:, 2] - env.scene.env_origins[:, 2]
-        gate = (up_z > min_up_cos) & (z_local < z_max) & _object_calm(env, max_speed, object_cfg)
-        cmd = command[:, :3]
-        if self._prev_cmd is None:
-            self._prev_cmd = cmd.clone()
-        else:
-            self.best[(self._prev_cmd != cmd).any(dim=1)] = float("inf")
-            self._prev_cmd.copy_(cmd)
-        unseeded = torch.isinf(self.best)
-        self.best[unseeded] = error[unseeded]
-        improved = gate & (error < self.best - min_improvement)
-        self.best[improved] = error[improved]
-        return improved.float()
-
-
 def object_position_in_robot_root_frame(
     env: ManagerBasedRLEnv,
     robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
@@ -331,3 +244,130 @@ def object_position_in_robot_root_frame(
         robot.data.root_pos_w.torch, robot.data.root_quat_w.torch, obj.data.root_pos_w.torch
     )
     return object_pos_b
+
+
+# ---------------------------------------------------------------------------- slidev2: moving goal
+
+from isaaclab.utils.configclass import configclass  # noqa: E402
+
+
+class MovingGoalCommand(UniformPoseCommand):  # noqa: F405
+    """Pose command that GLIDES from a start point to the sampled goal at a
+    fixed speed, pacing the slide.
+
+    The v1 fixed goal let the policy pick the push speed — an unphysical
+    smack-and-coast solves it. Here the observed command starts on the mug
+    and walks to the final target at ``goal_speed``; income through the
+    command-tracking kernel exists only near the CURRENT goal, so the mug
+    must follow the pace. A parked mug's income vanishes as the goal walks
+    away — the moving goal itself closes v1's parked-mug exploit, so v2
+    needs no progress ratchet.
+
+    Error/success metrics measure the OBJECT against the FINAL target with
+    tilt-only orientation (the mug may spin about z while sliding), so
+    ``Metrics/success_rate`` reads "delivered upright at the end spot".
+    """
+
+    def __init__(self, cfg, env):
+        super().__init__(cfg, env)
+        self._object = env.scene["object"]
+        self._step_dt = env.step_dt
+        self._final = torch.zeros(self.num_envs, 3, device=self.device)
+
+    def _resample_command(self, env_ids):
+        super()._resample_command(env_ids)
+        self._final[env_ids] = self.pose_command_b[env_ids, :3].clone()
+        start = torch.tensor(self.cfg.start_pos, device=self.device, dtype=self.pose_command_b.dtype)
+        self.pose_command_b[env_ids, :3] = start
+
+    def _update_command(self):
+        super()._update_command()
+        delta = self._final[:, :2] - self.pose_command_b[:, :2]
+        dist = torch.linalg.vector_norm(delta, dim=1, keepdim=True)
+        step = torch.clamp(dist, max=self.cfg.goal_speed * self._step_dt)
+        self.pose_command_b[:, :2] += delta / dist.clamp(min=1e-9) * step
+
+    def _compute_error(self):
+        # Refresh the world-frame command like the base does: the debug
+        # marker reads pose_command_w, so this line is what makes the goal
+        # visibly GLIDE in the viewer and the training clips.
+        self.pose_command_w[:, :3], self.pose_command_w[:, 3:] = combine_frame_transforms(
+            self.robot.data.root_pos_w.torch,
+            self.robot.data.root_quat_w.torch,
+            self.pose_command_b[:, :3],
+            self.pose_command_b[:, 3:],
+        )
+        # Error and success measure the FINAL target, not the gliding one.
+        des_pos_w, _ = combine_frame_transforms(
+            self.robot.data.root_pos_w.torch, self.robot.data.root_quat_w.torch, self._final
+        )
+        position_error = torch.linalg.vector_norm(des_pos_w - self._object.data.root_pos_w.torch, dim=1)
+        quat = self._object.data.root_quat_w.torch
+        up = 1.0 - 2.0 * (quat[:, 0] * quat[:, 0] + quat[:, 1] * quat[:, 1])
+        tilt = torch.acos(up.clamp(-1.0, 1.0))
+        return position_error, tilt
+
+
+@configclass  # noqa: F405
+class MovingPoseCommandCfg(UniformPoseCommandCfg):  # noqa: F405
+    """Cfg for :class:`MovingGoalCommand`: the ranges sample the FINAL goal;
+    the command itself starts at ``start_pos`` and walks there."""
+
+    class_type: type = MovingGoalCommand
+    start_pos: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    goal_speed: float = 0.08
+
+
+def _fixed_goal_gate_and_distance(
+    env: ManagerBasedRLEnv,
+    goal_pos: tuple[float, float],
+    z_max: float,
+    min_up_cos: float,
+    max_speed: float,
+    object_cfg: SceneEntityCfg,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Planar distance to an env-frame fixed point plus the slide's income
+    gate (upright, on table, calm). Command frame IS the env frame
+    (probe_goal_map), so the fixed point lives in env coordinates."""
+    obj = env.scene[object_cfg.name]
+    goal = torch.tensor(goal_pos, device=env.device, dtype=torch.float32)
+    des_xy = env.scene.env_origins[:, :2] + goal
+    distance = torch.norm(des_xy - obj.data.root_pos_w.torch[:, :2], dim=1)
+    quat = obj.data.root_quat_w.torch
+    up_z = 1.0 - 2.0 * (quat[:, 0] * quat[:, 0] + quat[:, 1] * quat[:, 1])
+    z_local = obj.data.root_pos_w.torch[:, 2] - env.scene.env_origins[:, 2]
+    gate = (up_z > min_up_cos) & (z_local < z_max) & _object_calm(env, max_speed, object_cfg)
+    return gate, distance
+
+
+def object_fixed_goal_distance_on_table(
+    env: ManagerBasedRLEnv,
+    std: float,
+    goal_pos: tuple[float, float],
+    z_max: float = 0.06,
+    min_up_cos: float = 0.87,
+    max_speed: float = float("inf"),
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """v1's arrival kernel against the FINAL target: with a moving command
+    the arrival annuity must not pay mid-path, so it reads the end spot."""
+    gate, distance = _fixed_goal_gate_and_distance(env, goal_pos, z_max, min_up_cos, max_speed, object_cfg)
+    return _finite(gate * (1.0 - torch.tanh(distance / std)))
+
+
+def arm_settled_at_fixed_goal(
+    env: ManagerBasedRLEnv,
+    std: float,
+    vel_std: float,
+    goal_pos: tuple[float, float],
+    z_max: float = 0.06,
+    min_up_cos: float = 0.87,
+    max_speed: float = float("inf"),
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    arm_cfg: SceneEntityCfg = SceneEntityCfg("robot", joint_names="follower_left_joint_[0-5]"),
+) -> torch.Tensor:
+    """v1's post-delivery rest against the FINAL target (same design notes)."""
+    gate, distance = _fixed_goal_gate_and_distance(env, goal_pos, z_max, min_up_cos, max_speed, object_cfg)
+    robot = env.scene["robot"]
+    speed = torch.linalg.vector_norm(robot.data.joint_vel.torch[:, arm_cfg.joint_ids], dim=1)
+    return _finite(gate * (1.0 - torch.tanh(distance / std)) * (1.0 - torch.tanh(speed / vel_std)))

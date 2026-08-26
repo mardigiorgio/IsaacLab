@@ -12,3 +12,8 @@ poses, none of them mug-specific. Anything plate-only added later lives here.
 """
 
 from isaaclab_tasks.contrib.trossen_mug_lift.mdp import *  # noqa: F401,F403
+
+
+# The shared success machinery lives with the platform (mug-lift mdp); the
+# star import above already re-exports it. Kept names for the task cfgs:
+# ObjectPoseSuccessCommand, SUCCESS_POS_THRESHOLD, SUCCESS_TILT_THRESHOLD.
