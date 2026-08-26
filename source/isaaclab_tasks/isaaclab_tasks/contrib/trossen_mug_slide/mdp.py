@@ -248,10 +248,12 @@ def object_position_in_robot_root_frame(
 
 # ---------------------------------------------------------------------------- slidev2: moving goal
 
+from isaaclab_tasks.contrib.trossen_mug_lift.mdp import ObjectPoseSuccessCommand  # noqa: E402
+
 from isaaclab.utils.configclass import configclass  # noqa: E402
 
 
-class MovingGoalCommand(UniformPoseCommand):  # noqa: F405
+class MovingGoalCommand(ObjectPoseSuccessCommand):
     """Pose command that GLIDES from a start point to the sampled goal at a
     fixed speed, pacing the slide.
 
