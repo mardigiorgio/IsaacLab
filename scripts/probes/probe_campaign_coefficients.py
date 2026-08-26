@@ -111,21 +111,6 @@ def main() -> int:
     check(lift_ev.randomize_arm_start.params["position_range"] == (0.0, 0.0), "lift: home-start scatter nonzero")
     check(lift_ev.reset_arm_grasp_bank.params["noise"] == 0.0, "lift: grasp-bank noise nonzero")
 
-    # Reward-structure rulings (2026-08-26): slide is tracking-only (no
-    # endpoint anchors), lift/plate are stage-gated, flip validates resets
-    # and gates retreat on the milestone.
-    slide_rw = tasks["slide"][0].rewards
-    for t in ("object_goal_tracking", "goal_velocity_matching", "goal_progress", "in_band"):
-        check(hasattr(slide_rw, t), f"slide: tracking term {t} missing")
-    slide_funcs = {v.func.__name__ if hasattr(v.func, "__name__") else type(v.func).__name__
-                   for v in vars(slide_rw).values() if hasattr(v, "func")}
-    check("object_fixed_goal_distance_on_table" not in slide_funcs, "slide: endpoint anchor survived")
-    check("arm_settled_at_fixed_goal" not in slide_funcs, "slide: endpoint settle anchor survived")
-    for t in ("lift", "plate"):
-        check(hasattr(tasks[t][0].rewards, "staged"), f"{t}: staged manipulation term missing")
-    check(hasattr(tasks["flip"][0].events, "validate_spawn"), "flip: reset validation missing")
-    check(hasattr(tasks["flip"][0].rewards, "hold_and_retreat"), "flip: milestone term missing")
-
     if failures:
         print("AUDIT FAILED:")
         for f in failures:

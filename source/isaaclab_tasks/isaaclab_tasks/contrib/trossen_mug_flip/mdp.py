@@ -28,7 +28,6 @@ from isaaclab_tasks.contrib.trossen_mug_lift.mdp import (  # noqa: F401
     SUCCESS_POS_THRESHOLD,
     SUCCESS_TILT_THRESHOLD,
     ObjectPoseSuccessCommand,
-    validate_object_spawn,
 )
 
 if TYPE_CHECKING:
@@ -89,18 +88,11 @@ class upright_progress(ManagerTermBase):
         env: ManagerBasedRLEnv,
         min_improvement: float = 0.05,
         max_speed: float = float("inf"),
-        max_ang_speed: float = 6.0,
         contact_threshold: float = 0.5,
         object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
     ) -> torch.Tensor:
         up = _up_cos(env, object_cfg).nan_to_num(nan=-2.0, posinf=-2.0, neginf=-2.0)
-        obj = env.scene[object_cfg.name]
-        ang_ok = torch.linalg.vector_norm(obj.data.root_ang_vel_w.torch, dim=1) < max_ang_speed
-        gate = (
-            (handle_held(env, threshold=contact_threshold) > 0.5)
-            & _object_calm(env, max_speed, object_cfg)
-            & ang_ok
-        )
+        gate = (handle_held(env, threshold=contact_threshold) > 0.5) & _object_calm(env, max_speed, object_cfg)
         unseeded = self.best <= -2.0
         self.best[unseeded] = up[unseeded]
         improved = gate & (up > self.best + min_improvement)
@@ -108,76 +100,70 @@ class upright_progress(ManagerTermBase):
         return improved.float()
 
 
+def upright_at_goal(
+    env: ManagerBasedRLEnv,
+    std: float,
+    command_name: str,
+    z_max: float = 0.06,
+    max_speed: float = float("inf"),
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """The flip's arrival annuity: pays the planar-arrival kernel only while
+    the mug is STRICTLY upright, on the table, and calm.
 
-class flip_hold_and_retreat(ManagerTermBase):
-    """The flip's completion economy in one stateful term: a dwell-ramped
-    upright-at-goal annuity, a one-time completion bonus when the righted
-    mug has HELD for ``dwell_steps``, and a retreat income (arm stillness x
-    pads-off) that exists ONLY after that milestone latches — letting go
-    before the flip is banked pays nothing.
-
-    Logged through the pose command's metrics: ``dwell`` and ``completed``.
+    The strict upright gate is the task; the planar kernel puts the righted
+    mug back on its tape-measured spot instead of wherever the flip threw it.
     """
+    robot = env.scene[robot_cfg.name]
+    obj = env.scene[object_cfg.name]
+    command = env.command_manager.get_command(command_name)
+    des_pos_w, _ = combine_frame_transforms(robot.data.root_pos_w.torch, robot.data.root_quat_w.torch, command[:, :3])
+    distance = torch.norm(des_pos_w[:, :2] - obj.data.root_pos_w.torch[:, :2], dim=1)
+    z_local = obj.data.root_pos_w.torch[:, 2] - env.scene.env_origins[:, 2]
+    gate = (
+        (_up_cos(env, object_cfg) > UPRIGHT_MIN_COS)
+        & (z_local < z_max)
+        & _object_calm(env, max_speed, object_cfg)
+    )
+    return _finite(gate * (1.0 - torch.tanh(distance / std)))
 
-    def __init__(self, cfg, env: ManagerBasedRLEnv):
-        super().__init__(cfg, env)
-        n, dev = env.num_envs, env.device
-        self._dwell = torch.zeros(n, device=dev)
-        self._completed = torch.zeros(n, dtype=torch.bool, device=dev)
 
-    def reset(self, env_ids=None):
-        if env_ids is None:
-            env_ids = slice(None)
-        self._dwell[env_ids] = 0.0
-        self._completed[env_ids] = False
+def arm_retreated_after_flip(
+    env: ManagerBasedRLEnv,
+    std: float,
+    vel_std: float,
+    command_name: str,
+    z_max: float = 0.06,
+    max_speed: float = float("inf"),
+    contact_sensor: str = "pad_object_contact",
+    contact_threshold: float = 0.5,
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    arm_cfg: SceneEntityCfg = SceneEntityCfg("robot", joint_names="follower_left_joint_[0-5]"),
+) -> torch.Tensor:
+    """Post-flip retreat: the arrival annuity's own gates times arm stillness
+    times a NO-CONTACT gate on the pads.
 
-    def __call__(
-        self,
-        env: ManagerBasedRLEnv,
-        std: float,
-        vel_std: float,
-        command_name: str,
-        z_max: float = 0.06,
-        max_speed: float = float("inf"),
-        dwell_steps: int = 30,
-        contact_sensor: str = "pad_object_contact",
-        contact_threshold: float = 0.5,
-        robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
-        object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
-        arm_cfg: SceneEntityCfg = SceneEntityCfg("robot", joint_names="follower_left_joint_[0-5]"),
-    ) -> torch.Tensor:
-        robot = env.scene[robot_cfg.name]
-        obj = env.scene[object_cfg.name]
-        command = env.command_manager.get_command(command_name)
-        des_pos_w, _ = combine_frame_transforms(
-            robot.data.root_pos_w.torch, robot.data.root_quat_w.torch, command[:, :3]
-        )
-        distance = torch.norm(des_pos_w[:, :2] - obj.data.root_pos_w.torch[:, :2], dim=1)
-        z_local = obj.data.root_pos_w.torch[:, 2] - env.scene.env_origins[:, 2]
-        upright_at_spot = (
-            (_up_cos(env, object_cfg) > UPRIGHT_MIN_COS)
-            & (z_local < z_max)
-            & _object_calm(env, max_speed, object_cfg)
-        )
-        self._dwell = torch.where(upright_at_spot, self._dwell + 1.0, torch.zeros_like(self._dwell))
-        just_completed = ~self._completed & (self._dwell >= dwell_steps)
-        self._completed |= just_completed
-
-        kernel = 1.0 - torch.tanh(distance / std)
-        hold_income = upright_at_spot.float() * (self._dwell / dwell_steps).clamp(max=1.0) * kernel * 2.0
-        speed = torch.linalg.vector_norm(robot.data.joint_vel.torch[:, arm_cfg.joint_ids], dim=1)
-        pads_off = _sensor_force_mag(env, contact_sensor) < contact_threshold
-        retreat = (
-            self._completed.float()
-            * upright_at_spot.float()
-            * pads_off.float()
-            * (1.0 - torch.tanh(speed / vel_std))
-        )
-
-        cmd_term = env.command_manager.get_term(command_name)
-        cmd_term.metrics["dwell"] = (self._dwell / dwell_steps).clamp(max=1.0)
-        cmd_term.metrics["completed"] = self._completed.float()
-        return _finite(hold_income + retreat + just_completed.float() * 20.0)
+    Income exists only on top of a completed, settled flip, so it cannot fund
+    hovering short of one; the no-contact factor makes "let go of the mug"
+    itself the paid behavior — a policy that keeps clutching the righted mug
+    collects arrival but not retreat.
+    """
+    robot = env.scene[robot_cfg.name]
+    obj = env.scene[object_cfg.name]
+    command = env.command_manager.get_command(command_name)
+    des_pos_w, _ = combine_frame_transforms(robot.data.root_pos_w.torch, robot.data.root_quat_w.torch, command[:, :3])
+    distance = torch.norm(des_pos_w[:, :2] - obj.data.root_pos_w.torch[:, :2], dim=1)
+    z_local = obj.data.root_pos_w.torch[:, 2] - env.scene.env_origins[:, 2]
+    gate = (
+        (_up_cos(env, object_cfg) > UPRIGHT_MIN_COS)
+        & (z_local < z_max)
+        & _object_calm(env, max_speed, object_cfg)
+        & (_sensor_force_mag(env, contact_sensor) < contact_threshold)
+    )
+    speed = torch.linalg.vector_norm(robot.data.joint_vel.torch[:, arm_cfg.joint_ids], dim=1)
+    return _finite(gate * (1.0 - torch.tanh(distance / std)) * (1.0 - torch.tanh(speed / vel_std)))
 
 
 def object_orientation_in_world(
