@@ -208,6 +208,7 @@ def object_goal_distance_on_table(
     z_max: float = 0.06,
     min_up_cos: float = 0.87,
     max_speed: float = float("inf"),
+    kernel: str = "tanh",
     robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
 ) -> torch.Tensor:
@@ -219,6 +220,12 @@ def object_goal_distance_on_table(
     and the speed gate closes the smack-it-across-the-table channel the same
     way the lift task's carry gate does. Planar (xy) distance only: the
     commanded z is not the mug's to control while it stays on the slab.
+
+    ``kernel="gaussian"`` decays as exp(-(d/std)^2): the tanh tail paid a
+    PARKED mug whenever the moving goal passed within a couple of kernel
+    widths, and a policy maxed reward by parking mid-path; the gaussian pays
+    only in the goal's immediate neighborhood, so continuous tracking is the
+    only behavior that collects.
     """
     robot = env.scene[robot_cfg.name]
     obj = env.scene[object_cfg.name]

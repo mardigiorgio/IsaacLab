@@ -175,10 +175,15 @@ class SlideRewardsCfg:
     # moving goal itself closes the parked-mug exploit the old fixed-goal
     # recipe needed a progress ratchet for. std 0.08 ~= one goal-second of
     # lag tolerance.
+    # TIGHT gaussian on the moving goal, by ruling: the tanh tail at std
+    # 0.08 paid a parked mug for half the traverse and parking mid-path
+    # maxed reward. exp(-(d/0.04)^2) pays 0.37 at 4 cm, 0.02 at 8 cm,
+    # nothing at 12 cm — only tracking collects.
     object_goal_tracking = RewTerm(
         func=mdp.object_goal_distance_on_table,
         params={
-            "std": 0.08,
+            "std": 0.04,
+            "kernel": "gaussian",
             "min_up_cos": 0.6,
             "max_speed": PUSH_SPEED_MAX,
             "command_name": "object_pose",
