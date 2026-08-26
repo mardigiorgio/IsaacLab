@@ -59,15 +59,12 @@ from . import mdp
 # transients do not zero honest pushes.
 PUSH_SPEED_MAX = 0.75
 
-# The tape-measured final target: ON the table at the SIDE edge across from
-# the mounted camera, one mug-base-radius before the rail, nudged inward per
-# the operator view. Probe-measured mapping (scripts/probes/probe_goal_map.py):
-# command frame IS the env frame. The hardware protocol is a single
-# tape-measured target.
-FINAL_GOAL = (0.285, 0.0)
-# Goal glide speed [m/s]: 0.305 m of travel in ~3.8 s, inside the 6 s episode
-# with reach and settle margin. PROVISIONAL until Marco confirms the number.
-GOAL_SPEED = 0.08
+# The canonical tape-measured endpoint (the hardware protocol's single
+# target; probe-measured mapping in scripts/probes/probe_goal_map.py:
+# command frame IS the env frame). Training samples endpoints from a
+# rectangle around the reachable tabletop; PLAY pins this point.
+CANONICAL_GOAL = (0.285, 0.0)
+CANONICAL_SPEED = 0.08
 
 
 @configclass
@@ -80,17 +77,26 @@ class SlideCommandsCfg:
         # training clips.
         debug_vis=True,
         start_pos=(_SPAWN_X, _SPAWN_Y, OBJECT_REST_Z),
-        goal_speed=GOAL_SPEED,
+        # Trajectory program randomization: endpoint (direction), speed,
+        # phase, pauses, reversals — the policy must track the program, not
+        # memorize one path.
+        speed_range=(0.05, 0.12),
+        start_delay_range=(0.0, 1.0),
+        pause_prob=0.5,
+        pause_len_range=(0.3, 1.5),
+        reversal_prob=0.3,
+        reversal_len_range=(0.3, 0.8),
         ranges=mdp.MovingPoseCommandCfg.Ranges(
-            pos_x=(FINAL_GOAL[0], FINAL_GOAL[0]),
-            pos_y=(FINAL_GOAL[1], FINAL_GOAL[1]),
+            pos_x=(0.15, 0.30),
+            pos_y=(-0.12, 0.12),
             pos_z=(OBJECT_REST_Z, OBJECT_REST_Z),
             roll=(0.0, 0.0),
             pitch=(0.0, 0.0),
             yaw=(0.0, 0.0),
         ),
-        # Online Metrics/success_rate against the FINAL target, the shared
-        # campaign gates, tilt-only (the mug may spin about z while sliding).
+        # The task's success currency is Metrics/object_pose/in_band (time
+        # inside the tracking band); the sticky pose success below is an
+        # AUXILIARY endpoint metric, not the success definition.
         position_success_threshold=SUCCESS_POS_THRESHOLD,
         orientation_success_threshold=SUCCESS_TILT_THRESHOLD,
     )
@@ -131,6 +137,8 @@ class SlideObservationsCfg:
         joint_vel = ObsTerm(func=mdp.joint_vel_rel)
         object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
         target_object_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "object_pose"})
+        # The pacing signal: a policy cannot match a pace it cannot observe.
+        goal_velocity = ObsTerm(func=mdp.goal_velocity, params={"command_name": "object_pose"})
         # The raw last action feeds back into the policy input; unclipped, the
         # loop goes exponentially unstable once the network's feedback gain
         # crosses 1, which ends in a NaN in the PPO update. The clip bounds the
@@ -169,12 +177,10 @@ class SlideRewardsCfg:
     # Reach toward the mug root: for a push, low on the wall IS the right
     # approach point.
     reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.2}, weight=0.5)
-    # Pacing income: pays near the CURRENT (gliding) goal, upright (gate at
-    # ~53 degrees — a pushed mug rocks well past 30), on the table, at push
-    # speed. A parked mug's income vanishes as the goal walks away, so the
-    # moving goal itself closes the parked-mug exploit the old fixed-goal
-    # recipe needed a progress ratchet for. std 0.08 ~= one goal-second of
-    # lag tolerance.
+    # Tracking economy, ALL terms on the CURRENT goal (no endpoint anchors):
+    # instantaneous error kernel, velocity matching, clipped potential-based
+    # progress, and the sustained band annuity — the largest income, so the
+    # hygiene fines below stay an order under the tracking objective.
     object_goal_tracking = RewTerm(
         func=mdp.object_goal_distance_on_table,
         params={
@@ -183,48 +189,23 @@ class SlideRewardsCfg:
             "max_speed": PUSH_SPEED_MAX,
             "command_name": "object_pose",
         },
-        weight=5.0,
-    )
-    # Tight arrival kernel that only pays AT the FINAL target, same gates —
-    # it must not pay mid-path, so it reads the fixed end spot.
-    object_goal_tracking_fine_grained = RewTerm(
-        func=mdp.object_fixed_goal_distance_on_table,
-        params={
-            "std": 0.05,
-            "goal_pos": FINAL_GOAL,
-            "min_up_cos": 0.6,
-            "max_speed": PUSH_SPEED_MAX,
-        },
-        weight=16.0,
-    )
-    # Post-delivery rest goal. After arrival nothing constrained the ARM: the
-    # mug annuity pays regardless of what the arm does, and the action
-    # penalties are orders below it, so a finished arm wanders on residual
-    # exploration. This pays the arrival annuity's own gates times arm
-    # stillness -- income exists only on top of a completed, settled delivery,
-    # so it cannot fund hovering short of one, and at weight 2 it stays far
-    # below the arrival term (16), so a calmer arm is never worth
-    # surrendering the delivery itself.
-    # vel_std sits at the MEASURED median arm speed of a trained slide policy
-    # (|qd| L2 over the six arm joints: p50 4.2 rad/s deterministic, 5.3
-    # sampled). The kernel must place current behavior on its slope, not its
-    # saturated tail: at the original 0.5 every policy's speeds read as fully
-    # unstill, the term paid ~0 in every run, and no gradient toward slowing
-    # ever existed -- flail was baked into the MEAN policy unopposed.
-    arm_settled = RewTerm(
-        func=mdp.arm_settled_at_fixed_goal,
         weight=2.0,
-        params={
-            "std": 0.05,
-            "vel_std": 4.0,
-            "goal_pos": FINAL_GOAL,
-            "min_up_cos": 0.6,
-            "max_speed": PUSH_SPEED_MAX,
-        },
     )
-
-    # Scraping or pressing the tabletop with any robot body is never part of
-    # a correct push.
+    goal_velocity_matching = RewTerm(
+        func=mdp.goal_velocity_matching,
+        params={"std": 0.1, "min_up_cos": 0.6, "command_name": "object_pose"},
+        weight=2.0,
+    )
+    goal_progress = RewTerm(
+        func=mdp.object_goal_progress_clipped,
+        params={"command_name": "object_pose", "max_step": 0.01},
+        weight=1.0,
+    )
+    in_band = RewTerm(
+        func=mdp.in_band_sustained,
+        params={"command_name": "object_pose", "ramp_steps": 30, "min_up_cos": 0.6},
+        weight=8.0,
+    )
     table_scrape = RewTerm(
         func=mdp.body_contact, weight=-2.0, params={"sensor_name": "arm_table_contact", "threshold": 1.0}
     )
@@ -314,11 +295,12 @@ class TrossenMugSlideEnvCfg(ManagerBasedRLEnvCfg):
     def __post_init__(self):
         # Exact 30 Hz control (decimation 3 x dt); dt is the closest integer-
         # decimation solution to a 10 ms physics step at that exact rate.
-        # 6 s episodes: ~3.8 s of goal travel plus reach and settle margin.
+        # 7 s episodes: travel at the slowest sampled speed plus delay,
+        # pause, and reversal windows.
         # Identical control boundary to the lift by construction: the
         # adaptive-vs-fixed comparison holds the control rate across tasks.
         self.decimation = 3
-        self.episode_length_s = 6.0
+        self.episode_length_s = 7.0
         self.sim.dt = 1 / 90
         self.sim.render_interval = self.decimation
         # Recorded video camera: FRONT view facing the Trossen (the arm faces
@@ -358,3 +340,12 @@ class TrossenMugSlideEnvCfg_PLAY(TrossenMugSlideEnvCfg):
         self.scene.num_envs = 50
         self.scene.env_spacing = 2.5
         self.observations.policy.enable_corruption = False
+        # The hardware protocol's single deterministic program: canonical
+        # endpoint, canonical speed, no delay, no pauses, no reversals.
+        cmd = self.commands.object_pose
+        cmd.ranges.pos_x = (CANONICAL_GOAL[0], CANONICAL_GOAL[0])
+        cmd.ranges.pos_y = (CANONICAL_GOAL[1], CANONICAL_GOAL[1])
+        cmd.speed_range = (CANONICAL_SPEED, CANONICAL_SPEED)
+        cmd.start_delay_range = (0.0, 0.0)
+        cmd.pause_prob = 0.0
+        cmd.reversal_prob = 0.0

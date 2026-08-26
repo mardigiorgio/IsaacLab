@@ -599,47 +599,27 @@ class RewardsCfg:
             "contact_threshold": 0.01,
             "asset_cfg": SceneEntityCfg("robot", body_names="follower_left_gripper_.*"),
         },
-        weight=3.0,
+        weight=1.0,
     )
 
-    # Progress pays once per min_improvement of NEW best object-to-goal
-    # distance, only while held in an opposed grasp: ground given back cannot
-    # be re-earned, a batted flight moves nothing.
-    position_tracking = RewTerm(
-        func=mdp.position_command_progress,
-        weight=5.0,
+    # Sequentially gated stages: reach -> stable bilateral contact ->
+    # secure grasp -> transport -> sustained hold at the target. One term
+    # owns the frontier ratchet, the entry bonuses, the clipped transport
+    # progress, the grasp-loss fine, and the dwell-gated completion — the
+    # largest income exists only while the finished state is actually held
+    # (see staged_manipulation). Replaces the flat ratchet/success/contact
+    # cluster, whose income a camped partial grasp could collect forever.
+    staged = RewTerm(
+        func=mdp.staged_manipulation,
+        weight=1.0,
         params={
-            "min_improvement": 0.0025,
             "command_name": "object_pose",
             "sensor_name": "pad_object_contact",
             "contact_threshold": 0.01,
+            "pos_tol": 0.05,
+            "min_up_cos": 0.87,
+            "dwell_steps": 30,
         },
-    )
-
-    # Upstream's success semantics (pose match while grasped) in the
-    # parallel-jaw form: their function hard-requires per-fingertip sensor
-    # shapes this gripper does not have.
-    success = RewTerm(
-        func=mdp.success_at_goal,
-        weight=10,
-        params={
-            "command_name": "object_pose",
-            "pos_std": 0.05,
-            "sensor_name": "pad_object_contact",
-            "contact_threshold": 0.01,
-        },
-    )
-
-    good_finger_contact = RewTerm(
-        func=mdp.mug_grasped,
-        params={"sensor_name": "pad_object_contact", "threshold": 0.01},
-        weight=0.75,
-    )
-
-    contact_count = RewTerm(
-        func=mdp.pad_contact_count,
-        params={"sensor_name": "pad_object_contact", "threshold": 0.01},
-        weight=0.1,
     )
 
     early_termination = RewTerm(

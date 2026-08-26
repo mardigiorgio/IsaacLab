@@ -196,18 +196,19 @@ class FlipRewardsCfg:
         params={"min_improvement": 0.05, "max_speed": FLIP_SPEED_MAX},
         weight=5.0,
     )
-    # Arrival annuity: STRICTLY upright, at the spot, on the table, calm.
-    upright_at_goal = RewTerm(
-        func=mdp.upright_at_goal,
-        params={"std": 0.05, "max_speed": FLIP_SPEED_MAX, "command_name": "object_pose"},
-        weight=16.0,
-    )
-    # Post-flip retreat: the arrival gates times arm stillness times pads-off
-    # — "let go and settle" is itself the paid behavior.
-    arm_retreated = RewTerm(
-        func=mdp.arm_retreated_after_flip,
-        params={"std": 0.05, "vel_std": 4.0, "max_speed": FLIP_SPEED_MAX, "command_name": "object_pose"},
-        weight=2.0,
+    # Completion economy: dwell-ramped upright-at-goal annuity, one-time
+    # completion bonus after a sustained hold, and retreat income that
+    # exists ONLY after the milestone latches (see flip_hold_and_retreat).
+    hold_and_retreat = RewTerm(
+        func=mdp.flip_hold_and_retreat,
+        params={
+            "std": 0.05,
+            "vel_std": 4.0,
+            "max_speed": FLIP_SPEED_MAX,
+            "dwell_steps": 30,
+            "command_name": "object_pose",
+        },
+        weight=1.0,
     )
 
     # The two standing fines: non-handle mug contact (arm links on the body
@@ -260,6 +261,15 @@ class FlipEventCfg:
             "velocity_range": {},
             "asset_cfg": SceneEntityCfg("object"),
         },
+    )
+    # Reject-and-repair validation of the freshly reset scene: finite state,
+    # near the intended spawn, above the support plane. Declared last so it
+    # sees the final reset state; a nonzero Metrics/object_pose/reset_invalid
+    # is a scene bug made loud (the buried-mug class).
+    validate_spawn = EventTerm(
+        func=mdp.validate_object_spawn,
+        mode="reset",
+        params={"pos_tol": 0.02, "min_z": 0.05},
     )
 
 

@@ -520,3 +520,170 @@ class ObjectPoseSuccessCommand(UniformPoseCommand):  # noqa: F405
         up = 1.0 - 2.0 * (quat[:, 0] * quat[:, 0] + quat[:, 1] * quat[:, 1])
         tilt = torch.acos(up.clamp(-1.0, 1.0))
         return position_error, tilt
+
+
+# ---------------------------------------------------------------------------- staged manipulation
+
+class staged_manipulation(ManagerTermBase):
+    """Sequentially gated pick-and-place economy: reach -> stable bilateral
+    contact -> secure grasp -> transport -> sustained hold at the target.
+
+    Per env the FRONTIER (highest stage reached this episode) is a ratchet;
+    entry into a new frontier pays a one-time bonus, per-step income exists
+    only for the frontier's own behavior with a bounded kernel (a camped
+    stage cannot out-earn advancing), transport progress is clipped and
+    potential-based, and the largest income — the hold annuity plus the
+    one-time completion bonus — exists only while the completed state is
+    actually held. Losing the grasp after stage 2 pays a one-time fine and
+    resets the dwell, not the frontier.
+
+    Stages: 0 reach; 1 bilateral contact (opposed pinch sustained
+    ``contact_steps``); 2 secure grasp (opposed AND the object displaced
+    ``lift_eps`` from its spawn); 3 transport (secure AND within
+    ``transport_radius`` of the commanded pose); 4 hold (within ``pos_tol``,
+    upright, opposed), completed after ``dwell_steps`` of consecutive hold.
+
+    Logged through the pose command's metrics dict: ``stage`` (mean
+    frontier), ``dwell`` (mean normalized dwell), ``drop`` (per-step drop
+    fraction), ``completed`` (fraction of envs past the dwell).
+    """
+
+    def __init__(self, cfg, env: ManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        n, dev = env.num_envs, env.device
+        self.frontier = torch.zeros(n, dtype=torch.long, device=dev)
+        self._contact_count = torch.zeros(n, device=dev)
+        self._dwell = torch.zeros(n, device=dev)
+        self._completed = torch.zeros(n, dtype=torch.bool, device=dev)
+        self._was_opposed = torch.zeros(n, dtype=torch.bool, device=dev)
+        self._prev_dist = torch.full((n,), float("nan"), device=dev)
+
+    def reset(self, env_ids=None):
+        if env_ids is None:
+            env_ids = slice(None)
+        self.frontier[env_ids] = 0
+        self._contact_count[env_ids] = 0.0
+        self._dwell[env_ids] = 0.0
+        self._completed[env_ids] = False
+        self._was_opposed[env_ids] = False
+        self._prev_dist[env_ids] = float("nan")
+
+    def __call__(
+        self,
+        env: ManagerBasedRLEnv,
+        command_name: str,
+        sensor_name: str = "pad_object_contact",
+        contact_threshold: float = 0.5,
+        contact_steps: int = 3,
+        lift_eps: float = 0.01,
+        transport_radius: float = 0.10,
+        pos_tol: float = 0.05,
+        min_up_cos: float = 0.87,
+        dwell_steps: int = 30,
+        object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+        robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    ) -> torch.Tensor:
+        obj = env.scene[object_cfg.name]
+        robot = env.scene[robot_cfg.name]
+        command = env.command_manager.get_command(command_name)
+        des_pos_w, _ = combine_frame_transforms(
+            robot.data.root_pos_w.torch, robot.data.root_quat_w.torch, command[:, :3]
+        )
+        pos = obj.data.root_pos_w.torch
+        dist = torch.linalg.vector_norm(des_pos_w - pos, dim=1).nan_to_num(nan=1e3)
+        quat = obj.data.root_quat_w.torch
+        up_z = 1.0 - 2.0 * (quat[:, 0] * quat[:, 0] + quat[:, 1] * quat[:, 1])
+        spawn_w = env.scene.env_origins + obj.data.default_root_state.torch[:, :3]
+        displaced = torch.linalg.vector_norm(pos - spawn_w, dim=1) > lift_eps
+
+        opposed = opposed_grasp(env, sensor_name, contact_threshold)
+        self._contact_count = torch.where(opposed, self._contact_count + 1.0, torch.zeros_like(self._contact_count))
+        stable_contact = self._contact_count >= contact_steps
+        secure = opposed & displaced
+        in_transport = secure & (dist < transport_radius)
+        holding = opposed & (dist < pos_tol) & (up_z > min_up_cos)
+
+        stage_now = (
+            stable_contact.long() + secure.long() + in_transport.long() + holding.long()
+        )
+        advanced = stage_now > self.frontier
+        bonus_table = torch.tensor([0.0, 2.0, 3.0, 5.0, 8.0], device=env.device)
+        # pay every newly crossed stage's bonus (a clean pinch-lift can cross
+        # two frontiers in one step)
+        entry_bonus = torch.zeros_like(dist)
+        for k in range(1, 5):
+            entry_bonus += torch.where(
+                advanced & (stage_now >= k) & (self.frontier < k), bonus_table[k], torch.zeros_like(dist)
+            )
+        self.frontier = torch.maximum(self.frontier, stage_now)
+
+        # grasp loss after the secure stage: one-time fine, dwell resets
+        dropped = self._was_opposed & ~opposed & (self.frontier >= 2)
+        self._was_opposed = opposed
+
+        # transport progress: clipped potential toward the commanded pose,
+        # only while the object is actually held
+        delta = (self._prev_dist - dist).nan_to_num(nan=0.0)
+        self._prev_dist = dist
+        progress = torch.where(secure, delta.clamp(-0.01, 0.01) / 0.01, torch.zeros_like(delta))
+
+        # hold annuity ramps with dwell; completion latches once
+        self._dwell = torch.where(holding, self._dwell + 1.0, torch.zeros_like(self._dwell))
+        just_completed = ~self._completed & (self._dwell >= dwell_steps)
+        self._completed |= just_completed
+        hold_income = holding.float() * (self._dwell / dwell_steps).clamp(max=1.0) * 3.0
+
+        reward = (
+            entry_bonus
+            + progress
+            + hold_income
+            + just_completed.float() * 20.0
+            - dropped.float() * 2.0
+        )
+
+        cmd_term = env.command_manager.get_term(command_name)
+        cmd_term.metrics["stage"] = self.frontier.float()
+        cmd_term.metrics["dwell"] = (self._dwell / dwell_steps).clamp(max=1.0)
+        cmd_term.metrics["drop"] = dropped.float()
+        cmd_term.metrics["completed"] = self._completed.float()
+        return _finite(reward)
+
+
+def validate_object_spawn(
+    env: ManagerBasedRLEnv,
+    env_ids: torch.Tensor,
+    pos_tol: float = 0.02,
+    min_z: float = 0.0,
+    command_name: str = "object_pose",
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> None:
+    """Reset validation: reject and repair invalid object spawns.
+
+    Runs LAST in the reset event order. Checks the freshly reset object
+    root for finiteness, distance from the configured default spawn, and
+    support height; any invalid env has the canonical default state
+    re-written verbatim. The invalid fraction is logged through the pose
+    command's metrics as ``reset_invalid`` — a nonzero value is a scene or
+    reset-map bug (the buried-mug class), and it is loud, not silent.
+    """
+    obj = env.scene[object_cfg.name]
+    default = obj.data.default_root_state.torch[env_ids].clone()
+    expected_w = default[:, :3] + env.scene.env_origins[env_ids]
+    pos = obj.data.root_pos_w.torch[env_ids]
+    quat = obj.data.root_quat_w.torch[env_ids]
+    finite = torch.isfinite(pos).all(dim=1) & torch.isfinite(quat).all(dim=1)
+    near = torch.linalg.vector_norm(pos - expected_w, dim=1) < pos_tol
+    supported = (pos[:, 2] - env.scene.env_origins[env_ids, 2]) >= min_z
+    invalid = ~(finite & near & supported)
+    if invalid.any():
+        bad_ids = env_ids[invalid]
+        state = obj.data.default_root_state.torch[bad_ids].clone()
+        state[:, :3] += env.scene.env_origins[bad_ids]
+        obj.write_root_pose_to_sim(state[:, :7], env_ids=bad_ids)
+        obj.write_root_velocity_to_sim(torch.zeros_like(state[:, 7:13]), env_ids=bad_ids)
+    try:
+        env.command_manager.get_term(command_name).metrics["reset_invalid"] = torch.zeros(
+            env.num_envs, device=env.device
+        ).index_fill_(0, env_ids[invalid], 1.0)
+    except Exception:
+        pass

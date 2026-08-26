@@ -250,58 +250,111 @@ def object_position_in_robot_root_frame(
 
 from isaaclab.utils.configclass import configclass  # noqa: E402
 
+# Tracking band [m]: the slide's success currency is the fraction of the
+# trajectory the mug spends inside this planar radius of the CURRENT goal.
+TRACK_BAND = 0.025
+
 
 class MovingGoalCommand(UniformPoseCommand):  # noqa: F405
-    """Pose command that GLIDES from a start point to the sampled goal at a
-    fixed speed, pacing the slide.
+    """Pose command that follows a per-episode randomized trajectory program
+    from the fixed start to a sampled endpoint, pacing the slide.
 
-    The v1 fixed goal let the policy pick the push speed — an unphysical
-    smack-and-coast solves it. Here the observed command starts on the mug
-    and walks to the final target at ``goal_speed``; income through the
-    command-tracking kernel exists only near the CURRENT goal, so the mug
-    must follow the pace. A parked mug's income vanishes as the goal walks
-    away — the moving goal itself closes v1's parked-mug exploit, so v2
-    needs no progress ratchet.
+    Per env and episode the program samples: endpoint (via cfg ranges — the
+    direction randomization), glide speed, start delay (phase), an optional
+    pause window, and an optional reversal window. The observed command
+    follows the program; income through the tracking terms exists only near
+    the CURRENT goal, so the policy must follow whatever pace and shape the
+    program takes — parking, smacking, and endpoint-camping all decouple
+    from income by construction.
 
-    Error/success metrics measure the OBJECT against the FINAL target with
-    tilt-only orientation (the mug may spin about z while sliding), so
-    ``Metrics/success_rate`` reads "delivered upright at the end spot".
+    Logged metrics: ``position_error`` (object to CURRENT goal),
+    ``orientation_error`` (tilt), ``in_band`` (mean fraction of envs inside
+    the tracking band — its iteration mean IS time-in-band), and the sticky
+    endpoint success (auxiliary; NOT the task's success definition).
     """
 
     def __init__(self, cfg, env):
         super().__init__(cfg, env)
         self._object = env.scene["object"]
         self._step_dt = env.step_dt
-        self._final = torch.zeros(self.num_envs, 3, device=self.device)
+        n = self.num_envs
+        dev = self.device
+        self._start = torch.tensor(cfg.start_pos, device=dev).expand(n, 3).contiguous()
+        self._end = torch.zeros(n, 3, device=dev)
+        self._dir = torch.zeros(n, 2, device=dev)
+        self._length = torch.ones(n, device=dev)
+        self._speed = torch.zeros(n, device=dev)
+        self._t0 = torch.zeros(n, device=dev)
+        self._pause0 = torch.full((n,), 1e9, device=dev)
+        self._pause1 = torch.full((n,), 1e9, device=dev)
+        self._rev0 = torch.full((n,), 1e9, device=dev)
+        self._rev1 = torch.full((n,), 1e9, device=dev)
+        self._t = torch.zeros(n, device=dev)
+        self._s = torch.zeros(n, device=dev)
+        self.goal_vel = torch.zeros(n, 2, device=dev)
 
     def _resample_command(self, env_ids):
         super()._resample_command(env_ids)
-        self._final[env_ids] = self.pose_command_b[env_ids, :3].clone()
-        start = torch.tensor(self.cfg.start_pos, device=self.device, dtype=self.pose_command_b.dtype)
-        self.pose_command_b[env_ids, :3] = start
+        self._end[env_ids] = self.pose_command_b[env_ids, :3].clone()
+        delta = self._end[env_ids, :2] - self._start[env_ids, :2]
+        length = torch.linalg.vector_norm(delta, dim=1).clamp(min=1e-6)
+        self._length[env_ids] = length
+        self._dir[env_ids] = delta / length.unsqueeze(1)
+        n = len(env_ids) if not isinstance(env_ids, slice) else self.num_envs
+        dev = self.device
+        r = self.cfg
+        self._speed[env_ids] = r.speed_range[0] + (r.speed_range[1] - r.speed_range[0]) * torch.rand(n, device=dev)
+        self._t0[env_ids] = r.start_delay_range[0] + (r.start_delay_range[1] - r.start_delay_range[0]) * torch.rand(
+            n, device=dev
+        )
+        # Optional pause and reversal windows, each with independent
+        # probability; a window of zero length is a no-op.
+        travel = self._length[env_ids] / self._speed[env_ids]
+        pause_on = (torch.rand(n, device=dev) < r.pause_prob).float()
+        p0 = self._t0[env_ids] + torch.rand(n, device=dev) * travel
+        plen = pause_on * (r.pause_len_range[0] + (r.pause_len_range[1] - r.pause_len_range[0]) * torch.rand(n, device=dev))
+        self._pause0[env_ids] = p0
+        self._pause1[env_ids] = p0 + plen
+        rev_on = (torch.rand(n, device=dev) < r.reversal_prob).float()
+        r0 = self._t0[env_ids] + torch.rand(n, device=dev) * travel
+        rlen = rev_on * (r.reversal_len_range[0] + (r.reversal_len_range[1] - r.reversal_len_range[0]) * torch.rand(n, device=dev))
+        self._rev0[env_ids] = r0
+        self._rev1[env_ids] = r0 + rlen
+        self._t[env_ids] = 0.0
+        self._s[env_ids] = 0.0
+        self.pose_command_b[env_ids, :3] = self._start[env_ids]
 
     def _update_command(self):
         super()._update_command()
-        delta = self._final[:, :2] - self.pose_command_b[:, :2]
-        dist = torch.linalg.vector_norm(delta, dim=1, keepdim=True)
-        step = torch.clamp(dist, max=self.cfg.goal_speed * self._step_dt)
-        self.pose_command_b[:, :2] += delta / dist.clamp(min=1e-9) * step
+        self._t += self._step_dt
+        moving = self._t >= self._t0
+        paused = (self._t >= self._pause0) & (self._t < self._pause1)
+        reversing = (self._t >= self._rev0) & (self._t < self._rev1)
+        rate = self._speed * moving.float() * (~paused).float() * torch.where(reversing, -1.0, 1.0)
+        self._s = (self._s + rate * self._step_dt).clamp(min=0.0)
+        done = self._s >= self._length
+        self._s = torch.minimum(self._s, self._length)
+        rate = torch.where(done | ~moving | paused, torch.zeros_like(rate), rate)
+        self.pose_command_b[:, :2] = self._start[:, :2] + self._dir * self._s.unsqueeze(1)
+        self.goal_vel = self._dir * rate.unsqueeze(1)
 
     def _compute_error(self):
-        # Refresh the world-frame command like the base does: the debug
-        # marker reads pose_command_w, so this line is what makes the goal
-        # visibly GLIDE in the viewer and the training clips.
+        # World-frame command refresh: the debug marker reads pose_command_w,
+        # so this is what makes the goal visibly follow its program.
         self.pose_command_w[:, :3], self.pose_command_w[:, 3:] = combine_frame_transforms(
             self.robot.data.root_pos_w.torch,
             self.robot.data.root_quat_w.torch,
             self.pose_command_b[:, :3],
             self.pose_command_b[:, 3:],
         )
-        # Error and success measure the FINAL target, not the gliding one.
-        des_pos_w, _ = combine_frame_transforms(
-            self.robot.data.root_pos_w.torch, self.robot.data.root_quat_w.torch, self._final
+        # Error against the CURRENT goal; the band metric shares it.
+        position_error = torch.linalg.vector_norm(
+            self.pose_command_w[:, :3] - self._object.data.root_pos_w.torch, dim=1
         )
-        position_error = torch.linalg.vector_norm(des_pos_w - self._object.data.root_pos_w.torch, dim=1)
+        band = torch.linalg.vector_norm(
+            self.pose_command_w[:, :2] - self._object.data.root_pos_w.torch[:, :2], dim=1
+        ) < TRACK_BAND
+        self.metrics["in_band"] = band.float()
         quat = self._object.data.root_quat_w.torch
         up = 1.0 - 2.0 * (quat[:, 0] * quat[:, 0] + quat[:, 1] * quat[:, 1])
         tilt = torch.acos(up.clamp(-1.0, 1.0))
@@ -310,64 +363,110 @@ class MovingGoalCommand(UniformPoseCommand):  # noqa: F405
 
 @configclass  # noqa: F405
 class MovingPoseCommandCfg(UniformPoseCommandCfg):  # noqa: F405
-    """Cfg for :class:`MovingGoalCommand`: the ranges sample the FINAL goal;
-    the command itself starts at ``start_pos`` and walks there."""
+    """Cfg for :class:`MovingGoalCommand`: ranges sample the ENDPOINT; the
+    trajectory program starts at ``start_pos`` and is randomized per episode."""
 
     class_type: type = MovingGoalCommand
     start_pos: tuple[float, float, float] = (0.0, 0.0, 0.0)
-    goal_speed: float = 0.08
+    speed_range: tuple[float, float] = (0.05, 0.12)
+    start_delay_range: tuple[float, float] = (0.0, 1.0)
+    pause_prob: float = 0.5
+    pause_len_range: tuple[float, float] = (0.3, 1.5)
+    reversal_prob: float = 0.3
+    reversal_len_range: tuple[float, float] = (0.3, 0.8)
 
 
-def _fixed_goal_gate_and_distance(
+def _cmd(env: ManagerBasedRLEnv, command_name: str) -> MovingGoalCommand:
+    return env.command_manager.get_term(command_name)
+
+
+def goal_velocity(env: ManagerBasedRLEnv, command_name: str) -> torch.Tensor:
+    """The current goal's planar velocity [m/s] — the pacing signal. A policy
+    cannot match a pace it cannot observe."""
+    return _finite(_cmd(env, command_name).goal_vel)
+
+
+def goal_velocity_matching(
     env: ManagerBasedRLEnv,
-    goal_pos: tuple[float, float],
-    z_max: float,
-    min_up_cos: float,
-    max_speed: float,
-    object_cfg: SceneEntityCfg,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Planar distance to an env-frame fixed point plus the slide's income
-    gate (upright, on table, calm). Command frame IS the env frame
-    (probe_goal_map), so the fixed point lives in env coordinates."""
+    std: float,
+    command_name: str,
+    z_max: float = 0.06,
+    min_up_cos: float = 0.87,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """Pays for matching the goal's planar velocity, upright and on the
+    table: following the pace, not just standing near the path."""
     obj = env.scene[object_cfg.name]
-    goal = torch.tensor(goal_pos, device=env.device, dtype=torch.float32)
-    des_xy = env.scene.env_origins[:, :2] + goal
-    distance = torch.norm(des_xy - obj.data.root_pos_w.torch[:, :2], dim=1)
+    dv = torch.linalg.vector_norm(obj.data.root_lin_vel_w.torch[:, :2] - _cmd(env, command_name).goal_vel, dim=1)
     quat = obj.data.root_quat_w.torch
     up_z = 1.0 - 2.0 * (quat[:, 0] * quat[:, 0] + quat[:, 1] * quat[:, 1])
     z_local = obj.data.root_pos_w.torch[:, 2] - env.scene.env_origins[:, 2]
-    gate = (up_z > min_up_cos) & (z_local < z_max) & _object_calm(env, max_speed, object_cfg)
-    return gate, distance
+    gate = (up_z > min_up_cos) & (z_local < z_max)
+    return _finite(gate * (1.0 - torch.tanh(dv / std)))
 
 
-def object_fixed_goal_distance_on_table(
-    env: ManagerBasedRLEnv,
-    std: float,
-    goal_pos: tuple[float, float],
-    z_max: float = 0.06,
-    min_up_cos: float = 0.87,
-    max_speed: float = float("inf"),
-    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
-) -> torch.Tensor:
-    """v1's arrival kernel against the FINAL target: with a moving command
-    the arrival annuity must not pay mid-path, so it reads the end spot."""
-    gate, distance = _fixed_goal_gate_and_distance(env, goal_pos, z_max, min_up_cos, max_speed, object_cfg)
-    return _finite(gate * (1.0 - torch.tanh(distance / std)))
+class object_goal_progress_clipped(ManagerTermBase):
+    """Clipped potential-based progress toward the CURRENT goal: the per-step
+    change of planar goal distance, clipped to ``max_step`` and normalized to
+    [-1, 1]. Clipping bounds what a fling can earn in one step; the
+    potential-based form makes camping worthless and regression negative."""
+
+    def __init__(self, cfg, env: ManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        self._prev = torch.full((env.num_envs,), float("nan"), device=env.device)
+
+    def reset(self, env_ids=None):
+        if env_ids is None:
+            env_ids = slice(None)
+        self._prev[env_ids] = float("nan")
+
+    def __call__(
+        self,
+        env: ManagerBasedRLEnv,
+        command_name: str,
+        max_step: float = 0.01,
+        object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    ) -> torch.Tensor:
+        obj = env.scene[object_cfg.name]
+        cmd = _cmd(env, command_name)
+        dist = torch.linalg.vector_norm(
+            cmd.pose_command_w[:, :2] - obj.data.root_pos_w.torch[:, :2], dim=1
+        ).nan_to_num(nan=float("nan"))
+        delta = (self._prev - dist).nan_to_num(nan=0.0)
+        self._prev = dist
+        return _finite(delta.clamp(-max_step, max_step) / max_step)
 
 
-def arm_settled_at_fixed_goal(
-    env: ManagerBasedRLEnv,
-    std: float,
-    vel_std: float,
-    goal_pos: tuple[float, float],
-    z_max: float = 0.06,
-    min_up_cos: float = 0.87,
-    max_speed: float = float("inf"),
-    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
-    arm_cfg: SceneEntityCfg = SceneEntityCfg("robot", joint_names="follower_left_joint_[0-5]"),
-) -> torch.Tensor:
-    """v1's post-delivery rest against the FINAL target (same design notes)."""
-    gate, distance = _fixed_goal_gate_and_distance(env, goal_pos, z_max, min_up_cos, max_speed, object_cfg)
-    robot = env.scene["robot"]
-    speed = torch.linalg.vector_norm(robot.data.joint_vel.torch[:, arm_cfg.joint_ids], dim=1)
-    return _finite(gate * (1.0 - torch.tanh(distance / std)) * (1.0 - torch.tanh(speed / vel_std)))
+class in_band_sustained(ManagerTermBase):
+    """The band annuity: pays inside the tracking band, scaled up by how long
+    the mug has STAYED inside (consecutive steps / ``ramp_steps``, capped at
+    1) — sustained tracking earns the full rate, a drive-by earns a sliver.
+    Gated upright and on the table like every income term."""
+
+    def __init__(self, cfg, env: ManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        self._count = torch.zeros(env.num_envs, device=env.device)
+
+    def reset(self, env_ids=None):
+        if env_ids is None:
+            env_ids = slice(None)
+        self._count[env_ids] = 0.0
+
+    def __call__(
+        self,
+        env: ManagerBasedRLEnv,
+        command_name: str,
+        ramp_steps: int = 30,
+        z_max: float = 0.06,
+        min_up_cos: float = 0.87,
+        object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    ) -> torch.Tensor:
+        obj = env.scene[object_cfg.name]
+        cmd = _cmd(env, command_name)
+        dist = torch.linalg.vector_norm(cmd.pose_command_w[:, :2] - obj.data.root_pos_w.torch[:, :2], dim=1)
+        quat = obj.data.root_quat_w.torch
+        up_z = 1.0 - 2.0 * (quat[:, 0] * quat[:, 0] + quat[:, 1] * quat[:, 1])
+        z_local = obj.data.root_pos_w.torch[:, 2] - env.scene.env_origins[:, 2]
+        inside = (dist < TRACK_BAND) & (up_z > min_up_cos) & (z_local < z_max)
+        self._count = torch.where(inside, self._count + 1.0, torch.zeros_like(self._count))
+        return _finite(inside.float() * (self._count / ramp_steps).clamp(max=1.0))
