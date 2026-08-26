@@ -89,7 +89,7 @@ def main() -> int:
         succ_total = 0
         div_total = 0
         epi_total = 0
-        obs, _ = env_w.get_observations()
+        obs, _ = env_w.reset()
         with torch.inference_mode():
             while epi_total < args_cli.episodes:
                 # Roll one full synchronized episode; the hold window is the
