@@ -190,44 +190,10 @@ class SlideRewardsCfg:
         },
         weight=5.0,
     )
-    # Tight arrival kernel that only pays AT the FINAL target, same gates —
-    # it must not pay mid-path, so it reads the fixed end spot.
-    object_goal_tracking_fine_grained = RewTerm(
-        func=mdp.object_fixed_goal_distance_on_table,
-        params={
-            "std": 0.05,
-            "goal_pos": FINAL_GOAL,
-            "min_up_cos": 0.6,
-            "max_speed": PUSH_SPEED_MAX,
-        },
-        weight=16.0,
-    )
-    # Post-delivery rest goal. After arrival nothing constrained the ARM: the
-    # mug annuity pays regardless of what the arm does, and the action
-    # penalties are orders below it, so a finished arm wanders on residual
-    # exploration. This pays the arrival annuity's own gates times arm
-    # stillness -- income exists only on top of a completed, settled delivery,
-    # so it cannot fund hovering short of one, and at weight 2 it stays far
-    # below the arrival term (16), so a calmer arm is never worth
-    # surrendering the delivery itself.
-    # vel_std sits at the MEASURED median arm speed of a trained slide policy
-    # (|qd| L2 over the six arm joints: p50 4.2 rad/s deterministic, 5.3
-    # sampled). The kernel must place current behavior on its slope, not its
-    # saturated tail: at the original 0.5 every policy's speeds read as fully
-    # unstill, the term paid ~0 in every run, and no gradient toward slowing
-    # ever existed -- flail was baked into the MEAN policy unopposed.
-    arm_settled = RewTerm(
-        func=mdp.arm_settled_at_fixed_goal,
-        weight=2.0,
-        params={
-            "std": 0.05,
-            "vel_std": 4.0,
-            "goal_pos": FINAL_GOAL,
-            "min_up_cos": 0.6,
-            "max_speed": PUSH_SPEED_MAX,
-        },
-    )
-
+    # There is NO final-anchored income, by ruling: any term that pays for
+    # being at the endpoint pays MORE for arriving early, which the
+    # expected-value arithmetic showed makes whack-it-across the optimum.
+    # Tracking the CURRENT goal is the entire objective.
     # Scraping or pressing the tabletop with any robot body is never part of
     # a correct push.
     table_scrape = RewTerm(

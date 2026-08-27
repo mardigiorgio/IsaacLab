@@ -277,11 +277,40 @@ class MovingGoalCommand(ObjectPoseSuccessCommand):
     ``Metrics/success_rate`` reads "delivered upright at the end spot".
     """
 
+    # Success = TRACKED THE ENTIRE TIME: the fraction of the episode's
+    # steps spent inside the pose gates must reach this, judged at episode
+    # end (and only for episodes that ran long enough to mean anything).
+    TRACK_FRACTION_MIN = 0.95
+    MIN_JUDGED_STEPS = 150
+
     def __init__(self, cfg, env):
         super().__init__(cfg, env)
         self._object = env.scene["object"]
         self._step_dt = env.step_dt
         self._final = torch.zeros(self.num_envs, 3, device=self.device)
+        self._in_steps = torch.zeros(self.num_envs, device=self.device)
+        self._steps = torch.zeros(self.num_envs, device=self.device)
+
+    def reset(self, env_ids=None):
+        out = super().reset(env_ids)
+        ids = slice(None) if env_ids is None else env_ids
+        self._in_steps[ids] = 0.0
+        self._steps[ids] = 0.0
+        return out
+
+    def _update_metrics(self):
+        position_error, orientation_error = self._compute_error()
+        self.metrics["position_error"] = position_error
+        self.metrics["orientation_error"] = orientation_error
+        if self._track_success:
+            inside = self._compute_success(position_error, orientation_error)
+            self._in_steps += inside.float()
+            self._steps += 1.0
+            fraction = self._in_steps / self._steps.clamp(min=1.0)
+            self.metrics["tracked_fraction"] = fraction
+            # assignment, not a sticky OR: the episode-end value is the
+            # verdict, logged by the reset machinery
+            self._succeeded = (fraction >= self.TRACK_FRACTION_MIN) & (self._steps >= self.MIN_JUDGED_STEPS)
 
     def _resample_command(self, env_ids):
         super()._resample_command(env_ids)
@@ -327,56 +356,3 @@ class MovingPoseCommandCfg(UniformPoseCommandCfg):  # noqa: F405
     goal_speed: float = 0.08
 
 
-def _fixed_goal_gate_and_distance(
-    env: ManagerBasedRLEnv,
-    goal_pos: tuple[float, float],
-    z_max: float,
-    min_up_cos: float,
-    max_speed: float,
-    object_cfg: SceneEntityCfg,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Planar distance to an env-frame fixed point plus the slide's income
-    gate (upright, on table, calm). Command frame IS the env frame
-    (probe_goal_map), so the fixed point lives in env coordinates."""
-    obj = env.scene[object_cfg.name]
-    goal = torch.tensor(goal_pos, device=env.device, dtype=torch.float32)
-    des_xy = env.scene.env_origins[:, :2] + goal
-    distance = torch.norm(des_xy - obj.data.root_pos_w.torch[:, :2], dim=1)
-    quat = obj.data.root_quat_w.torch
-    up_z = 1.0 - 2.0 * (quat[:, 0] * quat[:, 0] + quat[:, 1] * quat[:, 1])
-    z_local = obj.data.root_pos_w.torch[:, 2] - env.scene.env_origins[:, 2]
-    gate = (up_z > min_up_cos) & (z_local < z_max) & _object_calm(env, max_speed, object_cfg)
-    return gate, distance
-
-
-def object_fixed_goal_distance_on_table(
-    env: ManagerBasedRLEnv,
-    std: float,
-    goal_pos: tuple[float, float],
-    z_max: float = 0.06,
-    min_up_cos: float = 0.87,
-    max_speed: float = float("inf"),
-    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
-) -> torch.Tensor:
-    """v1's arrival kernel against the FINAL target: with a moving command
-    the arrival annuity must not pay mid-path, so it reads the end spot."""
-    gate, distance = _fixed_goal_gate_and_distance(env, goal_pos, z_max, min_up_cos, max_speed, object_cfg)
-    return _finite(gate * (1.0 - torch.tanh(distance / std)))
-
-
-def arm_settled_at_fixed_goal(
-    env: ManagerBasedRLEnv,
-    std: float,
-    vel_std: float,
-    goal_pos: tuple[float, float],
-    z_max: float = 0.06,
-    min_up_cos: float = 0.87,
-    max_speed: float = float("inf"),
-    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
-    arm_cfg: SceneEntityCfg = SceneEntityCfg("robot", joint_names="follower_left_joint_[0-5]"),
-) -> torch.Tensor:
-    """v1's post-delivery rest against the FINAL target (same design notes)."""
-    gate, distance = _fixed_goal_gate_and_distance(env, goal_pos, z_max, min_up_cos, max_speed, object_cfg)
-    robot = env.scene["robot"]
-    speed = torch.linalg.vector_norm(robot.data.joint_vel.torch[:, arm_cfg.joint_ids], dim=1)
-    return _finite(gate * (1.0 - torch.tanh(distance / std)) * (1.0 - torch.tanh(speed / vel_std)))
