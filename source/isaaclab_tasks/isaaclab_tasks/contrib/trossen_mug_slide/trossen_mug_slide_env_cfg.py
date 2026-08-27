@@ -65,9 +65,9 @@ PUSH_SPEED_MAX = 0.75
 # command frame IS the env frame. The hardware protocol is a single
 # tape-measured target.
 FINAL_GOAL = (0.285, 0.0)
-# Goal glide speed [m/s], Marco-confirmed: 0.305 m of travel in ~3.1 s,
+# Goal glide speed [m/s], Marco-confirmed: 0.305 m of travel in ~1.5 s,
 # inside the 6 s episode with reach and settle margin.
-GOAL_SPEED = 0.10
+GOAL_SPEED = 0.20
 
 
 @configclass
