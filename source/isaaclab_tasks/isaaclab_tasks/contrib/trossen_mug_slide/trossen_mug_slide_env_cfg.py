@@ -67,7 +67,7 @@ PUSH_SPEED_MAX = 0.75
 FINAL_GOAL = (0.285, 0.0)
 # Goal glide speed [m/s]: 0.305 m of travel in ~3.8 s, inside the 6 s episode
 # with reach and settle margin. PROVISIONAL until Marco confirms the number.
-GOAL_SPEED = 0.08
+GOAL_SPEED = 0.10
 
 
 @configclass
