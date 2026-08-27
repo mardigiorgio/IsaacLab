@@ -203,8 +203,15 @@ class TrossenPlatePickEnvCfg(TrossenMugLiftEnvCfg):
             params={"std": 0.2, "rim_height": PLATE_RIM_HEIGHT, "rim_radius": PLATE_RIM_RADIUS},
             weight=3.0,
         )
-        # Actions and exploration come from the inherited lift cfgs — the
-        # campaign's ONE action space and ONE exploration setting.
+        # The plate's wide-search actions: the pre-grasp is a wrist-
+        # orientation problem, so the distal (doorknob) axes carry the
+        # widest band and the fingers command the full stroke.
+        self.actions.arm_action.scale = {
+            "follower_left_joint_[0-2]": 0.5,
+            "follower_left_joint_3": 1.0,
+            "follower_left_joint_[4-5]": 1.5,
+        }
+        self.actions.gripper_action.scale = 0.15
         # Metrics/success_rate comes from the inherited lift command cfg,
         # which already wires the shared ObjectPoseSuccessCommand and gates.
         # BOOTSTRAP MODE: no bank. The generated pose above predates the

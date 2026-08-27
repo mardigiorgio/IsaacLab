@@ -85,26 +85,34 @@ def main() -> int:
     for t in ("lift", "flip"):
         check(tuple(tasks[t][0].scene.object.init_state.pos[:2]) == (sx, sy), f"{t}: mug spawn differs from slide")
 
-    # ONE exploration setting and ONE action space, by ruling (2026-08-25):
-    # full exploration, position-controlled gripper, identical scales.
-    ref_env, ref_agent = tasks["lift"]
-    ref_dist = ref_agent.actor.distribution_cfg
-    check(ref_dist.init_std == 1.5 and tuple(ref_dist.std_range) == (0.05, 3.0), "lift: exploration not the full setting")
+    # Per-task recipes, by ruling (2026-08-27): the lift keeps its TESTED
+    # pinch recipe ("lift literally works, we tested it"); wide-search
+    # settings belong to the discovery tasks. Uniformity across tasks was
+    # measured to BREAK the lift; these are the sanctioned values.
+    WIDE_ARM = {
+        "follower_left_joint_[0-2]": 0.5,
+        "follower_left_joint_3": 1.0,
+        "follower_left_joint_[4-5]": 1.5,
+    }
+    EXPECT = {
+        "lift": {"std": (0.5, (0.05, 1.5)), "arm": 0.1, "grip": 0.05},
+        "slide": {"std": (1.5, (0.05, 3.0)), "arm": WIDE_ARM, "grip": 0.15},
+        "plate": {"std": (1.5, (0.05, 3.0)), "arm": WIDE_ARM, "grip": 0.15},
+        "flip": {"std": (1.0, (0.05, 2.5)), "arm": WIDE_ARM, "grip": 0.15},
+    }
     for t, (env, agent) in tasks.items():
+        exp = EXPECT[t]
         d = agent.actor.distribution_cfg
         check(
-            d.init_std == ref_dist.init_std and tuple(d.std_range) == tuple(ref_dist.std_range),
-            f"{t}: exploration differs from the campaign setting",
+            d.init_std == exp["std"][0] and tuple(d.std_range) == exp["std"][1],
+            f"{t}: exploration differs from its sanctioned recipe",
         )
         check(
             type(env.actions.gripper_action).__name__ == "JointPositionActionCfg",
             f"{t}: gripper is not position-controlled",
         )
-        check(env.actions.gripper_action.scale == 0.15, f"{t}: gripper scale != 0.15")
-        check(
-            env.actions.arm_action.scale == ref_env.actions.arm_action.scale,
-            f"{t}: arm action scale differs from the campaign scheme",
-        )
+        check(env.actions.gripper_action.scale == exp["grip"], f"{t}: gripper scale != {exp['grip']}")
+        check(env.actions.arm_action.scale == exp["arm"], f"{t}: arm scale differs from its sanctioned recipe")
 
     # lift starts pinned: zero home scatter, exact bank poses
     lift_ev = tasks["lift"][0].events
