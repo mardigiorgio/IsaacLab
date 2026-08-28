@@ -23,3 +23,9 @@ class TrossenMugHangPPORunnerCfg(TrossenMugLiftPPORunnerCfg):
         self.algorithm.gamma = 0.99
         self.actor.obs_normalization = True
         self.critic.obs_normalization = True
+        # Exploration FLOOR 0.3 (was 0.05): under the staged economy nothing
+        # pays before the first grasp, so with a low floor PPO minimizes the
+        # action tax by collapsing sigma and the run dies doing nothing
+        # (measured: std 1.5 -> 0.06 by iter 1000, zero milestones). The floor
+        # keeps discovery alive until milestone income exists.
+        self.actor.distribution_cfg.std_range = (0.3, 3.0)

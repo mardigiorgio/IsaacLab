@@ -14,10 +14,12 @@ import torch
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils.math import quat_apply, quat_inv
 
-# Mug handle opening in the BODY frame (measured on TRI's mesh, 2026-08-24):
-# the loop spans x 0.043..0.0645, z 0.025..0.092, in the y=0 plane.
-_HANDLE_X = (0.043, 0.0645)
-_HANDLE_Z = (0.025, 0.092)
+# Mug handle opening in the BODY frame, measured on TRI's COLLISION tets
+# (2026-08-28; the earlier 0.043..0.0645 came from the VISUAL glTF and was
+# 5.5 mm too far out -- the authored goal put the branch OUTSIDE the loop and
+# every hang probe failed on geometry, not physics). 1 mm inset each side.
+_HANDLE_X = (0.0385, 0.0580)
+_HANDLE_Z = (0.031, 0.087)
 
 
 def branch_through_handle(
@@ -90,7 +92,7 @@ def hung_finished_at_pose(
 
 # Handle-loop center in the mug body frame: midpoint of the measured opening
 # (x 0.043..0.0645, z 0.025..0.092), on the handle plane.
-_LOOP_CENTER_B = (0.0538, 0.0, 0.0585)
+_LOOP_CENTER_B = (0.0483, 0.0, 0.0590)
 
 
 def loop_to_branch(
@@ -117,7 +119,13 @@ def loop_to_branch(
     closest = b0 + t.unsqueeze(-1) * ax
     d = torch.linalg.vector_norm(loop_w - closest, dim=-1)
     held = opposed_grasp(env, sensor_name, contact_threshold)
-    return held.float() * (1.0 - torch.tanh(d / std))
+    # PRESENTATION factor: the branch threads along the loop's NORMAL (body
+    # +Y), so proximity only pays times |axis . y_body| -- approaching the
+    # branch face-on earns, hovering beside it does not (proximity alone was
+    # farmed: high loop_to_branch with zero threading, run rx4ebi94).
+    y_w = quat_apply(q, torch.tensor([0.0, 1.0, 0.0], device=p.device, dtype=p.dtype).expand_as(p))
+    face_on = (y_w * ax).sum(dim=-1).abs()
+    return held.float() * (1.0 - torch.tanh(d / std)) * face_on
 
 
 def carry_orientation(
@@ -286,3 +294,141 @@ def metric_arm_at_finish(env):
 
 def metric_recontact(env):
     return _hang_state(env, "recontact").float()
+
+
+def early_release_penalty(
+    env,
+    sensor_name: str,
+    contact_threshold: float = 0.01,
+    z_air: float = 0.06,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """Dropping the mug BEFORE the place latch costs: pre-place, mug airborne
+    (above table height), and no pad on it. Prices the observed failure --
+    release at 4.0-4.7 s with the loop unseated, mug falling at the tree base."""
+    obj = env.scene[object_cfg.name]
+    z = obj.data.root_pos_w.torch[:, 2] - env.scene.env_origins[:, 2]
+    airborne = z > z_air
+    released = _pad_force_mags(env, sensor_name).max(dim=1).values < contact_threshold
+    return ((~_hang_state(env, "placed")) & airborne & released).float()
+
+
+# ============================================================ staged FSM (2026-08-26)
+from .hang_fsm_core import FsmInputs, HangFsm
+
+
+class hang_fsm(ManagerTermBase):
+    """Sim glue for :mod:`hang_fsm_core`: computes the physical predicates and
+    bounded progress scalars, delegates staging/milestones/PBRS to the core,
+    publishes the outputs on ``env._fsm``, and serves as the success
+    termination. Runs in the termination manager (before rewards)."""
+
+    def __init__(self, cfg, env):
+        super().__init__(cfg, env)
+        self.fsm = HangFsm(env.num_envs, env.device)
+
+    def reset(self, env_ids=None):
+        if env_ids is None:
+            env_ids = slice(None)
+        self.fsm.reset(env_ids)
+
+    def __call__(
+        self,
+        env,
+        pose: dict[str, float],
+        joint_tol: float,
+        branch_base_env: tuple[float, float, float],
+        branch_axis_env: tuple[float, float, float],
+        sensor_name: str,
+        tree_sensor_name: str,
+        contact_threshold: float = 0.01,
+        support_force: float = 0.05,
+        lift_z: float = 0.10,
+        max_speed: float = 0.1,
+    ) -> torch.Tensor:
+        obj = env.scene["object"]
+        robot = env.scene["robot"]
+        p = obj.data.root_pos_w.torch - env.scene.env_origins
+        q = obj.data.root_quat_w.torch
+        pad_f = _pad_force_mags(env, sensor_name)
+        held = (pad_f > contact_threshold).all(dim=1)
+        released = pad_f.max(dim=1).values < contact_threshold
+        lifted = p[:, 2] > lift_z
+        threaded = branch_through_handle(env, branch_base_env, branch_axis_env)
+        tf = env.scene[tree_sensor_name].data.net_forces_w
+        tree_touch = torch.linalg.vector_norm(tf.torch if hasattr(tf, "torch") else tf, dim=-1).max(dim=1).values > support_force
+        calm = torch.linalg.vector_norm(obj.data.root_lin_vel_w.torch, dim=-1) < max_speed
+        supported = threaded & tree_touch & calm
+        ids, _ = robot.find_joints(list(pose.keys()), preserve_order=True)
+        target = torch.tensor([pose[n] for n in pose], device=env.device)
+        arm_err = torch.abs(robot.data.joint_pos.torch[:, ids] - target).max(dim=1).values
+        arm_ok = arm_err < joint_tol
+
+        # bounded progress scalars
+        pad_ids, _ = robot.find_bodies("follower_left_gripper_.*")
+        pad_pos = robot.data.body_pos_w.torch[:, pad_ids]
+        d_reach = torch.linalg.vector_norm(pad_pos - obj.data.root_pos_w.torch[:, None, :], dim=-1).max(dim=-1).values
+        reach_prog = 1.0 - torch.tanh(d_reach / 0.4)
+        lift_prog = ((p[:, 2] - 0.021) / (lift_z - 0.021)).clamp(0.0, 1.0)
+        loop_w = p + quat_apply(q, torch.tensor(_LOOP_CENTER_B, device=p.device, dtype=p.dtype).expand_as(p))
+        b0 = torch.tensor(branch_base_env, device=p.device, dtype=p.dtype).expand_as(p)
+        ax = torch.tensor(branch_axis_env, device=p.device, dtype=p.dtype).expand_as(p)
+        t = ((loop_w - b0) * ax).sum(dim=-1).clamp(-0.005, 0.105)
+        d_loop = torch.linalg.vector_norm(loop_w - (b0 + t.unsqueeze(-1) * ax), dim=-1)
+        y_w = quat_apply(q, torch.tensor([0.0, 1.0, 0.0], device=p.device, dtype=p.dtype).expand_as(p))
+        insert_prog = (1.0 - torch.tanh(d_loop / 0.1)) * (y_w * ax).sum(dim=-1).abs()
+        gid, _ = robot.find_joints(["follower_left_left_carriage_joint"], preserve_order=True)
+        open_frac = (robot.data.joint_pos.torch[:, gid[0]] / 0.044).clamp(0.0, 1.0)
+        release_prog = 0.5 * open_frac + 0.5 * (self.fsm.persist.float() / 12.0).clamp(0.0, 1.0)
+        retreat_prog = 1.0 - torch.tanh(arm_err / 1.0)
+
+        out = self.fsm.step(FsmInputs(
+            held=held, lifted=lifted, threaded=threaded, supported=supported, released=released, arm_ok=arm_ok,
+            reach_prog=reach_prog, lift_prog=lift_prog, insert_prog=insert_prog,
+            release_prog=release_prog, retreat_prog=retreat_prog,
+        ))
+        out["regress_total"] = self.fsm.regressions
+        env._fsm = out
+        return out["success"]
+
+
+def _fsm_out(env, key, dim0=None):
+    st = getattr(env, "_fsm", None)
+    if st is None or key not in st:
+        return torch.zeros(env.num_envs, device=env.device)
+    v = st[key]
+    return v.float() if v.dtype != torch.float32 else v
+
+
+def fsm_milestones(env):
+    """One-shot milestone bonuses, paid on the advancement step only."""
+    return _fsm_out(env, "milestone_reward")
+
+
+def fsm_shaping(env):
+    """Strict PBRS within the active stage: gamma*Phi(s') - Phi(s)."""
+    return _fsm_out(env, "shaping")
+
+
+def fsm_metric_stage(env):
+    return _fsm_out(env, "stage")
+
+
+def fsm_metric_regressions(env):
+    return _fsm_out(env, "regressed")
+
+
+def fsm_metric_ms_grasp(env):
+    return _fsm_out(env, "new_milestones")[:, 0] if getattr(env, "_fsm", None) else torch.zeros(env.num_envs, device=env.device)
+
+
+def fsm_metric_ms_lift(env):
+    return _fsm_out(env, "new_milestones")[:, 1] if getattr(env, "_fsm", None) else torch.zeros(env.num_envs, device=env.device)
+
+
+def fsm_metric_ms_insert(env):
+    return _fsm_out(env, "new_milestones")[:, 2] if getattr(env, "_fsm", None) else torch.zeros(env.num_envs, device=env.device)
+
+
+def fsm_metric_ms_release(env):
+    return _fsm_out(env, "new_milestones")[:, 3] if getattr(env, "_fsm", None) else torch.zeros(env.num_envs, device=env.device)

@@ -43,6 +43,14 @@ DISPLAY_COLOR = (0.55, 0.40, 0.25)
 # with ~20% inward-wound faces on the trunk and branches; measured 2026-08-25).
 COLLISION_SOURCE = os.environ.get("MUG_TREE_COLLISION", "sdf")
 CYLINDER_SECTIONS = 32
+# Convex SEGMENTATION (final ruling 2026-08-26): every piece convex -- but a
+# hull PAIR emits one small contact manifold, and a mug hanging on one long
+# branch cylinder was retained by too few points (ejected 4/4; census: 11 vs
+# 35 retention contacts). Splitting each cylinder into short segments multiplies
+# the pairs, so the loop always spans several manifolds. Narrow phase stays
+# entirely on the convex path.
+BRANCH_SEGMENTS = 1  # single piece per cylinder (segmentation and sphere/capsule variants stay as probes)
+TRUNK_SEGMENTS = 1
 
 
 def _cylinder_mesh(pos, rpy, radius, length) -> trimesh.Trimesh:
@@ -116,18 +124,83 @@ def main():
         n_col = 1
     else:
         n_col = 0
-        for name, (pos, rpy, radius, length) in TRI_COLLISION_CYLINDERS.items():
-            # convexHull BY ORDER (2026-08-25): each piece is one closed
-            # cylinder, so the hull is shape-identical. Known trade, measured
-            # the same day: the hull narrow phase emits fewer contacts on the
-            # loop-on-branch pair and the drop-test hang did not survive at
-            # stiffness 1e5 (2/2 slid off; raw triangles held). The ruling
-            # stands for the 5090 training runs; re-run probe_hang_goal3 there.
-            _author_mesh(
-                stage, f"/MugTree/collisions_{name}/mesh", _cylinder_mesh(pos, rpy, radius, length),
-                collide=True, approximation="convexHull",
-            )
-            n_col += 1
+        # SPHERE-CHAIN branches (MUG_TREE_COLLISION=spheres, 2026-08-27 probe):
+        # sphere-vs-mesh is an ANALYTIC primitive path -- no GJK -- so it
+        # catches the loop's thin wall that hull-vs-mesh returns "separated" on
+        # (measured: 0 branch<->handle contacts at the hung pose with hulls, 3
+        # upward-normal ones raw). Trunk and base stay hulls.
+        if COLLISION_SOURCE == "capsules":
+            # NATIVE CAPSULES for the branches (2026-08-28): capsule-vs-mesh is
+            # the analytic primitive path -- correct radial normals with NO
+            # surface ripple (unlike a sphere chain) and no GJK (unlike a hull,
+            # whose side-face normals came out horizontal on every pair and
+            # could not carry the loop's weight). Trunk + base remain hulls.
+            for name, (pos, rpy, radius, length) in TRI_COLLISION_CYLINDERS.items():
+                if "branch" in name:
+                    cap = UsdGeom.Capsule.Define(stage, f"/MugTree/collisions_{name}/capsule")
+                    cap.GetRadiusAttr().Set(float(radius))
+                    cap.GetHeightAttr().Set(float(max(length - 2 * radius, 1e-4)))  # USD capsule height excludes the caps
+                    cap.GetAxisAttr().Set("Z")
+                    xf = UsdGeom.Xformable(cap.GetPrim())
+                    xf.AddTranslateOp().Set(Gf.Vec3d(*pos))
+                    xf.AddOrientOp().Set(_quat_from_rpy(*rpy))
+                    cap.GetPurposeAttr().Set(UsdGeom.Tokens.guide)
+                    UsdPhysics.CollisionAPI.Apply(cap.GetPrim())
+                else:
+                    _author_mesh(stage, f"/MugTree/collisions_{name}/mesh", _cylinder_mesh(pos, rpy, radius, length), collide=True, approximation="convexHull")
+                n_col += 1
+            print(f"[convert_mug_tree] capsule branches: {n_col} colliders")
+        if COLLISION_SOURCE == "spheres":
+            for name, (pos, rpy, radius, length) in TRI_COLLISION_CYLINDERS.items():
+                r, pch, y = rpy
+                cr, sr, cp, sp, cy, sy = math.cos(r), math.sin(r), math.cos(pch), math.sin(pch), math.cos(y), math.sin(y)
+                R = np.array([[cy*cp, cy*sp*sr - sy*cr, cy*sp*cr + sy*sr],[sy*cp, sy*sp*sr + cy*cr, sy*sp*cr - cy*sr],[-sp, cp*sr, cp*cr]])
+                z_axis = R @ np.array([0.0, 0.0, 1.0])
+                if "branch" in name:
+                    _sp = float(os.environ.get('SPHERE_SPACING_R', '0.5'))
+                    n_sph = max(2, int(round(length / (radius * _sp))))  # centers every _sp*r: surface ripple ~ 1 - sqrt(1-(_sp/2)^2)
+                    for j in range(n_sph):
+                        off = (-length / 2.0) + (j + 0.5) * (length / n_sph)
+                        cpt = np.array(pos) + off * z_axis
+                        sph = UsdGeom.Sphere.Define(stage, f"/MugTree/collisions_{name}_p{j}/sphere")
+                        sph.GetRadiusAttr().Set(float(radius))
+                        UsdGeom.Xformable(sph.GetPrim()).AddTranslateOp().Set(Gf.Vec3d(*cpt))
+                        sph.GetPurposeAttr().Set(UsdGeom.Tokens.guide)
+                        UsdPhysics.CollisionAPI.Apply(sph.GetPrim())
+                        n_col += 1
+                else:
+                    _author_mesh(stage, f"/MugTree/collisions_{name}/mesh", _cylinder_mesh(pos, rpy, radius, length), collide=True, approximation="convexHull")
+                    n_col += 1
+            print(f"[convert_mug_tree] sphere-chain branches: {n_col} colliders")
+        # convexHull, FINAL (2026-08-28). Three days of "the hull tree ejects
+        # the mug" were a POSE error, not physics: the authored goal put the
+        # branch 5.5 mm OUTSIDE the handle loop (gate measured on the visual
+        # glTF; TRI's collision handle is narrower), so every solver correctly
+        # reported nothing to hold. With the branch through the collision loop
+        # the hull tree hangs the mug on MJWarp, ICF and ICF-adaptive (drop
+        # probes 2/2). A plain torus hung on hull/raw/capsule alike -- the
+        # control that exposed it. Hulls keep the pair on the convex path.
+        approx = os.environ.get("MUG_TREE_APPROX", "convexHull")
+        for name, (pos, rpy, radius, length) in (TRI_COLLISION_CYLINDERS.items() if COLLISION_SOURCE not in ("spheres", "capsules") else []):
+            n_seg = 1 if name == "base_col" else (TRUNK_SEGMENTS if "trunk" in name else BRANCH_SEGMENTS)
+            r, pch, y = rpy
+            cr, sr, cp, sp, cy, sy = math.cos(r), math.sin(r), math.cos(pch), math.sin(pch), math.cos(y), math.sin(y)
+            R = np.array([
+                [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
+                [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
+                [-sp, cp * sr, cp * cr],
+            ])
+            z_axis = R @ np.array([0.0, 0.0, 1.0])
+            seg_len = length / n_seg
+            for j in range(n_seg):
+                # segment center along the cylinder's own axis
+                off = (-length / 2.0) + (j + 0.5) * seg_len
+                cpos = tuple(np.array(pos) + off * z_axis)
+                _author_mesh(
+                    stage, f"/MugTree/collisions_{name}_s{j}/mesh", _cylinder_mesh(cpos, rpy, radius, seg_len),
+                    collide=True, approximation=approx,
+                )
+                n_col += 1
     for name, (pos, rpy) in TRI_FRAMES.items():
         xf = UsdGeom.Xform.Define(stage, f"/MugTree/frames/{name}")
         xf.AddTranslateOp().Set(Gf.Vec3d(*pos))

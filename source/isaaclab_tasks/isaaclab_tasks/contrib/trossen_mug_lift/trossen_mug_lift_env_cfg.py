@@ -236,9 +236,12 @@ def _newton_shape_cfg() -> NewtonShapeCfg:
     # around a 9 mm branch, so a 3 mm band put the branch "in contact" with
     # both inner walls at once. 1 mm still leads the adaptive step floor
     # (0.14 mm per floored step at 0.1 m/s) by ~7 steps.
-    # margin 1 mm (2026-08-25): the contact rest offset; the mug settled visibly
-    # into the stem with margin 0, so surfaces now rest a millimeter apart.
-    return NewtonShapeCfg(ke=_CONTACT_KE, kd=_CONTACT_KD, margin=0.001, gap=0.0005)
+    # margin 0 (2026-08-27, reverting the 08-25 1 mm): a nonzero margin fires
+    # hull contacts a millimeter EARLY at full stiffness -- on the mug tree's
+    # 9 mm branch inside the handle's 4 mm-play loop that is a flick (measured:
+    # released mug spins up to 5.8 rad/s at first touch with margin 1 mm, 0.6
+    # with margin 0). gap 0.5 mm stays as the generation lookahead.
+    return NewtonShapeCfg(ke=_CONTACT_KE, kd=_CONTACT_KD, margin=0.0, gap=0.0005)
 
 
 @configclass

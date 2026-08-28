@@ -200,7 +200,7 @@ MUG_SOLIMP = (0.9, 0.999, 0.002, 0.5, 2.0)
 MUG_CONTACT_PRIORITY = 1
 
 
-def _author_mesh(stage, path, mesh: trimesh.Trimesh, purpose_guide: bool):
+def _author_mesh(stage, path, mesh: trimesh.Trimesh, purpose_guide: bool):  # noqa: D103
     prim = UsdGeom.Mesh.Define(stage, path)
     prim.GetPointsAttr().Set([Gf.Vec3f(*v) for v in mesh.vertices])
     prim.GetFaceVertexCountsAttr().Set([3] * len(mesh.faces))
@@ -210,12 +210,16 @@ def _author_mesh(stage, path, mesh: trimesh.Trimesh, purpose_guide: bool):
         prim.GetPurposeAttr().Set(UsdGeom.Tokens.guide)
         UsdPhysics.CollisionAPI.Apply(prim.GetPrim())
         api = UsdPhysics.MeshCollisionAPI.Apply(prim.GetPrim())
-        api.GetApproximationAttr().Set("none")
+        # MUG_HANDLE_APPROX (2026-08-27 probe): handle pieces may take a hull so the
+        # branch<->handle pair runs hull-hull GJK instead of mesh-vs-hull midphase.
+        _approx = os.environ.get("MUG_HANDLE_APPROX", "none") if "handle" in path else "none"
+        api.GetApproximationAttr().Set(_approx)
         p = prim.GetPrim()
-        p.CreateAttribute("mjc:solimp", Sdf.ValueTypeNames.FloatArray, custom=True).Set(
-            Vt.FloatArray([float(v) for v in MUG_SOLIMP])
-        )
-        p.CreateAttribute("mjc:priority", Sdf.ValueTypeNames.Int, custom=True).Set(MUG_CONTACT_PRIORITY)
+        if os.environ.get("MUG_NO_MJC", "0") != "1":
+            p.CreateAttribute("mjc:solimp", Sdf.ValueTypeNames.FloatArray, custom=True).Set(
+                Vt.FloatArray([float(v) for v in MUG_SOLIMP])
+            )
+            p.CreateAttribute("mjc:priority", Sdf.ValueTypeNames.Int, custom=True).Set(MUG_CONTACT_PRIORITY)
     return prim
 
 

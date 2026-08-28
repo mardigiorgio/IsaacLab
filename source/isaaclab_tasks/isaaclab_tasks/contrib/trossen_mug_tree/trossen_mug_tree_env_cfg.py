@@ -132,7 +132,7 @@ def hung_mug_pose_env(
 # AUTHORED in the pose lab 2026-08-25 (mug released onto bottom_right, settled,
 # PRINT): the pose the task rewards. hung_mug_pose_env() remains the TRI-weld
 # seed for re-authoring after any tree move.
-GOAL_POSE_ENV = ((0.2135, -0.1568, 0.0761), (-0.0519, -0.3775, 2.8142))
+GOAL_POSE_ENV = ((0.1965, -0.1639, 0.0879), (-0.2131, -0.6705, -2.7193))  # 2026-08-28: branch through the COLLISION loop (x 0.048, z 0.059 body)
 # USER-SET: the arm's FINISHED pose -- the ready posture swung 1.2 rad away
 # from the tree (tree at +X; TCP settles at env (-0.39, +0.18, 0.42), FK-probed
 # 2026-08-25). Re-author in the lab (SAVE) any time.
@@ -211,7 +211,7 @@ class HangTerminationsCfg(TerminationsCfg):
     bonus (rewards.completion) pays on that step."""
 
     task_complete = DoneTerm(
-        func=mdp.hang_state_machine,
+        func=mdp.hang_fsm,
         params={
             "branch_base_env": None,  # filled in __post_init__ from _GATE_PARAMS
             "branch_axis_env": None,
@@ -219,8 +219,6 @@ class HangTerminationsCfg(TerminationsCfg):
             "joint_tol": 0.3,
             "sensor_name": "pad_object_contact",
             "tree_sensor_name": "object_tree_contact",
-            "support_frames": 12,  # 0.4 s at 30 Hz
-            "finish_frames": 6,  # 0.2 s
         },
     )
 
@@ -231,10 +229,33 @@ class HangCurriculumCfg:
 
 
 @configclass
+class HangRewardsCfg:
+    """The STAGED economy, whole and self-contained (2026-08-26 refactor): no
+    per-step proximity or contact income anywhere. One-shot milestones + strict
+    PBRS shaping (hang_fsm_core) + one success bonus + the family's action tax
+    and blowup fine. Max pre-completion return 35 + 10 < success 100 -- the
+    inequality the reward-economy tests assert."""
+
+    action_l2 = RewTerm(func=mdp.action_l2, weight=-0.001)
+    early_termination = RewTerm(func=mdp.is_terminated_term, weight=-50, params={"term_keys": ["robot_abnormal"]})
+    milestones = RewTerm(func=mdp.fsm_milestones, params={}, weight=1.0)
+    shaping = RewTerm(func=mdp.fsm_shaping, params={}, weight=1.0)
+    success_bonus = RewTerm(func=mdp.is_terminated_term, weight=100.0, params={"term_keys": ["task_complete"]})
+    # log-only diagnostics (weight 1e-9; read in W&B full precision)
+    metric_stage = RewTerm(func=mdp.fsm_metric_stage, params={}, weight=1e-9)
+    metric_regressions = RewTerm(func=mdp.fsm_metric_regressions, params={}, weight=1e-9)
+    metric_ms_grasp = RewTerm(func=mdp.fsm_metric_ms_grasp, params={}, weight=1e-9)
+    metric_ms_lift = RewTerm(func=mdp.fsm_metric_ms_lift, params={}, weight=1e-9)
+    metric_ms_insert = RewTerm(func=mdp.fsm_metric_ms_insert, params={}, weight=1e-9)
+    metric_ms_release = RewTerm(func=mdp.fsm_metric_ms_release, params={}, weight=1e-9)
+
+
+@configclass
 class TrossenMugHangEnvCfg(TrossenMugLiftEnvCfg):
     # 2000, not the family's 8192: one fixed spawn, one fixed goal pose, no
     # placement DR -- there is no generalization axis to feed with envs.
     scene: MugTreeSceneCfg = MugTreeSceneCfg(num_envs=2000, env_spacing=2.5)
+    rewards: HangRewardsCfg = HangRewardsCfg()
     events: HangEventCfg = HangEventCfg()
     terminations: HangTerminationsCfg = HangTerminationsCfg()
     curriculum: HangCurriculumCfg = HangCurriculumCfg()
@@ -253,75 +274,8 @@ class TrossenMugHangEnvCfg(TrossenMugLiftEnvCfg):
         rg = self.commands.object_pose.ranges
         rg.pos_x, rg.pos_y, rg.pos_z = (gx, gx), (gy, gy), (gz, gz)
         rg.roll, rg.pitch, rg.yaw = (gr, gr), (gp, gp), (gyaw, gyaw)
-        # THE TWO HIGH-WEIGHT FINISH TERMS on top of the lift's ladder: the mug
-        # resting in the authored pose (ungated), and the arm parked at its
-        # finish pose times that -- collectable only after a completed, released
-        # placement, which is what makes letting go the optimum.
-        self.rewards.mug_pose_match = RewTerm(
-            func=mdp.hung_object_pose_match,
-            params={"pos_std": 0.05, "command_name": "object_pose", **_GATE_PARAMS},
-            weight=50.0,
-        )
-        # THE ROAD INTO THE GATE (2026-08-25): dense, un-gated-by-threading,
-        # both held-only -- the maneuver income the binary gate cannot provide.
-        self.rewards.fingers_to_object.func = mdp.fingers_to_object_pp
-        self.rewards.good_finger_contact.func = mdp.mug_grasped_pp
-        self.rewards.contact_count.func = mdp.pad_contact_count_pp
-        self.rewards.loop_to_branch = RewTerm(
-            func=mdp.loop_to_branch_pp,
-            params={"std": 0.1, "sensor_name": "pad_object_contact", **_GATE_PARAMS},
-            weight=5.0,
-        )
-        self.rewards.carry_orientation = RewTerm(
-            func=mdp.carry_orientation_pp,
-            params={"command_name": "object_pose", "sensor_name": "pad_object_contact"},
-            weight=2.0,
-        )
-        # The lift's held-at-goal success, gated on the threading (a mug held
-        # NEAR the hung pose without the branch in the loop earns nothing).
-        # FULL articulation (the plate task's ruling, applied here 2026-08-25):
-        # the inherited 0.1 caps every joint at +/-0.6 rad from home -- the
-        # wrist can never search the orientations the hook maneuver needs.
-        # 0.5 x clip 6 spans the hardware range; the pinch-seat jitter cost is
-        # accepted knowingly, as the plate did.
-        # Wrist exploration doubled over the proximal chain: at init_std 0.5,
-        # per-step commanded jitter is scale x 0.5 -- 0.25 rad proximal,
-        # 0.5 rad (~29 deg) on the wrist, so the policy actually SAMPLES the
-        # rotations the hook needs. Hardware limits clamp the envelope; PD
-        # gains stay vendor-stock.
-        self.actions.arm_action.scale = {
-            "follower_left_joint_[0-2]": 0.5,
-            "follower_left_joint_[3-5]": 1.0,
-        }
+        # Rewards are HangRewardsCfg, whole: nothing inherited, nothing appended.
         self.terminations.task_complete.params.update(_GATE_PARAMS)
-        self.rewards.success.func = mdp.hung_success_at_goal_pp
-        self.rewards.success.params = {**self.rewards.success.params, **_GATE_PARAMS}
-        # Completion bonus held at 50 (not the full 200) until the critic's
-        # value loss is under control; the state machine's income shaping is
-        # what drives release/retreat, not this carrot.
-        self.rewards.completion = RewTerm(
-            func=mdp.is_terminated_term, weight=50.0, params={"term_keys": ["task_complete"]}
-        )
-        # POST-PLACE phase income and penalty (read the latched state):
-        self.rewards.release_retreat = RewTerm(
-            func=mdp.release_and_retreat, params={"pose": ARM_FINISH_POSE, "std": 1.0}, weight=10.0
-        )
-        self.rewards.recontact = RewTerm(func=mdp.recontact_penalty, params={}, weight=-5.0)
-        # Log-only phase metrics (weight 1e-9: visible as trends, inert as reward).
-        for _m in ("metric_placed", "metric_released", "metric_arm_at_finish", "metric_recontact"):
-            setattr(self.rewards, _m, RewTerm(func=getattr(mdp, _m), params={}, weight=1e-9))
-        self.rewards.arm_finished = RewTerm(
-            func=mdp.hung_arm_finish,
-            params={
-                **_GATE_PARAMS,
-                "pose": ARM_FINISH_POSE,
-                "std": 1.0,
-                "pos_std": 0.05,
-                "command_name": "object_pose",
-                "sensor_name": "pad_object_contact",
-            },
-            weight=50.0,
-        )
         # (Rewards inherited from the lift for the scaffold: rim reach, grasp-gated
         # position ratchet, held-at-goal success. The hang's own success shaping is
         # the next change, once the goal pose is authored.)
