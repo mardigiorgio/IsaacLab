@@ -157,7 +157,15 @@ class HangFsm:
         prog = torch.stack([x.reach_prog, x.lift_prog, x.insert_prog, x.release_prog, x.retreat_prog], dim=1)
         phi_stage = prog.gather(1, stage.unsqueeze(1).clamp(0, 4)).squeeze(1).clamp(0.0, 1.0) * STAGE_C
         phi = STAGE_C * stage.float() + phi_stage
-        shaping = torch.where(self.has_prev, GAMMA * phi - self.prev_phi, torch.zeros_like(phi))
+        # Phi(s') - Phi(s), NOT gamma*Phi(s') - Phi(s) (2026-08-28): the gamma
+        # form drifts by (gamma-1)*Phi per step -- measured -0.18/step at PLACED,
+        # -15 to -18 per episode -- which taxes exactly the persistence the FSM
+        # demands and made "hold placed, never retreat" the optimum. The plain
+        # difference telescopes to zero at rest and to Phi(end)-Phi(start) over
+        # an episode, so staying is free and only progress pays; the policy-
+        # invariance guarantee of strict PBRS is traded for a rest-neutral
+        # potential, and the milestone/success ordering is unchanged (tests).
+        shaping = torch.where(self.has_prev, phi - self.prev_phi, torch.zeros_like(phi))
         self.prev_phi = phi
         self.has_prev |= True
 
