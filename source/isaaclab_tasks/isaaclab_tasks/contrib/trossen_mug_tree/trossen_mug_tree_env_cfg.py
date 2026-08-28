@@ -233,7 +233,7 @@ class HangTerminationsCfg(TerminationsCfg):
             "branch_base_env": None,  # filled in __post_init__ from _GATE_PARAMS
             "branch_axis_env": None,
             "pose": ARM_FINISH_POSE,
-            "joint_tol": 0.3,
+            "joint_tol": 0.5,  # 0.3 -> 0.5 (2026-08-28): the scripted retreat settles to 0.04 rad but takes ~4 s; fire the bonus on the approach
             "sensor_name": "pad_object_contact",
             "tree_sensor_name": "object_tree_contact",
         },
@@ -286,6 +286,11 @@ class TrossenMugHangEnvCfg(TrossenMugLiftEnvCfg):
         self.sim.dt = 1 / 450
         self.decimation = 15
         self.sim.render_interval = self.decimation
+        # 8 s episodes (was the family's 5 s): the placement takes 45-90 control
+        # steps and a settled retreat to the ready pose ~100 more under the
+        # vendor wrist PD (measured 2026-08-28: scripted retreat needs 240 steps
+        # to reach 0.04 rad); the full sequence never fit in 150.
+        self.episode_length_s = 8.0
         # THE GOAL POSE: the mug hung on GOAL_BRANCH per TRI's weld, as the
         # command (position AND orientation). The marker draws it in the viewer;
         # the lab's --object-at-goal drops the mug there.

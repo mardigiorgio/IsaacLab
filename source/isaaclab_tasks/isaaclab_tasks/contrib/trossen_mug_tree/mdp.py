@@ -331,6 +331,8 @@ class hang_fsm(ManagerTermBase):
         if env_ids is None:
             env_ids = slice(None)
         self.fsm.reset(env_ids)
+        if hasattr(self, "_err0"):
+            self._err0[env_ids] = float("nan")
 
     def __call__(
         self,
@@ -385,7 +387,19 @@ class hang_fsm(ManagerTermBase):
         # to climb, so the policy parked at PLACED forever (86% placed, 0%
         # complete, arm never at finish). At 3.0 the placed pose reads 0.45 and
         # the finish 1.0: half a unit of ratchet to earn by swinging away.
-        retreat_prog = 1.0 - torch.tanh(arm_err / 3.0)
+        # Normalized retreat progress (2026-08-28): fraction of the arm error
+        # present when PLACED latched that has since been closed, so every step
+        # of the ~2 s swing to the ready pose pays the ratchet -- a tanh over
+        # 1.5 rad paid half its unit for the whole move. Anchored per env at the
+        # first PLACED frame; 1.0 at the finish pose.
+        if not hasattr(self, "_err0"):
+            self._err0 = torch.full((env.num_envs,), float("nan"), device=env.device)
+        just_placed = (self.fsm.stage == 4) & torch.isnan(self._err0)
+        self._err0 = torch.where(just_placed, arm_err.clamp(min=1e-3), self._err0)
+        self._err0 = torch.where(self.fsm.stage < 4, torch.full_like(self._err0, float("nan")), self._err0)
+        retreat_prog = torch.where(
+            torch.isnan(self._err0), torch.zeros_like(arm_err), (1.0 - arm_err / self._err0).clamp(0.0, 1.0)
+        )
 
         out = self.fsm.step(FsmInputs(
             held=held, lifted=lifted, threaded=threaded, supported=supported, released=released, arm_ok=arm_ok,
