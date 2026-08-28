@@ -21,6 +21,7 @@ TRI wireframe (-0.017, 0.055), 8 mm drift, up_z -1.00.
 from __future__ import annotations
 
 import math
+import os
 
 import isaaclab.sim as sim_utils
 from isaaclab.assets import AssetBaseCfg, RigidObjectCfg
@@ -49,6 +50,10 @@ from . import mdp
 
 # ============================================================================ USER-SET
 # Rack placement: the plate scene's (TRI's -90 yaw already baked into the USD).
+# Rack collider variants (all hulls of TRI's own wire faces; see trossen_plate_rack/assets):
+#   mesh: raw 41,758-face wire (105 s/iter at 512 envs)   hull: one hull of the whole wire (wedge, mug slides off)
+#   bay:  floor-lattice slab + tray                        cage: floor slab + tray + 4 wall panels (default)
+_RACK_USD = {"mesh": "dishrack_mesh.usd", "hull": "dishrack_hull.usd", "bay": "dishrack_bay.usd", "cage": "dishrack_cage.usd"}
 RACK_POS = (-0.08, _SPAWN_Y + 0.08, 0.02)
 # A measured stable inverted rest on the lattice (env frame), used as the
 # COMMAND (marker + lab drop point) and the insert-progress attractor. It is
@@ -71,7 +76,16 @@ class MugRackSceneCfg(TrossenMugLiftSceneCfg):
     rack: AssetBaseCfg = AssetBaseCfg(
         prim_path="{ENV_REGEX_NS}/Rack",
         init_state=AssetBaseCfg.InitialStateCfg(pos=RACK_POS, rot=(0.0, 0.0, 0.0, 1.0)),
-        spawn=sim_utils.UsdFileCfg(usd_path=DISHRACK_USD_PATH.replace("dishrack.usd", "dishrack_mesh.usd")),
+        # RACK_COLLISION=hull (default for THIS scene, 2026-08-28): the mug rests
+        # on the lattice TOP and never threads a slot, so the wire cage's hull --
+        # a slab at lattice-top height -- is the contact that matters, at 1/40th
+        # the triangles (raw: 41,758 faces, 105 s/iter at 512 envs). The plate
+        # scene keeps the raw wire for its slots. RACK_COLLISION=mesh restores it.
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=DISHRACK_USD_PATH.replace(
+                "dishrack.usd", _RACK_USD[os.environ.get("RACK_COLLISION", "cage")]
+            )
+        ),
     )
     # Mug body touching the rack's wire/base meshes: the FSM's support signal.
     object_rack_contact = NewtonContactSensorCfg(
