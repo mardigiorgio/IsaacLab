@@ -32,9 +32,12 @@ from isaaclab.utils.configclass import configclass
 
 from isaaclab_newton.sensors import ContactSensorCfg as NewtonContactSensorCfg
 
+from isaaclab_tasks.contrib.trossen_mug_lift.bedrock import apply_reverse_curriculum
 from isaaclab_tasks.contrib.trossen_mug_lift.trossen_mug_lift_env_cfg import (
     _SPAWN_X,
     _SPAWN_Y,
+    BANK_POSE_XY_JACOBIAN,
+    GRASP_BANK_POSE,
     TerminationsCfg,
     TrossenMugLiftEnvCfg,
     TrossenMugLiftSceneCfg,
@@ -200,6 +203,17 @@ class HangEventCfg:
             "asset_cfg": SceneEntityCfg("object"),
         },
     )
+    # Zeroed home scatter, declared BEFORE the bank event (bedrock's ordering
+    # guard): home starts stay exact; the bank overwrites its subset after.
+    randomize_arm_start = EventTerm(
+        func=mdp.reset_joints_by_offset,
+        mode="reset",
+        params={
+            "position_range": (0.0, 0.0),
+            "velocity_range": (0.0, 0.0),
+            "asset_cfg": SceneEntityCfg("robot", joint_names="follower_left_joint_[0-5]"),
+        },
+    )
 
 
 @configclass
@@ -241,13 +255,14 @@ class HangRewardsCfg:
     milestones = RewTerm(func=mdp.fsm_milestones, params={}, weight=1.0)
     shaping = RewTerm(func=mdp.fsm_shaping, params={}, weight=1.0)
     success_bonus = RewTerm(func=mdp.is_terminated_term, weight=100.0, params={"term_keys": ["task_complete"]})
-    # log-only diagnostics (weight 1e-9; read in W&B full precision)
-    metric_stage = RewTerm(func=mdp.fsm_metric_stage, params={}, weight=1e-9)
-    metric_regressions = RewTerm(func=mdp.fsm_metric_regressions, params={}, weight=1e-9)
-    metric_ms_grasp = RewTerm(func=mdp.fsm_metric_ms_grasp, params={}, weight=1e-9)
-    metric_ms_lift = RewTerm(func=mdp.fsm_metric_ms_lift, params={}, weight=1e-9)
-    metric_ms_insert = RewTerm(func=mdp.fsm_metric_ms_insert, params={}, weight=1e-9)
-    metric_ms_release = RewTerm(func=mdp.fsm_metric_ms_release, params={}, weight=1e-9)
+    # diagnostics: values pre-scaled by 1e-3 (mdp._METRIC_SCALE), weight 1.0 -- x1000 in W&B.
+    # (weight 1e-9 underflowed float32 and read as 0.0000.)
+    metric_stage = RewTerm(func=mdp.fsm_metric_stage, params={}, weight=1.0)
+    metric_regressions = RewTerm(func=mdp.fsm_metric_regressions, params={}, weight=1.0)
+    metric_ms_grasp = RewTerm(func=mdp.fsm_metric_ms_grasp, params={}, weight=1.0)
+    metric_ms_lift = RewTerm(func=mdp.fsm_metric_ms_lift, params={}, weight=1.0)
+    metric_ms_insert = RewTerm(func=mdp.fsm_metric_ms_insert, params={}, weight=1.0)
+    metric_ms_release = RewTerm(func=mdp.fsm_metric_ms_release, params={}, weight=1.0)
 
 
 @configclass
@@ -276,6 +291,20 @@ class TrossenMugHangEnvCfg(TrossenMugLiftEnvCfg):
         rg.roll, rg.pitch, rg.yaw = (gr, gr), (gp, gp), (gyaw, gyaw)
         # Rewards are HangRewardsCfg, whole: nothing inherited, nothing appended.
         self.terminations.task_complete.params.update(_GATE_PARAMS)
+        # BANK STARTS (2026-08-28): with the goal now physically reachable, the
+        # bottleneck measured at iter 1000 is discovery -- <1% of home-start
+        # episodes get past the grasp. The mug's spawn, rig and pinch are the
+        # lift's exactly, so the lift's VALIDATED pre-grasp (teleop-authored,
+        # passed the dynamic ladder) banks here unchanged; Florensa anneal back
+        # toward home over the first 100 iterations (2400 env-steps).
+        apply_reverse_curriculum(
+            self,
+            bank_pose=GRASP_BANK_POSE,
+            bank_xy_jacobian=BANK_POSE_XY_JACOBIAN,
+            nominal_object_xy=(_SPAWN_X, _SPAWN_Y),
+            bank_fraction=0.5,
+            end_step=2_400,
+        )
         # (Rewards inherited from the lift for the scaffold: rim reach, grasp-gated
         # position ratchet, held-at-goal success. The hang's own success shaping is
         # the next change, once the goal pose is authored.)

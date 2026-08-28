@@ -380,7 +380,12 @@ class hang_fsm(ManagerTermBase):
         gid, _ = robot.find_joints(["follower_left_left_carriage_joint"], preserve_order=True)
         open_frac = (robot.data.joint_pos.torch[:, gid[0]] / 0.044).clamp(0.0, 1.0)
         release_prog = 0.5 * open_frac + 0.5 * (self.fsm.persist.float() / 12.0).clamp(0.0, 1.0)
-        retreat_prog = 1.0 - torch.tanh(arm_err / 1.0)
+        # sigma 3.0 (was 1.0, 2026-08-28): at the placed pose the arm is ~1.5 rad
+        # from the finish pose and tanh(1.5) left retreat_prog at 0.09 -- no slope
+        # to climb, so the policy parked at PLACED forever (86% placed, 0%
+        # complete, arm never at finish). At 3.0 the placed pose reads 0.45 and
+        # the finish 1.0: half a unit of ratchet to earn by swinging away.
+        retreat_prog = 1.0 - torch.tanh(arm_err / 3.0)
 
         out = self.fsm.step(FsmInputs(
             held=held, lifted=lifted, threaded=threaded, supported=supported, released=released, arm_ok=arm_ok,
@@ -390,6 +395,9 @@ class hang_fsm(ManagerTermBase):
         out["regress_total"] = self.fsm.regressions
         env._fsm = out
         return out["success"]
+
+
+_METRIC_SCALE = 1e-3  # metrics carry 1e-3 x the true value at weight 1.0 (float32-safe; W&B x1000)
 
 
 def _fsm_out(env, key, dim0=None):
@@ -411,24 +419,24 @@ def fsm_shaping(env):
 
 
 def fsm_metric_stage(env):
-    return _fsm_out(env, "stage")
+    return _METRIC_SCALE * _fsm_out(env, "stage")
 
 
 def fsm_metric_regressions(env):
-    return _fsm_out(env, "regressed")
+    return _METRIC_SCALE * _fsm_out(env, "regressed")
 
 
 def fsm_metric_ms_grasp(env):
-    return _fsm_out(env, "new_milestones")[:, 0] if getattr(env, "_fsm", None) else torch.zeros(env.num_envs, device=env.device)
+    return _METRIC_SCALE * (_fsm_out(env, "new_milestones")[:, 0] if getattr(env, "_fsm", None) else torch.zeros(env.num_envs, device=env.device))
 
 
 def fsm_metric_ms_lift(env):
-    return _fsm_out(env, "new_milestones")[:, 1] if getattr(env, "_fsm", None) else torch.zeros(env.num_envs, device=env.device)
+    return _METRIC_SCALE * (_fsm_out(env, "new_milestones")[:, 1] if getattr(env, "_fsm", None) else torch.zeros(env.num_envs, device=env.device))
 
 
 def fsm_metric_ms_insert(env):
-    return _fsm_out(env, "new_milestones")[:, 2] if getattr(env, "_fsm", None) else torch.zeros(env.num_envs, device=env.device)
+    return _METRIC_SCALE * (_fsm_out(env, "new_milestones")[:, 2] if getattr(env, "_fsm", None) else torch.zeros(env.num_envs, device=env.device))
 
 
 def fsm_metric_ms_release(env):
-    return _fsm_out(env, "new_milestones")[:, 3] if getattr(env, "_fsm", None) else torch.zeros(env.num_envs, device=env.device)
+    return _METRIC_SCALE * (_fsm_out(env, "new_milestones")[:, 3] if getattr(env, "_fsm", None) else torch.zeros(env.num_envs, device=env.device))

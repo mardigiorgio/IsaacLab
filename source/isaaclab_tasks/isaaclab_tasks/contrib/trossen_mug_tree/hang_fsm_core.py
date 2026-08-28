@@ -27,7 +27,7 @@ or re-contacting cannot accumulate.
 Anti-farming inequality (asserted in the tests)::
 
     max pre-completion return  =  sum(MILESTONE_BONUS) + sum(RATCHET_W) + PHI_MAX
-                               =  35 + 60 + 20 = 115  <  SUCCESS_BONUS = 150
+                               =  35 + 80 + 20 = 135  <  SUCCESS_BONUS = 150
 """
 
 from __future__ import annotations
@@ -44,8 +44,8 @@ MILESTONE_BONUS = (5.0, 5.0, 10.0, 15.0)  # grasp, lift, insert, release
 # orders too weak for cold-start discovery (arm never reached the mug by iter
 # 300). A ratchet pays W_k per unit of NEW episode-best stage progress --
 # dense along the first approach, zero the second time, bounded by W_k.
-RATCHET_W = (10.0, 10.0, 15.0, 15.0, 10.0)
-SUCCESS_BONUS = 150.0  # > milestones 35 + ratchets 60 + PHI_MAX 20 = 115
+RATCHET_W = (10.0, 10.0, 15.0, 15.0, 30.0)  # retreat 10 -> 30 (2026-08-28): the swing to the finish pose must out-earn staying placed
+SUCCESS_BONUS = 150.0  # > milestones 35 + ratchets 80 + PHI_MAX 20 = 135
 GAMMA = 0.99  # must match the agent's discount for strict PBRS
 
 # persistence windows [frames at 30 Hz]
