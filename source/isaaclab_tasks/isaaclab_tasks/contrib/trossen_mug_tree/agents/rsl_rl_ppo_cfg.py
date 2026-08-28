@@ -29,3 +29,9 @@ class TrossenMugHangPPORunnerCfg(TrossenMugLiftPPORunnerCfg):
         # (measured: std 1.5 -> 0.06 by iter 1000, zero milestones). The floor
         # keeps discovery alive until milestone income exists.
         self.actor.distribution_cfg.std_range = (0.3, 3.0)
+        # entropy_coef 0.006 -> 0.0 (2026-08-28): with init_std 1.5 the bonus held
+        # sigma at ~1.5 for 1000 iterations (entropy rising 13.8 -> 14.0) while
+        # the MEAN policy placed the mug 60-86% of the time and the sampled
+        # rollouts ~0.6%. The std floor (0.3) is the exploration guarantee; the
+        # bonus only fought the anneal the pinch needs.
+        self.algorithm.entropy_coef = 0.0

@@ -136,11 +136,14 @@ def hung_mug_pose_env(
 # PRINT): the pose the task rewards. hung_mug_pose_env() remains the TRI-weld
 # seed for re-authoring after any tree move.
 GOAL_POSE_ENV = ((0.1965, -0.1639, 0.0879), (-0.2131, -0.6705, -2.7193))  # 2026-08-28: branch through the COLLISION loop (x 0.048, z 0.059 body)
-# USER-SET: the arm's FINISHED pose -- the ready posture swung 1.2 rad away
-# from the tree (tree at +X; TCP settles at env (-0.39, +0.18, 0.42), FK-probed
-# 2026-08-25). Re-author in the lab (SAVE) any time.
+# The arm's FINISHED pose = the Trossen READY pose (2026-08-28): the rig's own
+# default, so zero action holds it and the retreat is "go home". FK-probed:
+# TCP (-0.02, -0.01, 0.43), 29 cm clear of the tree axis. The earlier -1.2 rad
+# base swing was never attempted by any policy across 3 runs (0/150 frames at
+# the finish pose while 86% placed): a 70-degree sweep bought nothing the
+# potential could see. Re-author in the lab (SAVE) any time.
 ARM_FINISH_POSE = {
-    "follower_left_joint_0": -1.2,
+    "follower_left_joint_0": 0.0,
     "follower_left_joint_1": 1.570796,
     "follower_left_joint_2": 1.570796,
     "follower_left_joint_3": 0.0,
