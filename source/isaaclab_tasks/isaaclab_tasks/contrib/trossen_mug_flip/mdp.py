@@ -74,6 +74,20 @@ def handle_ee_distance(
     return _finite(1.0 - torch.tanh(torch.norm(handle_w - ee_pos_w, dim=1) / std))
 
 
+def handle_contact_count(
+    env: ManagerBasedRLEnv,
+    left_sensor: str = "pad_left_handle",
+    right_sensor: str = "pad_right_handle",
+    threshold: float = 0.01,
+) -> torch.Tensor:
+    """Number of finger pads on the HANDLE pieces (0, 1 or 2): the lift's
+    ``pad_contact_count`` restricted to the handle sensors, so a one-pad brush
+    of the handle earns partial credit and body contact earns none."""
+    left = _sensor_force_mag(env, left_sensor) > threshold
+    right = _sensor_force_mag(env, right_sensor) > threshold
+    return _finite(left.float() + right.float())
+
+
 def handle_held(
     env: ManagerBasedRLEnv,
     left_sensor: str = "pad_left_handle",

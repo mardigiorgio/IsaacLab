@@ -190,6 +190,12 @@ class FlipRewardsCfg:
     # The mug root is its bottom plane -- the TOP of an inverted mug -- so the
     # root-targeted reach taught 1000 iterations of hovering over the base.
     reaching_object = RewTerm(func=mdp.handle_ee_distance, params={"std": 0.2}, weight=0.5)
+    # Contact income ONLY on the handle (2026-08-28): run 9uil59fv pre-grasped
+    # at the mug and never closed -- the only contact terms were body fines.
+    # The lift's tested rungs (good_finger_contact 0.75, contact_count 0.1,
+    # threshold 0.01) on the flip's per-pad handle sensors; body stays fined.
+    handle_pinch = RewTerm(func=mdp.handle_held, params={"threshold": 0.01}, weight=0.75)
+    handle_contact_count = RewTerm(func=mdp.handle_contact_count, params={"threshold": 0.01}, weight=0.1)
     # Flip ratchet: pays per 0.05 of NEW episode-best up-cosine, only while
     # the handle is held in an opposed pinch and the mug is calm — rocking it
     # back and forth or shoving it over with a link earns nothing, ever.
