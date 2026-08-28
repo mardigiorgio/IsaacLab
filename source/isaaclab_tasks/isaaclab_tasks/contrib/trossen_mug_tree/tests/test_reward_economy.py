@@ -119,7 +119,7 @@ def test_repeated_grasping_awards_once():
         for _ in range(6):
             seq.append(_inputs(held=False, released=True))
     _, _, fsm = _run(seq)
-    assert int(fsm.awarded[:, 0].sum()) == 1
+    assert int(fsm.awarded[:, 0].sum()) == 1  # 5-wide now; grasp is column 0
     assert int(fsm.regressions[0]) >= 4  # every drop counted
 
 

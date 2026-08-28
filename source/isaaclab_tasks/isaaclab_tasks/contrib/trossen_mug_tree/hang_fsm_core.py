@@ -27,7 +27,7 @@ or re-contacting cannot accumulate.
 Anti-farming inequality (asserted in the tests)::
 
     max pre-completion return  =  sum(MILESTONE_BONUS) + sum(RATCHET_W) + PHI_MAX
-                               =  35 + 80 + 20 = 135  <  SUCCESS_BONUS = 150
+                               =  55 + 80 + 20 = 155  <  SUCCESS_BONUS = 200
 """
 
 from __future__ import annotations
@@ -39,13 +39,13 @@ import torch
 # ---------------------------------------------------------------- constants
 STAGE_C = 4.0  # potential per stage rung (2 -> 4, 2026-08-27: stage-0 gradient starved discovery)
 PHI_MAX = 5 * STAGE_C  # Phi at best pre-terminal state (stage 4, phi full)
-MILESTONE_BONUS = (5.0, 5.0, 10.0, 15.0)  # grasp, lift, insert, release
+MILESTONE_BONUS = (5.0, 5.0, 10.0, 15.0, 20.0)  # grasp, lift, insert, release, RETREAT (arm at finish while placed)
 # Per-stage progress RATCHET budgets (2026-08-27): strict PBRS alone was ~two
 # orders too weak for cold-start discovery (arm never reached the mug by iter
 # 300). A ratchet pays W_k per unit of NEW episode-best stage progress --
 # dense along the first approach, zero the second time, bounded by W_k.
 RATCHET_W = (10.0, 10.0, 15.0, 15.0, 30.0)  # retreat 10 -> 30 (2026-08-28): the swing to the finish pose must out-earn staying placed
-SUCCESS_BONUS = 150.0  # > milestones 35 + ratchets 80 + PHI_MAX 20 = 135
+SUCCESS_BONUS = 200.0  # > milestones 55 + ratchets 80 + PHI_MAX 20 = 155
 GAMMA = 0.99  # must match the agent's discount for strict PBRS
 
 # persistence windows [frames at 30 Hz]
@@ -53,7 +53,7 @@ GRASP_FRAMES = 3
 LIFT_FRAMES = 3
 INSERT_FRAMES = 3
 SUPPORT_FRAMES = 12  # 0.4 s
-FINISH_FRAMES = 6  # 0.2 s
+FINISH_FRAMES = 3  # 0.1 s (6 -> 3, 2026-08-28: reach the bonus before the stage-4 PBRS drift dominates)
 
 APPROACH, GRASPED, CARRY, INSERTED, PLACED = 0, 1, 2, 3, 4
 
@@ -81,7 +81,7 @@ class HangFsm:
     def __init__(self, num_envs: int, device):
         z = lambda dt: torch.zeros(num_envs, dtype=dt, device=device)  # noqa: E731
         self.stage = z(torch.long)
-        self.awarded = torch.zeros(num_envs, 4, dtype=torch.bool, device=device)
+        self.awarded = torch.zeros(num_envs, 5, dtype=torch.bool, device=device)
         self.persist = z(torch.long)  # frames the NEXT stage's predicate has held
         self.finish_count = z(torch.long)
         self.regressions = z(torch.long)
@@ -144,6 +144,14 @@ class HangFsm:
         done_pred = (stage == PLACED) & x.supported & x.released & x.arm_ok
         self.finish_count = torch.where(done_pred, self.finish_count + 1, torch.zeros_like(self.finish_count))
         success = self.finish_count >= FINISH_FRAMES
+        # 5th milestone (2026-08-28): the RETREAT itself, one-shot, on the first
+        # frame the arm is at the finish pose while placed -- the stage-4 PBRS
+        # drift is negative (~-0.2/step at the top of the potential), so without
+        # a bonus that fires BEFORE the success window, holding placed was
+        # strictly cheaper than moving.
+        hit5 = done_pred & ~self.awarded[:, 4]
+        new_ms[:, 4] = hit5
+        self.awarded[:, 4] |= hit5
 
         # -------- potential and strict PBRS shaping.
         prog = torch.stack([x.reach_prog, x.lift_prog, x.insert_prog, x.release_prog, x.retreat_prog], dim=1)

@@ -266,6 +266,7 @@ class HangRewardsCfg:
     metric_ms_lift = RewTerm(func=mdp.fsm_metric_ms_lift, params={}, weight=1.0)
     metric_ms_insert = RewTerm(func=mdp.fsm_metric_ms_insert, params={}, weight=1.0)
     metric_ms_release = RewTerm(func=mdp.fsm_metric_ms_release, params={}, weight=1.0)
+    metric_ms_retreat = RewTerm(func=mdp.fsm_metric_ms_retreat, params={}, weight=1.0)
 
 
 @configclass

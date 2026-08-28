@@ -440,3 +440,7 @@ def fsm_metric_ms_insert(env):
 
 def fsm_metric_ms_release(env):
     return _METRIC_SCALE * (_fsm_out(env, "new_milestones")[:, 3] if getattr(env, "_fsm", None) else torch.zeros(env.num_envs, device=env.device))
+
+
+def fsm_metric_ms_retreat(env):
+    return _METRIC_SCALE * (_fsm_out(env, "new_milestones")[:, 4] if getattr(env, "_fsm", None) else torch.zeros(env.num_envs, device=env.device))
