@@ -298,6 +298,14 @@ class TrossenMugHangEnvCfg(TrossenMugLiftEnvCfg):
         rg = self.commands.object_pose.ranges
         rg.pos_x, rg.pos_y, rg.pos_z = (gx, gx), (gy, gy), (gz, gz)
         rg.roll, rg.pitch, rg.yaw = (gr, gr), (gp, gp), (gyaw, gyaw)
+        # The hang's OWN action space (re-asserted 2026-08-28 after the lift
+        # base reverted to 0.1 for its pinch): the hook maneuver needs wrist
+        # orientation search -- 0.1 froze the wrist and no policy ever turned
+        # it. Shoulders 0.5, wrist 1.0.
+        self.actions.arm_action.scale = {
+            "follower_left_joint_[0-2]": 0.5,
+            "follower_left_joint_[3-5]": 1.0,
+        }
         # Rewards are HangRewardsCfg, whole: nothing inherited, nothing appended.
         self.terminations.task_complete.params.update(_GATE_PARAMS)
         # BANK STARTS (2026-08-28): with the goal now physically reachable, the
