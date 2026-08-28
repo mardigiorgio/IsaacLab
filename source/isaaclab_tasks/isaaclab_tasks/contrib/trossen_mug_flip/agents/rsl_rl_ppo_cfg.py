@@ -11,8 +11,19 @@ from isaaclab.utils.configclass import configclass
 from isaaclab_tasks.contrib.trossen_mug_lift.agents.rsl_rl_ppo_cfg import TrossenMugLiftPPORunnerCfg
 
 
+from isaaclab_rl.rsl_rl import RslRlMLPModelCfg
+
+
 @configclass
 class TrossenMugFlipPPORunnerCfg(TrossenMugLiftPPORunnerCfg):
     run_name = "mug_flip"
     experiment_name = "trossen_mug_flip"
+
+    def __post_init__(self):
+        super().__post_init__()
+        # Between the lift's pinch guard and the plate's hot search: the
+        # flip needs the wrist reorientation DISCOVERED, then a pinch HELD.
+        self.actor.distribution_cfg = RslRlMLPModelCfg.GaussianDistributionCfg(
+            init_std=1.0, std_type="log", std_range=(0.05, 2.5)
+        )
 

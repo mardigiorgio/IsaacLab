@@ -44,6 +44,12 @@ run() { # run <gym-task> <solver> <name> <log> <iters> [K overrides]
   local sol=icf-fixed; case "$name" in *adaptive*) sol=icf-adaptive;; esac
   export WANDB_TAGS="$tsk,$sol,$k,campaign"
   case "$tsk" in plate) export ICF_MAX_RIGID_CONTACT=8192;; *) export ICF_MAX_RIGID_CONTACT=1024;; esac
+  # Wait for the previous trainer's GPU teardown to drain (up to 5 min):
+  # a fresh launch into a draining GPU dies at boot and burns retries.
+  for g in $(seq 1 30); do
+    [ "$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | wc -l)" -eq 0 ] && break
+    sleep 10
+  done
   for attempt in 1 2 3 4 5; do
     echo "[cq $(date '+%m-%d %H:%M:%S')] START $name (try $attempt)" >> "$Q"
     ./isaaclab.sh -p scripts/reinforcement_learning/train.py --rl_library rsl_rl \

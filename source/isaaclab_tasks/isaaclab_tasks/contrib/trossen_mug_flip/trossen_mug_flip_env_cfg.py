@@ -54,18 +54,12 @@ from . import mdp
 # crosses it immediately.
 FLIP_SPEED_MAX = 0.75
 
-# Inverted rest height of the mug ROOT: upright the root rides OBJECT_REST_Z
-# above the table with the rim MUG_RIM_HEIGHT above the base plane, so
-# resting on the rim puts the root at (rim height - upright rest) + 1 mm of
-# settle allowance. The spawn drops that millimeter on the first frames —
-# the tape-measure protocol places the mug, it does not press it.
-# slab top (0.020) + rim height: inverted, the ROOT (bottom center) is at the
-# top, a full mug height above the rim that touches the slab. The earlier
-# "rim - upright rest" (0.077) spawned the mug 4 cm INSIDE the slab; hull
-# contact tolerated it, the raw collision mesh ejects it through the table
-# (measured 2026-08-28: settled z -17 m in 83% of envs). TRI's own
-# mug_top_center__z_down frame confirms 0.097 above the resting plane.
-OBJECT_REST_Z_INVERTED = 0.020 + MUG_RIM_HEIGHT + 0.001
+# Inverted rest height of the mug ROOT. The mug root origin lies ON its
+# bottom plane (collision zmin = 0 in the root frame), so the upright rest
+# height IS the table-top height; flipped onto its rim, the root sits one
+# full mug height above the table top, plus 1 mm of settle allowance — the
+# tape-measure protocol places the mug, it does not press it.
+OBJECT_REST_Z_INVERTED = OBJECT_REST_Z + MUG_RIM_HEIGHT + 0.001
 
 # rot is (x, y, z, w): 180 degrees about (1, 1, 0)/sqrt(2) == roll pi (mug
 # upside down) THEN yaw +90 — the mug's +X handle ends along env +Y, toward

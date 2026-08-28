@@ -579,6 +579,10 @@ import math as _math  # noqa: E402
 
 SUCCESS_POS_THRESHOLD = 0.05
 SUCCESS_TILT_THRESHOLD = _math.acos(0.87)
+# A delivery COUNTS only when held: the success latch requires this many
+# consecutive in-gate steps (1 s at 30 Hz — the committed evaluator's hold
+# window). A drive-by that clips the gates for a step is not a success.
+SUCCESS_HOLD_STEPS = 30
 
 
 class ObjectPoseSuccessCommand(UniformPoseCommand):  # noqa: F405
@@ -594,6 +598,24 @@ class ObjectPoseSuccessCommand(UniformPoseCommand):  # noqa: F405
     def __init__(self, cfg, env):
         super().__init__(cfg, env)
         self._object = env.scene["object"]
+        self._success_hold = torch.zeros(self.num_envs, device=self.device)
+
+    def reset(self, env_ids=None):
+        out = super().reset(env_ids)
+        ids = slice(None) if env_ids is None else env_ids
+        self._success_hold[ids] = 0.0
+        return out
+
+    def _update_metrics(self):
+        position_error, orientation_error = self._compute_error()
+        self.metrics["position_error"] = position_error
+        self.metrics["orientation_error"] = orientation_error
+        if self._track_success:
+            inside = self._compute_success(position_error, orientation_error)
+            self._success_hold = torch.where(
+                inside, self._success_hold + 1.0, torch.zeros_like(self._success_hold)
+            )
+            self._succeeded |= self._success_hold >= SUCCESS_HOLD_STEPS
 
     def _compute_error(self):
         self.pose_command_w[:, :3], self.pose_command_w[:, 3:] = combine_frame_transforms(

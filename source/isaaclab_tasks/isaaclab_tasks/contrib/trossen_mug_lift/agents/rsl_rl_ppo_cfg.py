@@ -37,10 +37,10 @@ class TrossenMugLiftPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         hidden_dims=[256, 128, 64],
         activation="elu",
         obs_normalization=False,
-        # ONE exploration setting for the whole campaign, by ruling: start
-        # hot and let PPO taper. The floor keeps sigma from collapsing to
-        # zero (log-prob blowup); the cap sits high enough to never bind.
-        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=1.5, std_type="log", std_range=(0.05, 3.0)),
+        # The lift's TESTED pinch guard, restored by ruling: a held pinch
+        # survives only while sampled jitter stays inside the clamp's seat.
+        # Wide-search tasks override in their own runner cfgs.
+        distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=0.5, std_type="log", std_range=(0.05, 1.5)),
     )
     critic = RslRlMLPModelCfg(
         hidden_dims=[256, 128, 64],

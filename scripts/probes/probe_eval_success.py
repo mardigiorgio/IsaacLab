@@ -48,7 +48,7 @@ def main() -> int:
     import torch
 
     from isaaclab.utils.math import combine_frame_transforms
-    from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
+    from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper, filter_unsupported_rsl_rl_kwargs
     from isaaclab_tasks.utils.hydra import resolve_task_config
     from isaaclab_tasks.utils.physics_presets import apply_solver_choice
 
@@ -68,7 +68,7 @@ def main() -> int:
 
         from rsl_rl.runners import OnPolicyRunner
 
-        runner = OnPolicyRunner(env_w, agent_cfg.to_dict(), log_dir=None, device=u.device)
+        runner = OnPolicyRunner(env_w, filter_unsupported_rsl_rl_kwargs(agent_cfg.to_dict()), log_dir=None, device=u.device)
         runner.load(args_cli.checkpoint)
         policy = runner.get_inference_policy(device=u.device)
 
@@ -89,7 +89,7 @@ def main() -> int:
         succ_total = 0
         div_total = 0
         epi_total = 0
-        obs, _ = env_w.get_observations()
+        obs, _ = env_w.reset()
         with torch.inference_mode():
             while epi_total < args_cli.episodes:
                 # Roll one full synchronized episode; the hold window is the

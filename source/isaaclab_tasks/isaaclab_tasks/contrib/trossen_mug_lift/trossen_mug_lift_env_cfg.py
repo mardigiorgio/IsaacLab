@@ -479,20 +479,12 @@ class ActionsCfg:
     # clip at 6 sigma of the initial policy: harmless for any sane policy, and it
     # bounds the action-rate penalty against the last_action feedback runaway (see
     # the clipped actions observation term).
-    # ONE action space for the whole campaign, by ruling: shoulders position
-    # the wrist; the distal (doorknob) axes carry the widest band so full
-    # orientation search is expressible; PD transients are the accepted
-    # price, and PPO's own std taper is the only narrowing mechanism.
+    # The lift's TESTED pinch recipe, restored by ruling ("lift literally
+    # works, we tested it"): scale 0.1 keeps commanded jitter inside the
+    # measured clamp seat. Wide-search tasks (plate, flip) override in
+    # their own cfgs.
     arm_action = mdp.JointPositionActionCfg(
-        asset_name="robot",
-        joint_names=[ARM_JOINTS],
-        scale={
-            "follower_left_joint_[0-2]": 0.5,
-            "follower_left_joint_3": 1.0,
-            "follower_left_joint_[4-5]": 1.5,
-        },
-        use_default_offset=True,
-        clip={".*": (-6.0, 6.0)},
+        asset_name="robot", joint_names=[ARM_JOINTS], scale=0.1, use_default_offset=True, clip={".*": (-6.0, 6.0)}
     )
     # POSITION-controlled carriages with the same hold-at-offset machinery as
     # the arm, NOT the binary open/close term: a binary gripper cannot HOLD a
@@ -519,9 +511,7 @@ class ActionsCfg:
     gripper_action = mdp.JointPositionActionCfg(
         asset_name="robot",
         joint_names=[GRIPPER_JOINT, GRIPPER_JOINT_R],
-        # 0.15 commands the full 0.044 m stroke well inside one sigma:
-        # position-controlled fingers with real discovery range, campaign-wide.
-        scale=0.15,
+        scale=0.05,
         use_default_offset=True,
         clip={".*": (-6.0, 6.0)},
     )
