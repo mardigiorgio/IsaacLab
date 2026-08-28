@@ -20,11 +20,12 @@ from typing import TYPE_CHECKING
 import torch
 
 from isaaclab.managers import ManagerTermBase, SceneEntityCfg
-from isaaclab.utils.math import combine_frame_transforms
+from isaaclab.utils.math import combine_frame_transforms, quat_apply
 
 from isaaclab_tasks.contrib.trossen_mug_slide.mdp import *  # noqa: F401,F403
 from isaaclab_tasks.contrib.trossen_mug_slide.mdp import _finite, _object_calm, _sensor_force_mag
 from isaaclab_tasks.contrib.trossen_mug_lift.mdp import (  # noqa: F401
+    _HANDLE_OFFSET_B,
     SUCCESS_POS_THRESHOLD,
     SUCCESS_TILT_THRESHOLD,
     ObjectPoseSuccessCommand,
@@ -49,6 +50,28 @@ def _up_cos(env: ManagerBasedRLEnv, object_cfg: SceneEntityCfg) -> torch.Tensor:
     return 1.0 - 2.0 * (quat[:, 0] * quat[:, 0] + quat[:, 1] * quat[:, 1])
 
 
+
+
+def handle_ee_distance(
+    env: ManagerBasedRLEnv,
+    std: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+) -> torch.Tensor:
+    """``1 - tanh(d / std)`` from the end-effector to the mug's HANDLE (TRI's
+    ``handle_middle`` frame carried by the live mug pose), not to the mug root.
+
+    The root origin is the mug's bottom plane, so for the flip's inverted spawn
+    ``object_ee_distance`` pointed the reach at the mug's TOP: 1000 iterations
+    of hovering over the base, zero handle pinches (run 9uil59fv, 2026-08-28).
+    """
+    obj = env.scene[object_cfg.name]
+    ee_frame = env.scene[ee_frame_cfg.name]
+    p = obj.data.root_pos_w.torch
+    q = obj.data.root_quat_w.torch
+    handle_w = p + quat_apply(q, torch.tensor(_HANDLE_OFFSET_B, device=p.device, dtype=p.dtype).expand_as(p))
+    ee_pos_w = ee_frame.data.target_pos_w.torch[..., 0, :]
+    return _finite(1.0 - torch.tanh(torch.norm(handle_w - ee_pos_w, dim=1) / std))
 
 
 def handle_held(

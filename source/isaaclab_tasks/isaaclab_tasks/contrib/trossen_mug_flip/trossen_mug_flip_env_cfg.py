@@ -186,8 +186,10 @@ class FlipRewardsCfg:
         params={"term_keys": ["robot_abnormal", "physics_diverged"]},
     )
 
-    # Reach toward the mug: for an inverted mug the handle is the near side.
-    reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.2}, weight=0.5)
+    # Reach toward the HANDLE (TRI handle_middle frame under the live mug pose).
+    # The mug root is its bottom plane -- the TOP of an inverted mug -- so the
+    # root-targeted reach taught 1000 iterations of hovering over the base.
+    reaching_object = RewTerm(func=mdp.handle_ee_distance, params={"std": 0.2}, weight=0.5)
     # Flip ratchet: pays per 0.05 of NEW episode-best up-cosine, only while
     # the handle is held in an opposed pinch and the mug is calm — rocking it
     # back and forth or shoving it over with a link earns nothing, ever.
