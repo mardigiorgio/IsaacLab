@@ -50,12 +50,17 @@ from . import mdp
 # ============================================================================ USER-SET
 # Rack placement: the plate scene's (TRI's -90 yaw already baked into the USD).
 RACK_POS = (-0.08, _SPAWN_Y + 0.08, 0.02)
-# Measured stable inverted rest on the lattice (env frame): root position and
-# orientation from the settle sweep; the goal the policy must match.
+# A measured stable inverted rest on the lattice (env frame), used as the
+# COMMAND (marker + lab drop point) and the insert-progress attractor. It is
+# NOT the success target: rim-down rests are isolated 5 mm pockets on this
+# lattice (settle map 2026-08-28), so success is TRI's predicate -- inverted
+# (axis within 10 deg of -Z) and resting on the rack anywhere in the bay.
 GOAL_POSE_ENV = ((-0.0168, 0.0975, 0.1719), (-3.1297, 0.0033, 1.3314))
-# The "in the bay" band around it: half-width in xy the rest survives, root z band.
-BAY_HALF_XY = 0.03
-BAY_Z = (0.155, 0.19)
+# The mug bay: TRI's MugInDishRack range (wireframe x +/-0.05, y 0..0.15)
+# mapped into env, as center + half-extent; root z band of an inverted rest.
+BAY_CENTER_ENV = (-0.005, 0.080, 0.172)
+BAY_HALF_XY = 0.09
+BAY_Z = (0.15, 0.20)
 # ============================================================================
 
 
@@ -97,7 +102,7 @@ class RackTerminationsCfg(TerminationsCfg):
         params={
             "pose": ARM_FINISH_POSE,
             "joint_tol": 0.5,
-            "bay_center_env": GOAL_POSE_ENV[0],
+            "bay_center_env": BAY_CENTER_ENV,
             "bay_half_xy": BAY_HALF_XY,
             "z_range": BAY_Z,
             "sensor_name": "pad_object_contact",

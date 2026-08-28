@@ -45,6 +45,11 @@ def inverted_in_bay(
     p = obj.data.root_pos_w.torch - env.scene.env_origins
     q = obj.data.root_quat_w.torch
     up = quat_apply(q, torch.tensor([0.0, 0.0, 1.0], device=p.device, dtype=p.dtype).expand_as(p))
+    # The WHOLE bay (2026-08-28): a rim-down mug rests on this lattice only in
+    # isolated 5 mm pockets (11/169 cells at 5 mm pitch, no contiguous basin),
+    # so "at the goal pose" is not a learnable target; TRI's own predicate is
+    # OnTop + axis within 10 deg, anywhere on the rack. bay_center_env is the
+    # bay's center, bay_half_xy its half-extent (TRI's MugInDishRack range).
     c = torch.tensor(bay_center_env, device=p.device, dtype=p.dtype)
     in_xy = ((p[:, :2] - c[:2]).abs() < bay_half_xy).all(dim=1)
     in_z = (p[:, 2] > z_range[0]) & (p[:, 2] < z_range[1])
