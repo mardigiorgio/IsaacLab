@@ -198,10 +198,18 @@ def reset_arm_reverse_curriculum(
     nominal_object_pos: tuple | None = None,
     safe_yaw_range: tuple | None = None,
     gripper_offset: float | None = None,
+    object_pose: tuple | None = None,
+    write_home: bool = True,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
 ):
     """Reverse-curriculum start states: interpolate home -> pre-grasp.
+
+    ``object_pose`` (flip, 2026-08-28): env-frame (x, y, z, qx, qy, qz, qw)
+    written for the SELECTED envs, so a bank can seed a later stage (mug in
+    the jaws, lifted). ``write_home=False`` leaves unselected envs untouched,
+    so a second bank event can stack on the first instead of resetting its
+    envs to home.
 
     ``gripper_offset`` (flip, 2026-08-28): when set, bank starts command the
     gripper to this joint position instead of the seeded one, so a pose seeded
@@ -264,6 +272,19 @@ def reset_arm_reverse_curriculum(
         start[:, arm_cols] = torch.where(sel.unsqueeze(1), start[:, arm_cols] + dq, start[:, arm_cols])
     limits = asset.data.soft_joint_pos_limits.torch[env_ids[:, None], joint_ids]
     start = torch.where(sel.unsqueeze(1), start.clamp(limits[..., 0], limits[..., 1]), home)
+    if not write_home:
+        if not sel.any():
+            return
+        env_ids = env_ids[sel]
+        start = start[sel]
+        sel = torch.ones(env_ids.shape[0], dtype=torch.bool, device=env.device)
+    if object_pose is not None and sel.any():
+        obj = env.scene[object_cfg.name]
+        ids_sel = env_ids[sel]
+        pose7 = torch.tensor(object_pose, device=env.device, dtype=torch.float32).unsqueeze(0).repeat(ids_sel.shape[0], 1)
+        pose7[:, :3] += env.scene.env_origins[ids_sel]
+        obj.write_root_pose_to_sim_index(root_pose=pose7, env_ids=ids_sel)
+        obj.write_root_velocity_to_sim_index(root_velocity=torch.zeros(ids_sel.shape[0], 6, device=env.device), env_ids=ids_sel)
     # Zero action must HOLD the start pose: with a home-anchored offset the PD
     # rips a banked arm back toward home on the first steps — through the mug,
     # for an engaged pre-grasp. The arm action term's offset is a CLONE of

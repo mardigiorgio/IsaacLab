@@ -39,6 +39,7 @@ from isaaclab_tasks.contrib.trossen_mug_slide.mdp import *  # noqa: F401,F403
 from isaaclab_tasks.contrib.trossen_mug_slide.mdp import _finite, _object_calm, _sensor_force_mag
 from isaaclab_tasks.contrib.trossen_mug_lift.mdp import (  # noqa: F401
     _HANDLE_OFFSET_B,
+    reset_arm_reverse_curriculum,
     SUCCESS_POS_THRESHOLD,
     SUCCESS_TILT_THRESHOLD,
     ObjectPoseSuccessCommand,
@@ -289,6 +290,7 @@ class flip_fsm(ManagerTermBase):
         max_speed: float = 0.1,
         reach_std: float = 0.2,
         rotate_min_cos: float = 0.7,
+        rest_z: float | None = None,
         wrist_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=["follower_left_link_6"]),
     ) -> torch.Tensor:
         """``rotate_min_cos`` (2026-08-28, probe_flip_rotate_sweep): from an 11 cm
@@ -305,7 +307,9 @@ class flip_fsm(ManagerTermBase):
         released = pad_f < contact_threshold
         # per-episode rest height of the root (inverted spawn), seeded on the first frame
         unseeded = torch.isnan(self._z0)
-        self._z0 = torch.where(unseeded, p[:, 2], self._z0)
+        # rest_z (2026-08-28): with a LIFTED bank the first frame is not the rest, so the
+        # lift reference is the spawn's rest height when given, not the episode's first z.
+        self._z0 = torch.where(unseeded, torch.full_like(p[:, 2], rest_z) if rest_z is not None else p[:, 2], self._z0)
         lifted = p[:, 2] > self._z0 + lift_height
         upright = up > UPRIGHT_MIN_COS
         self.flipped_held |= (up > rotate_min_cos) & held  # rotated past the threshold while held: a HANDLE flip

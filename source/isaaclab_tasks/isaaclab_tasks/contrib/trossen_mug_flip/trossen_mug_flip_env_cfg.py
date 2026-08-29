@@ -64,6 +64,21 @@ from . import mdp
 # Joints are PRE-COMPENSATED by the measured PD gravity sag (q_int at the grasp:
 # j1 -0.0315, j2 +0.0296, j3 +0.0129) so the PD-held start puts the fingertips
 # mid-bar (env y 0.062, z 0.071), not on the curved lower arm where a pinch slips.
+# LIFTED-HELD bank (probe_flip_lifted_state, 2026-08-28): from the grasp bank,
+# gripper fully closed, shoulder -0.30 rad, settled: mug root 11.6 cm above its
+# rest, hanging on the pinched bar at up_cos -0.67 (it pivots on the bar).
+FLIP_LIFTED_BANK_POSE = {
+    "follower_left_joint_0": -0.0001,
+    "follower_left_joint_1": 1.3617,
+    "follower_left_joint_2": 0.8258,
+    "follower_left_joint_3": -0.0812,
+    "follower_left_joint_4": 0.0001,
+    "follower_left_joint_5": -0.0003,
+    "follower_left_left_carriage_joint": 0.0040,
+    "follower_left_right_carriage_joint": 0.0040,
+}
+FLIP_LIFTED_MUG_POSE = (-0.0203, 0.0392, 0.2348, 0.6518, 0.6404, -0.2885, 0.2827)  # env frame, (x y z qx qy qz qw)
+
 FLIP_GRASP_BANK_POSE = {
     "follower_left_joint_0": -0.0001,
     "follower_left_joint_1": 1.6277,
@@ -266,6 +281,7 @@ class FlipTerminationsCfg:
             "sensor_name": "pad_object_contact",
             "lift_height": 0.06,
             "rotate_min_cos": 0.7,
+            "rest_z": OBJECT_REST_Z_INVERTED,
             "wrist_cfg": SceneEntityCfg("robot", body_names=["follower_left_link_6"]),
         },
     )
@@ -375,6 +391,24 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
         # The held half stays at alpha=1; the home half carries the approach.
         apply_reverse_curriculum(
             self, bank_pose=FLIP_GRASP_BANK_POSE, bank_fraction=0.5, end_step=1_000_000_000, gripper_offset=-0.01
+        )
+        # SECOND bank (2026-08-28): the LIFTED-HELD state -- arm + mug 11 cm up in
+        # the jaws, captured by probe_flip_lifted_state (56% of lifts settle held) --
+        # so the rotation is the first discovery from a quarter of the starts.
+        # Stacks on the grasp bank (write_home=False): ~25% lifted, ~37% grasp, ~37% home.
+        self.events.reset_arm_lift_bank = EventTerm(
+            func=mdp.reset_arm_reverse_curriculum,
+            mode="reset",
+            params={
+                "pose": FLIP_LIFTED_BANK_POSE,
+                "bank_fraction": 0.25,
+                "noise": 0.0,
+                "alpha_min": 1.0,
+                "gripper_offset": -0.01,
+                "object_pose": FLIP_LIFTED_MUG_POSE,
+                "write_home": False,
+                "asset_cfg": SceneEntityCfg("robot"),
+            },
         )
 
 

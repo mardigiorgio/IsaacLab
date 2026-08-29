@@ -34,6 +34,12 @@ class TrossenMugFlipPPORunnerCfg(TrossenMugLiftPPORunnerCfg):
             # sigma 0.05, 14-17% at 0.15, ~0% at 0.3 -- at ANY arm scale, gripper
             # scale, gripper gain (10k/50k) or EMA smoothing tested. Wrist joints
             # (scale 1.5) still explore +-0.15 rad at 0.1.
-            init_std=0.1, std_type="log", std_range=(0.05, 2.5)
+            # Per-dimension (2026-08-28, probe_flip_lifted_state): the LIFTED pinch
+            # survives 30 steps 36% at sigma 0.05 everywhere, 33% with wrist ROLL at
+            # 0.15 (the doorknob axis is nearly free), 9% with wrist pitch/forearm
+            # roll at 0.1, 2% at 0.1 everywhere. Action order: j0..j5, gripper x2.
+            # rsl_rl's head takes a SCALAR init_std; the per-dimension split is applied
+            # at launch with RSL_RESET_STD=0.05,0.05,0.05,0.05,0.05,0.15,0.05,0.05.
+            init_std=0.05, std_type="log", std_range=(0.05, 2.5)
         )
 

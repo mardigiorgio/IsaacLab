@@ -234,6 +234,28 @@ def _run(args_cli: argparse.Namespace) -> None:
             print(f"[INFO]: Loading model checkpoint from: {resume_path}")
             runner.load(resume_path)
 
+        # RSL_RESET_STD=<value> (2026-08-28): after a resume, set the actor's Gaussian std
+        # to this value (the checkpoint's learned std otherwise overrides init_std). Used to
+        # continue a mug-flip policy at the exploration floor its lifted pinch tolerates.
+        if os.environ.get("RSL_RESET_STD"):
+            import math as _math
+            import torch as _torch
+            vals = [float(v) for v in os.environ["RSL_RESET_STD"].split(",")]  # scalar or one per action dim
+            actor = getattr(runner.alg, "_raw_actor", None) or runner.alg.actor
+            hit = []
+            for mod in actor.modules():
+                if hasattr(mod, "log_std_param"):
+                    with _torch.no_grad():
+                        v = _torch.tensor(vals, device=mod.log_std_param.device, dtype=mod.log_std_param.dtype)
+                        mod.log_std_param.copy_(_torch.log(v.expand_as(mod.log_std_param) if v.numel() == 1 else v))
+                    hit.append("log_std_param")
+                elif hasattr(mod, "std_param"):
+                    with _torch.no_grad():
+                        v = _torch.tensor(vals, device=mod.std_param.device, dtype=mod.std_param.dtype)
+                        mod.std_param.copy_(v.expand_as(mod.std_param) if v.numel() == 1 else v)
+                    hit.append("std_param")
+            val = vals
+            print(f"[INFO] RSL_RESET_STD: set actor std to {val} ({hit})")
         dump_train_configs(log_dir, env_cfg, agent_cfg)
 
         try:
