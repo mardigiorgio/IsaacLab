@@ -205,6 +205,7 @@ def reset_arm_reverse_curriculum(
     offset_pose: dict[str, float] | None = None,
     anchor_pose: dict[str, float] | None = None,
     home_offset_pose: dict[str, float] | None = None,
+    home_noise: float = 0.0,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
 ):
@@ -299,7 +300,14 @@ def reset_arm_reverse_curriculum(
         arm_cols = torch.tensor([resolved.index(f"follower_left_joint_{i}") for i in range(6)], device=env.device)
         start[:, arm_cols] = torch.where(sel.unsqueeze(1), start[:, arm_cols] + dq, start[:, arm_cols])
     limits = asset.data.soft_joint_pos_limits.torch[env_ids[:, None], joint_ids]
-    start = torch.where(sel.unsqueeze(1), start.clamp(limits[..., 0], limits[..., 1]), home)
+    # ``home_noise`` (flip, 2026-08-29): uniform joint noise on the UNSELECTED
+    # (home) starts of a write_home bank. The flip env had no start
+    # randomization anywhere (arm 0, mug 0, banks 0): every plain home episode
+    # was one state, and the exact-home start sat on a knife edge -- state- and
+    # observation-identical rung starts pinched 11% vs 0% at step 10 by solver
+    # noise alone (probe_flip_success_by_bank DUMP0, model_18000).
+    home_start = home + sample_uniform(-home_noise, home_noise, home.shape, env.device) if home_noise > 0 else home
+    start = torch.where(sel.unsqueeze(1), start.clamp(limits[..., 0], limits[..., 1]), home_start.clamp(limits[..., 0], limits[..., 1]))
     # remember the selection per env for competence-gated anneals (see anneal_by_competence)
     if not hasattr(env, "_bank_selected"):
         env._bank_selected = {}

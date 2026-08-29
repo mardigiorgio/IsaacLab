@@ -53,6 +53,7 @@ def apply_reverse_curriculum(
     end_step: int = 2_400,
     gripper_offset: float | None = None,
     home_offset_pose: dict[str, float] | None = None,
+    home_noise: float = 0.0,
 ) -> None:
     """Attach the bank event and its anneal to a task cfg, with the guards.
 
@@ -91,6 +92,8 @@ def apply_reverse_curriculum(
         params["gripper_offset"] = float(gripper_offset)
     if home_offset_pose is not None:
         params["home_offset_pose"] = dict(home_offset_pose)
+    if home_noise:
+        params["home_noise"] = float(home_noise)
     if bank_xy_jacobian is not None:
         if nominal_object_xy is None:
             raise ValueError("bank_xy_jacobian requires nominal_object_xy.")

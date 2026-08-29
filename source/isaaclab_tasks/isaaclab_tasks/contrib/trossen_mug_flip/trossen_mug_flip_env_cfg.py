@@ -507,6 +507,9 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
         apply_reverse_curriculum(
             self, bank_pose=FLIP_GRASP_BANK_POSE, bank_fraction=0.5, end_step=1_000_000_000, gripper_offset=-0.05,
             home_offset_pose=FLIP_VIA_POSE,
+            # +-0.03 rad on the plain home starts (2026-08-29): the env had no start
+            # randomization at all and the exact-home start was a knife edge.
+            home_noise=0.03,
         )
         # SECOND bank (2026-08-28): the LIFTED-HELD state -- arm + mug 11 cm up in
         # the jaws, captured by probe_flip_lifted_state (56% of lifts settle held) --
@@ -610,7 +613,7 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
                 # 60-step truncation (lift bank 100% -> 29% in 1500 iterations of
                 # fsm39). Effective shares now: held 63%, far-field 28%.
                 "bank_fraction": 0.25,
-                "noise": 0.0,
+                "noise": 0.03,  # a ball around every rung start, not just the home->via line
                 "alpha_min": 1.0,
                 "alpha_max": 1.0,
                 "alpha_tail": 0.3,

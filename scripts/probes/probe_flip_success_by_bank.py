@@ -27,6 +27,11 @@ for k,v in u._bank_selected.items():
 dev=u.device; succ=torch.zeros(N,dtype=torch.bool,device=dev); ended=torch.zeros(N,dtype=torch.bool,device=dev); prev_len=u.episode_length_buf.clone()
 with torch.inference_mode():
     for k in range(240):
+        if k==0 and os.environ.get("DUMP0"):
+            o=(obs["policy"] if hasattr(obs,"keys") else obs)[0]; off=u.action_manager.get_term("arm_action")._offset[0]; goff=u.action_manager.get_term("gripper_action")._offset[0]
+            q=u.scene["robot"].data.joint_pos.torch[0,:8]; qd=u.scene["robot"].data.joint_vel.torch[0,:8]; op=u.scene["object"].data.root_pos_w.torch[0]-(u.scene.env_origins.torch if hasattr(u.scene.env_origins,"torch") else u.scene.env_origins)[0]; oq=u.scene["object"].data.root_quat_w.torch[0]
+            print(f"[dump0] q={[round(float(x),4) for x in q]} qd={[round(float(x),3) for x in qd]} arm_off={[round(float(x),4) for x in off]} grip_off={[round(float(x),4) for x in goff]} obj={[round(float(x),4) for x in op]} objq={[round(float(x),3) for x in oq]}", flush=True)
+            print(f"[dump0] obs={[round(float(x),3) for x in o]}", flush=True)
         if k in (0,10,20,30):
             L=u.scene.sensors["pad_left_handle"].data.force_matrix_w; R_=u.scene.sensors["pad_right_handle"].data.force_matrix_w
             f=lambda F: torch.zeros(N,device=dev) if F is None else torch.linalg.vector_norm((F.torch if hasattr(F,"torch") else F).sum(dim=2),dim=-1).nan_to_num(0.0).max(dim=-1).values
