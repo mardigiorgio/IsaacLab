@@ -288,8 +288,14 @@ class flip_fsm(ManagerTermBase):
         z_max: float = 0.06,
         max_speed: float = 0.1,
         reach_std: float = 0.2,
+        rotate_min_cos: float = 0.7,
         wrist_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=["follower_left_link_6"]),
     ) -> torch.Tensor:
+        """``rotate_min_cos`` (2026-08-28, probe_flip_rotate_sweep): from an 11 cm
+        held lift, sweeping forearm roll x wrist pitch x wrist roll reaches held
+        up_cos > 0.87 in 1/180 cells, > 0.7 in 6, > 0.5 in 11, and the pinch is
+        lost at the end of every top cell -- ROTATED means 'past 45 degrees from
+        upright while held'; PLACED still demands upright (0.87) on the table."""
         obj = env.scene["object"]
         robot = env.scene["robot"]
         p = obj.data.root_pos_w.torch - env.scene.env_origins
@@ -302,8 +308,8 @@ class flip_fsm(ManagerTermBase):
         self._z0 = torch.where(unseeded, p[:, 2], self._z0)
         lifted = p[:, 2] > self._z0 + lift_height
         upright = up > UPRIGHT_MIN_COS
-        self.flipped_held |= upright & held  # crossed upright while held: a HANDLE flip
-        rotated = upright & self.flipped_held
+        self.flipped_held |= (up > rotate_min_cos) & held  # rotated past the threshold while held: a HANDLE flip
+        rotated = (up > rotate_min_cos) & self.flipped_held
         calm = torch.linalg.vector_norm(obj.data.root_lin_vel_w.torch, dim=-1) < max_speed
         placed = rotated & (p[:, 2] < z_max) & calm
         ids, _ = robot.find_joints(list(pose.keys()), preserve_order=True)

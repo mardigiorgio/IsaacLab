@@ -265,6 +265,7 @@ class FlipTerminationsCfg:
             "joint_tol": 0.5,
             "sensor_name": "pad_object_contact",
             "lift_height": 0.06,
+            "rotate_min_cos": 0.7,
             "wrist_cfg": SceneEntityCfg("robot", body_names=["follower_left_link_6"]),
         },
     )
