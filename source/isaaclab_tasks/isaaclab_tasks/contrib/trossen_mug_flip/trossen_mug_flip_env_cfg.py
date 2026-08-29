@@ -543,6 +543,26 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
             params={"event_name": "reset_arm_hover_bank", "lower_at": 0.22, "raise_at": 0.10, "step": 0.01, "window": 256},
         )
         self.curriculum.rung_success = CurrTerm(func=mdp.competence_rate, params={"event_name": "reset_arm_hover_bank"})
+        # FIFTH bank (2026-08-29): home -> via-point, the segment above the descent
+        # rung; competence-gated on its own success so it only advances once the
+        # descent from the via-point is learned. Stacks last: ~12% of starts.
+        self.events.reset_arm_home_via_bank = EventTerm(
+            func=mdp.reset_arm_reverse_curriculum,
+            mode="reset",
+            params={
+                "pose": FLIP_VIA_POSE,
+                "bank_fraction": 0.12,
+                "noise": 0.0,
+                "alpha_min": 1.0,
+                "write_home": False,
+                "asset_cfg": SceneEntityCfg("robot"),
+            },
+        )
+        self.curriculum.grow_home_via = CurrTerm(
+            func=mdp.anneal_by_competence,
+            params={"event_name": "reset_arm_home_via_bank", "lower_at": 0.22, "raise_at": 0.10, "step": 0.01, "window": 128},
+        )
+        self.curriculum.rung_success_home_via = CurrTerm(func=mdp.competence_rate, params={"event_name": "reset_arm_home_via_bank"})
 
 
 @configclass
