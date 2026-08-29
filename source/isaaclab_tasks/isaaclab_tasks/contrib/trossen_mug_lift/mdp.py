@@ -281,6 +281,13 @@ def reset_arm_reverse_curriculum(
         start[:, arm_cols] = torch.where(sel.unsqueeze(1), start[:, arm_cols] + dq, start[:, arm_cols])
     limits = asset.data.soft_joint_pos_limits.torch[env_ids[:, None], joint_ids]
     start = torch.where(sel.unsqueeze(1), start.clamp(limits[..., 0], limits[..., 1]), home)
+    # remember the selection per env for competence-gated anneals (see anneal_by_competence)
+    if not hasattr(env, "_bank_selected"):
+        env._bank_selected = {}
+    key = id(pose)
+    if key not in env._bank_selected:
+        env._bank_selected[key] = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+    env._bank_selected[key][env_ids] = sel
     if not write_home:
         if not sel.any():
             return
@@ -325,6 +332,48 @@ def reset_arm_reverse_curriculum(
             goff[env_ids] = torch.where(sel.unsqueeze(1), torch.full_like(goff[env_ids], float(gripper_offset)), goff[env_ids])
     asset.write_joint_position_to_sim_index(position=start, joint_ids=joint_ids, env_ids=env_ids)
     asset.write_joint_velocity_to_sim_index(velocity=torch.zeros_like(start), joint_ids=joint_ids, env_ids=env_ids)
+
+
+def anneal_by_competence(
+    env,
+    env_ids: torch.Tensor,
+    event_name: str = "reset_arm_grasp_bank",
+    success_term: str = "task_complete",
+    lower_at: float = 0.6,
+    raise_at: float = 0.3,
+    step: float = 0.01,
+    alpha_floor: float = 0.0,
+    window: int = 256,
+):
+    """Competence-gated reverse curriculum (flip, 2026-08-29): lower the bank event's
+    ``alpha_min`` by ``step`` whenever the rolling success rate of episodes that
+    STARTED from that bank exceeds ``lower_at``; raise it by ``step`` when the rate
+    falls below ``raise_at``. Replaces the clock-based anneal, which outran the
+    policy (rung starts spread over alpha 0.68..1 succeeded 6% while the rung
+    itself succeeded 78%). Resume-safe: alpha is re-derived from performance.
+    Returns the current alpha_min for logging."""
+    cfg = env.event_manager.get_term_cfg(event_name)
+    key = id(cfg.params["pose"])
+    selected = getattr(env, "_bank_selected", {}).get(key)
+    if not hasattr(env, "_competence_hist"):
+        env._competence_hist = {}
+    hist = env._competence_hist.setdefault(event_name, {"n": 0, "s": 0})
+    if selected is not None and env_ids.numel() > 0:
+        done = env.termination_manager.get_term(success_term)[env_ids].bool()
+        mask = selected[env_ids]
+        hist["n"] += int(mask.sum())
+        hist["s"] += int((done & mask).sum())
+    alpha = float(cfg.params.get("alpha_min", 1.0))
+    if hist["n"] >= window:
+        rate = hist["s"] / hist["n"]
+        if rate > lower_at:
+            alpha = max(alpha_floor, alpha - step)
+        elif rate < raise_at:
+            alpha = min(1.0, alpha + step)
+        hist["n"] = 0
+        hist["s"] = 0
+        cfg.params["alpha_min"] = alpha
+    return alpha
 
 
 def anneal_reverse_curriculum(

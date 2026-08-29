@@ -512,9 +512,13 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
                 "asset_cfg": SceneEntityCfg("robot"),
             },
         )
+        # Competence-gated (2026-08-29): the clock anneal reached alpha 0.68 while
+        # the policy still only pinched from within a few cm of the bar (6% success
+        # over alpha 0.68..1 vs 78% at the rung). alpha_min moves 0.01 per 256 rung
+        # episodes: down while they succeed > 60%, up when < 30%.
         self.curriculum.grow_hover = CurrTerm(
-            func=mdp.anneal_reverse_curriculum,
-            params={"start_step": 0, "end_step": 48_000, "event_name": "reset_arm_hover_bank"},
+            func=mdp.anneal_by_competence,
+            params={"event_name": "reset_arm_hover_bank", "lower_at": 0.6, "raise_at": 0.3, "step": 0.01, "window": 256},
         )
 
 
