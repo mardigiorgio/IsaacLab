@@ -182,6 +182,48 @@ class upright_progress(ManagerTermBase):
         return improved.float()
 
 
+class lift_progress(ManagerTermBase):
+    """Lift ratchet: 1.0 per ``min_improvement`` [m] of NEW episode-best mug
+    height above its rest, credited only while the handle is held, up to
+    ``max_lift`` above rest.
+
+    Bridges the flip's dead zone (run zbe5j091, 2026-08-28): the held policy
+    tilted the mug against the table for one up-cos ratchet step (~20 deg)
+    and plateaued, because a 180-degree flip needs the bar ~11 cm up (the far
+    rim sweeps ~10 cm) and nothing paid for lifting. Same shape as
+    upright_progress: episode-best only, so bobbing re-earns nothing.
+    """
+
+    def __init__(self, cfg, env: ManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        self.best = torch.full((env.num_envs,), -2.0, device=env.device)
+        self.seed_z = torch.full((env.num_envs,), -2.0, device=env.device)
+
+    def reset(self, env_ids=None):
+        if env_ids is None:
+            env_ids = slice(None)
+        self.best[env_ids] = -2.0
+        self.seed_z[env_ids] = -2.0
+
+    def __call__(
+        self,
+        env: ManagerBasedRLEnv,
+        min_improvement: float = 0.01,
+        max_lift: float = 0.12,
+        contact_threshold: float = 0.01,
+        object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    ) -> torch.Tensor:
+        obj = env.scene[object_cfg.name]
+        z = (obj.data.root_pos_w.torch[:, 2] - env.scene.env_origins[:, 2]).nan_to_num(nan=-2.0)
+        gate = handle_held(env, threshold=contact_threshold) > 0.5
+        unseeded = self.best <= -2.0
+        self.best[unseeded] = z[unseeded]
+        self.seed_z[unseeded] = z[unseeded]
+        improved = gate & (z > self.best + min_improvement) & (z <= self.seed_z + max_lift)
+        self.best[improved] = z[improved]
+        return improved.float()
+
+
 def _flip_by_handle(env: ManagerBasedRLEnv) -> torch.Tensor:
     """Latch from upright_progress: True once the mug crossed upright while held this episode."""
     latch = getattr(env, "flip_by_handle", None)

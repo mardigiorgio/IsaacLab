@@ -237,6 +237,14 @@ class FlipRewardsCfg:
         params={"min_improvement": 0.05, "max_speed": FLIP_SPEED_MAX},
         weight=5.0,
     )
+    # Lift ratchet (2026-08-28): 1 per cm of NEW best held height, up to 12 cm.
+    # A flip needs the bar ~11 cm up; without this rung the held policy only
+    # tilted the mug against the table (run zbe5j091, one ratchet step, plateau).
+    lift_progress = RewTerm(
+        func=mdp.lift_progress,
+        params={"min_improvement": 0.01, "max_lift": 0.12},
+        weight=1.0,
+    )
     # Arrival annuity: STRICTLY upright, at the spot, on the table, calm.
     upright_at_goal = RewTerm(
         func=mdp.upright_at_goal,

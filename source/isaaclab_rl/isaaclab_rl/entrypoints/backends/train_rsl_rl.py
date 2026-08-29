@@ -242,7 +242,7 @@ def _run(args_cli: argparse.Namespace) -> None:
             # Gaussian head keeps PyTorch's default Linear init (biases ~+-0.1 = centimeters at
             # the fingertips), which released the mug-flip's banked handle pinch within 5 steps
             # of every episode before any gradient could arrive (probe_flip_bank_jitter).
-            if os.environ.get("RSL_ZERO_INIT_POLICY_HEAD", "0") == "1":
+            if os.environ.get("RSL_ZERO_INIT_POLICY_HEAD", "0") == "1" and not agent_cfg.resume:
                 import torch as _torch
                 import torch.nn as _nn
                 actor = getattr(runner.alg, "_raw_actor", None) or runner.alg.actor
