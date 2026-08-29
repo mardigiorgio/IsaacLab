@@ -471,7 +471,7 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
         # of bank starts pinched (handle_pinch 10 -> 3 per episode, run y92g80kp).
         # The held half stays at alpha=1; the home half carries the approach.
         apply_reverse_curriculum(
-            self, bank_pose=FLIP_GRASP_BANK_POSE, bank_fraction=0.5, end_step=1_000_000_000, gripper_offset=-0.05,
+            self, bank_pose=FLIP_GRASP_BANK_POSE, bank_fraction=0.4, end_step=1_000_000_000, gripper_offset=-0.05,
             home_offset_pose=FLIP_VIA_POSE,
         )
         # SECOND bank (2026-08-28): the LIFTED-HELD state -- arm + mug 11 cm up in
@@ -560,15 +560,22 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
         # the rung is a pure state-space curriculum with the same action
         # semantics as the plain home starts (its alpha=0) and the descent rung's
         # via start (its alpha=1). The gate counts only the FRONTIER slice
-        # (alpha within 0.15 of alpha_min), not the whole rung.
+        # (alpha within 0.15 of alpha_min), not the whole rung, and the rung
+        # samples a sliding window [alpha_min, alpha_min + 0.3] (30% of its
+        # starts from the full remainder so passed regions keep coverage):
+        # over the whole remainder the frontier was 5.6% of the batch and
+        # alpha_min sat at 0.47 for 900 iterations (fsm31). 0.3 of envs, taken
+        # from the grasp bank (0.5 -> 0.4).
         self.events.reset_arm_home_via_bank = EventTerm(
             func=mdp.reset_arm_reverse_curriculum,
             mode="reset",
             params={
                 "pose": FLIP_VIA_POSE,
-                "bank_fraction": 0.2,
+                "bank_fraction": 0.3,
                 "noise": 0.0,
                 "alpha_min": 1.0,
+                "alpha_max": 1.0,
+                "alpha_tail": 0.3,
                 "write_home": False,
                 "offset_pose": FLIP_VIA_POSE,
                 "asset_cfg": SceneEntityCfg("robot"),
@@ -576,7 +583,7 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
         )
         self.curriculum.grow_home_via = CurrTerm(
             func=mdp.anneal_by_competence,
-            params={"event_name": "reset_arm_home_via_bank", "lower_at": 0.22, "raise_at": 0.10, "step": 0.01, "window": 64, "frontier": 0.15},
+            params={"event_name": "reset_arm_home_via_bank", "lower_at": 0.22, "raise_at": 0.10, "step": 0.01, "window": 64, "frontier": 0.15, "span": 0.3},
         )
         self.curriculum.rung_success_home_via = CurrTerm(func=mdp.competence_rate, params={"event_name": "reset_arm_home_via_bank"})
         # Banks that WRITE THE MUG (lift, rotate) must run after the arm-only

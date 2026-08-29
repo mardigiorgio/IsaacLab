@@ -195,6 +195,7 @@ def reset_arm_reverse_curriculum(
     noise: float,
     alpha_min: float = 1.0,
     alpha_max: float = 1.0,
+    alpha_tail: float = 0.0,
     track_object_xy: list | None = None,
     nominal_object_pos: tuple | None = None,
     safe_yaw_range: tuple | None = None,
@@ -260,7 +261,14 @@ def reset_arm_reverse_curriculum(
         home = env._bank_home_anchor.expand(env_ids.shape[0], -1)
     sel = torch.rand(env_ids.shape[0], device=env.device) < bank_fraction
     target = torch.tensor([pose[n] for n in resolved], device=env.device, dtype=torch.float32)
-    alpha = sample_uniform(alpha_min, alpha_max, (env_ids.shape[0], 1), env.device)  # alpha_max < 1: probe a slice of the rung
+    # alpha_max < 1 narrows the rung to a window above alpha_min (the anneal's
+    # ``span`` slides it); ``alpha_tail`` sends that fraction of selected envs to
+    # the full [alpha_min, 1] so the regions the frontier has passed keep a few
+    # starts and are not forgotten.
+    alpha = sample_uniform(alpha_min, alpha_max, (env_ids.shape[0], 1), env.device)
+    if alpha_tail > 0.0:
+        tail = sample_uniform(alpha_min, 1.0, (env_ids.shape[0], 1), env.device)
+        alpha = torch.where(torch.rand_like(alpha) < alpha_tail, tail, alpha)
     start = home + alpha * (target.unsqueeze(0) - home)
     start = start + sample_uniform(-noise, noise, start.shape, start.device)
     # Under randomized placement the authored pose must FOLLOW the mug: one
@@ -377,6 +385,7 @@ def anneal_by_competence(
     alpha_floor: float = 0.0,
     window: int = 256,
     frontier: float | None = None,
+    span: float | None = None,
 ):
     """Competence-gated reverse curriculum (flip, 2026-08-29): lower the bank event's
     ``alpha_min`` by ``step`` whenever the rolling success rate of episodes that
@@ -388,7 +397,11 @@ def anneal_by_competence(
     ``frontier`` of the current alpha_min. Averaged over the whole rung the
     gate stayed above 0.22 on the already-learned half while the new region was
     at 0% (home->via rung: 55% at alpha >= 0.68, 0% below 0.5, alpha_min walked
-    to 0 anyway). Returns the current alpha_min for logging."""
+    to 0 anyway). ``span``: keep the bank's ``alpha_max`` at alpha_min + span so
+    the rung samples a sliding window just above the frontier instead of the
+    whole learned remainder (with the rung at 20% of envs and alpha_min 0.47 the
+    frontier was 5.6% of the batch and sat flat for 900 iterations). Returns
+    the current alpha_min for logging."""
     cfg = env.event_manager.get_term_cfg(event_name)
     key = id(cfg.params["pose"])
     selected = getattr(env, "_bank_selected", {}).get(key)
@@ -414,6 +427,8 @@ def anneal_by_competence(
         hist["n"] = 0
         hist["s"] = 0
         cfg.params["alpha_min"] = alpha
+    if span is not None:
+        cfg.params["alpha_max"] = min(1.0, alpha + span)
     return alpha
 
 
