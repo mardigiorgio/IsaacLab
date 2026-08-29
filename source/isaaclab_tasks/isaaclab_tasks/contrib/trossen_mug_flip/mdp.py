@@ -357,7 +357,16 @@ class flip_fsm(ManagerTermBase):
         rotate_prog = ((up + 1.0) / 2.0).clamp(0.0, 1.0)
         gid, _ = robot.find_joints(["follower_left_left_carriage_joint"], preserve_order=True)
         open_frac = (robot.data.joint_pos.torch[:, gid[0]] / 0.044).clamp(0.0, 1.0)
-        release_prog = 0.5 * open_frac + 0.5 * (self.fsm.persist.float() / 12.0).clamp(0.0, 1.0)
+        if success_mode == "in_hand":
+            # Stage-3 progress is the HOLD (2026-08-28): with the hang's release_prog
+            # here, shaping and the stage-3 ratchet paid for OPENING the gripper on
+            # the flipped mug -- the policy flipped in 0.7 s, opened, slipped, re-flipped
+            # (probe_flip_policy_rollout, model_1650: ~1.3 s flip/unflip period).
+            if not hasattr(self, "_hold_count"):
+                self._hold_count = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
+            release_prog = (self._hold_count.float() / float(hold_frames)).clamp(0.0, 1.0)
+        else:
+            release_prog = 0.5 * open_frac + 0.5 * (self.fsm.persist.float() / 12.0).clamp(0.0, 1.0)
         if not hasattr(self, "_err0"):
             self._err0 = torch.full((env.num_envs,), float("nan"), device=env.device)
         just_placed = (self.fsm.stage == 4) & torch.isnan(self._err0)
