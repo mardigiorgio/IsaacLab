@@ -297,6 +297,12 @@ def reset_arm_reverse_curriculum(
     if key not in env._bank_selected:
         env._bank_selected[key] = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
     env._bank_selected[key][env_ids] = sel
+    # the LAST bank to select an env owns it: drop every other bank's claim on
+    # those envs, so competence windows count each episode under the start it
+    # actually got (stacked banks overlap: probe_bank_overlap 2026-08-29).
+    for other, flags in env._bank_selected.items():
+        if other != key:
+            flags[env_ids[sel]] = False
     if not write_home:
         if not sel.any():
             return

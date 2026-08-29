@@ -551,7 +551,7 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
             mode="reset",
             params={
                 "pose": FLIP_VIA_POSE,
-                "bank_fraction": 0.12,
+                "bank_fraction": 0.2,
                 "noise": 0.0,
                 "alpha_min": 1.0,
                 "write_home": False,
@@ -563,6 +563,18 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
             params={"event_name": "reset_arm_home_via_bank", "lower_at": 0.22, "raise_at": 0.10, "step": 0.01, "window": 128},
         )
         self.curriculum.rung_success_home_via = CurrTerm(func=mdp.competence_rate, params={"event_name": "reset_arm_home_via_bank"})
+        # Banks that WRITE THE MUG (lift, rotate) must run after the arm-only
+        # rungs: events stack by selection, and a later arm-only rung inherited
+        # the airborne mug of an earlier lift/rotate selection -- 41% of
+        # home->via and 40% of descent starts began with the mug falling
+        # (probe_bank_overlap, 2026-08-29), so the rung metrics read ~0.6x and
+        # the 0.22 gate was effectively ~0.37. Moving them last makes every
+        # start self-consistent; home->via 0.12 -> 0.2 keeps its clean share
+        # (~0.12) after lift/rotate take theirs.
+        for name in ("reset_arm_lift_bank", "reset_arm_rotate_bank"):
+            term = getattr(self.events, name)
+            delattr(self.events, name)
+            setattr(self.events, name, term)
 
 
 @configclass

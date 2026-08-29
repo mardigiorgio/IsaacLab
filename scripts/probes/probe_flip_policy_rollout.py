@@ -14,7 +14,7 @@ from rsl_rl.runners import OnPolicyRunner
 TASK="IsaacContrib-Flip-Mug-Trossen-v0"; N=64
 cfg=parse_env_cfg(TASK,num_envs=N); apply_solver_choice(cfg,"icf")
 cfg.sim.physics.collision_cfg.rigid_contact_max=200_000; cfg.sim.physics.collision_cfg.max_triangle_pairs=4_000_000
-for e in ("reset_arm_grasp_bank","reset_arm_lift_bank","reset_arm_rotate_bank"): getattr(cfg.events,e).params["bank_fraction"]=0.0
+for e in ("reset_arm_grasp_bank","reset_arm_lift_bank","reset_arm_rotate_bank","reset_arm_hover_bank","reset_arm_home_via_bank"): getattr(cfg.events,e).params["bank_fraction"]=0.0  # bank none = TRUE home starts only
 (getattr(cfg.events,args.bank).params.__setitem__("bank_fraction",1.0) if args.bank != "none" else None); (getattr(cfg.events,args.bank).params.__setitem__("alpha_min",args.alpha_min) if args.bank != "none" else None); cfg.curriculum=None
 agent_cfg=load_cfg_from_registry(TASK,"rsl_rl_cfg_entry_point")
 env=gym.make(TASK,cfg=cfg); u=env.unwrapped; wenv=RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
