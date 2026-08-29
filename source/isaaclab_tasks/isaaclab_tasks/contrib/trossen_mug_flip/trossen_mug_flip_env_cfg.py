@@ -225,6 +225,10 @@ class FlipObservationsCfg:
         object_orientation = ObsTerm(func=mdp.object_orientation_in_world)
         target_object_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "object_pose"})
         actions = ObsTerm(func=mdp.last_action, clip=(-6.0, 6.0))
+        # LAST (2026-08-28): the arm action offset in action units, so the policy
+        # knows what a zero action holds after a banked start. Appended last so a
+        # checkpoint trained without it can be padded (probe_pad_checkpoint).
+        action_offset = ObsTerm(func=mdp.arm_action_offset, clip=(-6.0, 6.0))
 
         def __post_init__(self):
             self.enable_corruption = True
@@ -255,7 +259,7 @@ class FlipRewardsCfg:
     early_termination = RewTerm(
         func=mdp.is_terminated_term,
         weight=-50,
-        params={"term_keys": ["robot_abnormal", "physics_diverged"]},
+        params={"term_keys": ["robot_abnormal", "physics_diverged", "object_out_of_bound"]},
     )
 
     arm_on_mug_body = RewTerm(

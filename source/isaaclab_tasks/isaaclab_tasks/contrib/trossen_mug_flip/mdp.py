@@ -167,6 +167,26 @@ def body_contact_without_handle(
     return _finite((body & ~held).float())
 
 
+def arm_action_offset(env: ManagerBasedRLEnv, action_name: str = "arm_action") -> torch.Tensor:
+    """The arm action term's current OFFSET (joint target at zero action) relative
+    to the default pose, in action units: (offset - default) / scale.
+
+    The reverse-curriculum banks retarget the offset per start; without seeing
+    it the policy cannot know what its action means in absolute joint space
+    (measured 2026-08-28: the same 'hold' was a small action from a rotated
+    start and a large one after a self-flip, and the policy learned the average).
+    """
+    term = env.action_manager.get_term(action_name)
+    robot = env.scene["robot"]
+    off = getattr(term, "_offset", None)
+    if not torch.is_tensor(off):
+        return torch.zeros(env.num_envs, term.action_dim, device=env.device)
+    ids = term._joint_ids
+    default = robot.data.default_joint_pos.torch[:, ids]
+    scale = term._scale if torch.is_tensor(term._scale) else float(term._scale)
+    return _finite((off - default) / scale)
+
+
 def handle_held(
     env: ManagerBasedRLEnv,
     left_sensor: str = "pad_left_handle",
