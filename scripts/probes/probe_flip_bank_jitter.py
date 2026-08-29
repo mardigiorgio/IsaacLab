@@ -27,14 +27,17 @@ def stats(tag, spawn):
     print(f"[jitter] {tag:40s} pinching {pinch*100:5.1f}%  in-hand {inhand*100:5.1f}%  handle F {((L+R)/2).mean():6.2f} N  body F {B.mean():5.2f} N  mug drift med {d.median()*1000:5.1f} mm  carriage med {car.median()*1000:4.1f} mm", flush=True)
 A=env.action_manager.total_action_dim
 torch.manual_seed(0)
-arm_dim=env.action_manager.get_term("arm_action").action_dim
 params=env.event_manager.get_term_cfg("reset_arm_grasp_bank").params
-for goff in (-0.005, -0.01, -0.015):
-    params["gripper_offset"]=goff
-    for tag,bias_grip,sigma in (("no bias, sigma 0",0.0,0.0),("grip bias +0.05, sigma 0",0.05,0.0),("grip bias +0.1, sigma 0.1",0.1,0.1),("no bias, sigma 0.1",0.0,0.1)):
+params["gripper_offset"]=-0.01
+bias=torch.tensor([-0.077,-0.107,0.037,0.123,-0.027,0.092,0.066,0.095],device=dev)  # actor output bias, model_0.pt (held run)
+for amin in (1.0, 0.95, 0.9):
+    params["alpha_min"]=amin
+    for tag,use_bias,sigma in (("zero action",False,0.0),("actor bias, sigma 0",True,0.0),("actor bias, sigma 0.1",True,0.1)):
         env.reset(); spawn=t(obj.data.root_pos_w).clone()
+        stats(f"alpha_min {amin} | {tag} t=0", spawn) if tag=="zero action" else None
         for k in range(30):
-            act=sigma*torch.randn(N,A,device=dev); act[:,arm_dim:]+=bias_grip
+            act=sigma*torch.randn(N,A,device=dev)+(bias if use_bias else 0)
             env.step(act)
-        stats(f"HELD goff {goff:+.3f} | {tag} t=30", spawn)
+            if k==4 and tag!="zero action": stats(f"alpha_min {amin} | {tag} t=5", spawn)
+        stats(f"alpha_min {amin} | {tag} t=30", spawn)
 env.close()

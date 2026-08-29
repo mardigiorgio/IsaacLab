@@ -237,6 +237,21 @@ def _run(args_cli: argparse.Namespace) -> None:
         dump_train_configs(log_dir, env_cfg, agent_cfg)
 
         try:
+            # RSL_ZERO_INIT_POLICY_HEAD=1 (2026-08-28): zero the actor's output layer so the
+            # initial policy mean is exactly the action offset (hold the reset pose). rsl_rl's
+            # Gaussian head keeps PyTorch's default Linear init (biases ~+-0.1 = centimeters at
+            # the fingertips), which released the mug-flip's banked handle pinch within 5 steps
+            # of every episode before any gradient could arrive (probe_flip_bank_jitter).
+            if os.environ.get("RSL_ZERO_INIT_POLICY_HEAD", "0") == "1":
+                import torch as _torch
+                import torch.nn as _nn
+                actor = getattr(runner.alg, "_raw_actor", None) or runner.alg.actor
+                last = [m for m in actor.modules() if isinstance(m, _nn.Linear)][-1]
+                with _torch.no_grad():
+                    last.weight.zero_()
+                    last.bias.zero_()
+                print(f"[INFO] RSL_ZERO_INIT_POLICY_HEAD: zeroed actor output layer {tuple(last.weight.shape)}")
+
             runner.learn(
                 num_learning_iterations=agent_cfg.max_iterations,
                 init_at_random_ep_len=agent_cfg.init_at_random_ep_len,
