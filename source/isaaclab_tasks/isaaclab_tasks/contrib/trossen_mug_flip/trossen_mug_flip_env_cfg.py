@@ -304,6 +304,12 @@ class FlipTerminationsCfg:
             # a ~7 shaping loss on the drop, so first steps were net-negative.
             # Max pre-completion 55 + 105 + 20 = 180 < SUCCESS_BONUS 200 (asserted).
             "ratchet_w": (10.0, 10.0, 40.0, 15.0, 30.0),
+            # "in_hand": flipped by the handle and held upright for hold_frames (1 s)
+            # ends the episode with the success bonus. "placed" (set down upright,
+            # released, arm parked) is kept as the alternative; measured 2026-08-28
+            # to be kinematically out of reach from a single pinch on this rig.
+            "success_mode": "in_hand",
+            "hold_frames": 30,
             "wrist_cfg": SceneEntityCfg("robot", body_names=["follower_left_link_6"]),
         },
     )

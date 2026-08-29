@@ -296,6 +296,8 @@ class flip_fsm(ManagerTermBase):
         self.fsm.reset(env_ids)
         self.flipped_held[env_ids] = False
         self._z0[env_ids] = float("nan")
+        if hasattr(self, "_hold_count"):
+            self._hold_count[env_ids] = 0
         if hasattr(self, "_err0"):
             self._err0[env_ids] = float("nan")
 
@@ -313,6 +315,8 @@ class flip_fsm(ManagerTermBase):
         rotate_min_cos: float = 0.7,
         rest_z: float | None = None,
         ratchet_w: tuple | None = None,
+        success_mode: str = "placed",
+        hold_frames: int = 30,
         wrist_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=["follower_left_link_6"]),
     ) -> torch.Tensor:
         """``rotate_min_cos`` (2026-08-28, probe_flip_rotate_sweep): from an 11 cm
@@ -368,6 +372,19 @@ class flip_fsm(ManagerTermBase):
             release_prog=release_prog, retreat_prog=retreat_prog, lifted_hold=lifted_hold,
         ))
         out["regress_total"] = self.fsm.regressions
+        if success_mode == "in_hand":
+            # Success = flipped BY THE HANDLE and held upright in hand for hold_frames
+            # (2026-08-28): setting the mug down upright from a single pinch is
+            # kinematically out of reach on this rig (fingers point ~40 deg up when
+            # the mug is upright; no IK reaches that at table height; drops land
+            # upright 0-2%), so PLACED/retreat cannot pay. Without a terminal success
+            # the learned policy flips the mug in 0.7 s, then rolls it back and
+            # forth and drops it (probe_flip_policy_rollout, model_1550).
+            if not hasattr(self, "_hold_count"):
+                self._hold_count = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
+            done_pred = (out["stage"] >= 3) & rotated & held
+            self._hold_count = torch.where(done_pred, self._hold_count + 1, torch.zeros_like(self._hold_count))
+            out["success"] = self._hold_count >= hold_frames
         env._fsm = out
         return out["success"]
 
