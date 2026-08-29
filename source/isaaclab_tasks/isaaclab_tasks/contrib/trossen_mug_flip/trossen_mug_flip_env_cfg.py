@@ -691,6 +691,28 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
                 params={"from_pose": FLIP_VIA_POSE, "to_pose": FLIP_OPEN_GRASP_BANK_POSE, "tol": 0.08},
             )
             self.events.reset_arm_hover_bank.params["offset_pose"] = FLIP_OPEN_GRASP_BANK_POSE
+        # FLIP_FAR_PENALTY=1 (2026-08-29): with the waypoint offsets zero action is
+        # the approach; bill arm+gripper action beyond 4 cm from the handle so
+        # the deterministic mean stays on the nominal path and the jaws stay
+        # open until arrival (fast-H regressed 90 -> 66% from home at 500
+        # because it learned to close the jaws at step 0).
+        if os.environ.get("FLIP_FAR_PENALTY") == "1":
+            self.rewards.action_l2_far = RewTerm(
+                func=mdp.action_l2_far,
+                weight=-0.2,
+                params={"far": 0.04, "wrist_cfg": SceneEntityCfg("robot", body_names=["follower_left_link_6"])},
+            )
+        # FLIP_FAR_PENALTY=1 (2026-08-29): with the waypoint offsets zero action is
+        # the approach; bill arm+gripper action beyond 4 cm from the handle so the
+        # deterministic mean stays on the nominal path and the jaws stay open
+        # until arrival (fast-H: 89% -> 68% from home between 250 and 500 because
+        # the mean learned to close the jaws at step 0).
+        if os.environ.get("FLIP_FAR_PENALTY") == "1":
+            self.rewards.action_l2_far = RewTerm(
+                func=mdp.action_l2_far,
+                weight=-0.2,
+                params={"far": 0.04, "wrist_cfg": SceneEntityCfg("robot", body_names=["follower_left_link_6"])},
+            )
         # FLIP_FAR_HEAVY=1 (2026-08-29): the held skills (pinch, lift, doorknob)
         # are learned by iteration 250 with roll sigma 0.4/0.5 even at a small
         # share (fast-D), so the start mix can favour the approach from the

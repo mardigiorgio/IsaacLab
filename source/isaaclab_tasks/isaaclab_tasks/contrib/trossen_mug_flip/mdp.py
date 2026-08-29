@@ -304,6 +304,52 @@ def arm_action_l2(env: ManagerBasedRLEnv, action_name: str = "arm_action") -> to
     return (a * a).sum(dim=-1)
 
 
+def action_l2_far(
+    env: ManagerBasedRLEnv,
+    wrist_cfg: SceneEntityCfg,
+    far: float = 0.04,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+) -> torch.Tensor:
+    """Squared ARM + GRIPPER raw action while unpinched and the fingertips are
+    farther than ``far`` from the handle. With the waypoint offsets the zero
+    action IS the approach (probe_nominal_descent: 128/128 on the bar), so any
+    far-field action is noise: fast-H's deterministic mean drifted to closing
+    the jaws at step 0 (grip -0.43) and arrived with closed jaws -- 29% of
+    home starts never pinched at iteration 500 against 1.5% at 250."""
+    a = env.action_manager.get_term("arm_action").raw_actions
+    g = env.action_manager.get_term("gripper_action").raw_actions
+    fsm = getattr(env, "_fsm", None)
+    if fsm is None:
+        return torch.zeros(env.num_envs, device=env.device)
+    d = _tip_handle_distance(env, object_cfg, ee_frame_cfg, wrist_cfg)
+    gate = (~fsm["pinched_ever"] if "pinched_ever" in fsm else (fsm["stage"] == 0)) & (d > far)
+    return _finite(((a * a).sum(dim=-1) + (g * g).sum(dim=-1)) * gate.float())
+
+
+def action_l2_far(
+    env: ManagerBasedRLEnv,
+    wrist_cfg: SceneEntityCfg,
+    far: float = 0.04,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+) -> torch.Tensor:
+    """Squared ARM + GRIPPER raw action while the episode has not pinched yet and
+    the fingertips are farther than ``far`` from the handle. With the waypoint
+    offsets the zero action IS the approach (probe_flip_nominal_descent: 128/128
+    fingertips on the bar), so any far-field action is noise: fast-H's
+    deterministic mean drifted to closing the jaws at step 0 and arrived with
+    closed jaws -- 83% of its home failures at iteration 500 never pinched."""
+    a = env.action_manager.get_term("arm_action").raw_actions
+    g = env.action_manager.get_term("gripper_action").raw_actions
+    fsm = getattr(env, "_fsm", None)
+    if fsm is None:
+        return torch.zeros(env.num_envs, device=env.device)
+    d = _tip_handle_distance(env, object_cfg, ee_frame_cfg, wrist_cfg)
+    gate = (~fsm["pinched_ever"] if "pinched_ever" in fsm else (fsm["stage"] == 0)) & (d > far)
+    return _finite(((a * a).sum(dim=-1) + (g * g).sum(dim=-1)) * gate.float())
+
+
 def arm_action_l2_far(
     env: ManagerBasedRLEnv,
     wrist_cfg: SceneEntityCfg,
