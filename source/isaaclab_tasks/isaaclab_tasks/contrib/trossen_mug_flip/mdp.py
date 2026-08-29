@@ -106,6 +106,10 @@ def handle_contact_count(
 # at link_6 x = 0.0865, finger boxes 0..0.0696 beyond them; EE_TCP_OFFSET 0.087 is
 # therefore the finger BASE and the fingertips sit FINGER_LEN further along the tool axis).
 FINGER_LEN = 0.0696
+# Reach/pinch target on the handle bar in the mug body frame: the LOW (rim-end)
+# pinch point, 4.2 cm above the table when the mug is inverted (body z = rest
+# height 0.119 - 0.042); handle_middle (z 0.058) is the fragile mid pinch.
+HANDLE_PINCH_B = (0.062, 0.0, 0.077)
 
 
 def handle_tip_distance(
@@ -134,7 +138,7 @@ def _tip_handle_distance(env, object_cfg, ee_frame_cfg, wrist_cfg) -> torch.Tens
     ee_frame = env.scene[ee_frame_cfg.name]
     p = obj.data.root_pos_w.torch
     q = obj.data.root_quat_w.torch
-    handle_w = p + quat_apply(q, torch.tensor(_HANDLE_OFFSET_B, device=p.device, dtype=p.dtype).expand_as(p))
+    handle_w = p + quat_apply(q, torch.tensor(HANDLE_PINCH_B, device=p.device, dtype=p.dtype).expand_as(p))
     tcp_w = ee_frame.data.target_pos_w.torch[..., 0, :]
     wid = wrist_cfg.body_ids
     wrist_w = robot.data.body_pos_w.torch[:, wid[0] if isinstance(wid, list) else wid]

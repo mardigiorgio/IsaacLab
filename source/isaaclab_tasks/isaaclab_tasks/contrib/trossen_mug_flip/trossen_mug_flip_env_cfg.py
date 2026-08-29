@@ -64,49 +64,46 @@ from . import mdp
 # Joints are PRE-COMPENSATED by the measured PD gravity sag (q_int at the grasp:
 # j1 -0.0315, j2 +0.0296, j3 +0.0129) so the PD-held start puts the fingertips
 # mid-bar (env y 0.062, z 0.071), not on the curved lower arm where a pinch slips.
-# LIFTED-HELD bank (probe_flip_lifted_state, 2026-08-28): from the grasp bank,
-# gripper fully closed, shoulder -0.30 rad, settled: mug root 11.6 cm above its
-# rest, hanging on the pinched bar at up_cos -0.67 (it pivots on the bar).
+# LIFTED-HELD bank (probe_flip_low_pinch_chain, 2026-08-28): low pinch, shoulder
+# -0.30 rad, settled: mug root 10.8 cm above its rest, held 100%.
 FLIP_LIFTED_BANK_POSE = {
     "follower_left_joint_0": -0.0001,
-    "follower_left_joint_1": 1.3617,
-    "follower_left_joint_2": 0.8258,
-    "follower_left_joint_3": -0.0812,
+    "follower_left_joint_1": 1.4870,
+    "follower_left_joint_2": 0.7428,
+    "follower_left_joint_3": 0.0595,
     "follower_left_joint_4": 0.0001,
-    "follower_left_joint_5": -0.0003,
-    "follower_left_left_carriage_joint": 0.0040,
-    "follower_left_right_carriage_joint": 0.0040,
+    "follower_left_joint_5": -0.0002,
+    "follower_left_left_carriage_joint": 0.0060,
+    "follower_left_right_carriage_joint": 0.0060,
 }
-FLIP_LIFTED_MUG_POSE = (-0.0203, 0.0392, 0.2348, 0.6518, 0.6404, -0.2885, 0.2827)  # env frame, (x y z qx qy qz qw)
+FLIP_LIFTED_MUG_POSE = (-0.0199, 0.0562, 0.2266, 0.6685, 0.6697, -0.229, 0.2283)  # env frame, (x y z qx qy qz qw)
 
-# ROTATED-held bank (probe_flip_scripted_rotate, 2026-08-28): from the lifted
-# bank, forearm roll -> 1.4 and wrist roll -> -1.8 over 45 steps put the held
-# mug past up_cos 0.7 in 64/64 envs (FSM ROTATED 91%); this is the median
-# state at that frame -- mug 46 cm up, near upright in the jaws. Placement
-# (descend, set down upright, release) is learned from here.
+# ROTATED-held bank (probe_flip_low_pinch_chain, 2026-08-28): low pinch, lifted,
+# forearm roll -> 1.4 and wrist roll -> -3.0 over 60 steps: up_cos +0.78..0.82,
+# FSM ROTATED 100%, still held (fingers pointing ~40 deg up, hand below the handle).
 FLIP_ROTATED_BANK_POSE = {
     "follower_left_joint_0": -0.0001,
-    "follower_left_joint_1": 1.3842,
-    "follower_left_joint_2": 0.7955,
-    "follower_left_joint_3": 1.3045,
-    "follower_left_joint_4": -0.0007,
-    "follower_left_joint_5": -1.7711,
-    "follower_left_left_carriage_joint": 0.0040,
-    "follower_left_right_carriage_joint": 0.0040,
+    "follower_left_joint_1": 1.4758,
+    "follower_left_joint_2": 0.7442,
+    "follower_left_joint_3": 1.4397,
+    "follower_left_joint_4": -0.0001,
+    "follower_left_joint_5": -2.9499,
+    "follower_left_left_carriage_joint": 0.0060,
+    "follower_left_right_carriage_joint": 0.0060,
 }
-FLIP_ROTATED_MUG_POSE = (0.0244, 0.052, 0.458, 0.0428, 0.2585, -0.9399, -0.1623)
+FLIP_ROTATED_MUG_POSE = (-0.0065, 0.0624, 0.3471, -0.1954, 0.2644, -0.7243, -0.606)
 
+# LOW (rim-end) pinch (probe_generate_bank tcp z 0.0965 + probe_flip_low_pinch_chain,
+# 2026-08-28): fingertips ~4 cm above the table on the bar, 60-degree approach.
+# Pinched 100%, held after the lift 100% at every squeeze, holds through every
+# wrist motion tested; the mid-height pinch (handle_middle) held 17-75%.
 FLIP_GRASP_BANK_POSE = {
     "follower_left_joint_0": -0.0001,
-    "follower_left_joint_1": 1.6277,
-    "follower_left_joint_2": 0.8602,
-    "follower_left_joint_3": -0.0645,
+    "follower_left_joint_1": 1.7416,
+    "follower_left_joint_2": 0.7745,
+    "follower_left_joint_3": 0.0754,
     "follower_left_joint_4": 0.0000,
     "follower_left_joint_5": -0.0001,
-    # Jaws seeded AT contact with the 11.7 mm bar (5.85 mm each side + 0.15 mm,
-    # inside the 0.5 mm contact gap: contact live, no penetration, no pop); the
-    # bank's gripper_offset=-0.01 (target below the limit: ~14 N squeeze) holds
-# through a +0.05 initial gripper bias (offset 0 released at +0.05) -> a HELD start.
     "follower_left_left_carriage_joint": 0.0060,
     "follower_left_right_carriage_joint": 0.0060,
 }
@@ -415,7 +412,7 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
         # of bank starts pinched (handle_pinch 10 -> 3 per episode, run y92g80kp).
         # The held half stays at alpha=1; the home half carries the approach.
         apply_reverse_curriculum(
-            self, bank_pose=FLIP_GRASP_BANK_POSE, bank_fraction=0.5, end_step=1_000_000_000, gripper_offset=-0.01
+            self, bank_pose=FLIP_GRASP_BANK_POSE, bank_fraction=0.5, end_step=1_000_000_000, gripper_offset=-0.05
         )
         # SECOND bank (2026-08-28): the LIFTED-HELD state -- arm + mug 11 cm up in
         # the jaws, captured by probe_flip_lifted_state (56% of lifts settle held) --
@@ -429,10 +426,7 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
                 "bank_fraction": 0.25,
                 "noise": 0.0,
                 "alpha_min": 1.0,
-                # -0.15 (2026-08-28): the hard squeeze (~110 N) every scripted rotation
-                # used; the rolled-out policy squeezed ~19 N and could never rotate.
-                # Body contact while the handle is held is no longer fined.
-                "gripper_offset": -0.15,
+                "gripper_offset": -0.05,  # firm (~45 N): rigid enough for the rotation on the low pinch
                 "object_pose": FLIP_LIFTED_MUG_POSE,
                 "write_home": False,
                 "asset_cfg": SceneEntityCfg("robot"),
@@ -444,13 +438,10 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
             mode="reset",
             params={
                 "pose": FLIP_ROTATED_BANK_POSE,
-                # 0.2 -> 0.0 (2026-08-28): the median-across-envs capture is not a
-                # self-consistent state (drops on the first frame); re-capture
-                # from a single env before re-enabling.
-                "bank_fraction": 0.0,
+                "bank_fraction": 0.2,
                 "noise": 0.0,
                 "alpha_min": 1.0,
-                "gripper_offset": -0.01,
+                "gripper_offset": -0.05,
                 "object_pose": FLIP_ROTATED_MUG_POSE,
                 "write_home": False,
                 "asset_cfg": SceneEntityCfg("robot"),
