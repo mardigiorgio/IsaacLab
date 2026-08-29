@@ -28,13 +28,13 @@ def stats(tag, spawn):
 A=env.action_manager.total_action_dim
 torch.manual_seed(0)
 arm_dim=env.action_manager.get_term("arm_action").action_dim
-gids,_=robot.find_joints(["follower_left_left_carriage_joint","follower_left_right_carriage_joint"],preserve_order=True)
-for k_grip in (1000.0, 10000.0, 50000.0):
-    robot.write_joint_stiffness_to_sim(torch.full((N,2),k_grip,device=dev), joint_ids=gids)
-    for tag,arm_s,grip_s in (("sigma 0 (static pinch)",0.0,0.0),("ARM only s0.9",0.9,0.0),("arm+grip s0.9",0.9,0.9),("arm+grip s0.5",0.5,0.5)):
+params=env.event_manager.get_term_cfg("reset_arm_grasp_bank").params
+for goff in (-0.005, -0.01, -0.015):
+    params["gripper_offset"]=goff
+    for tag,bias_grip,sigma in (("no bias, sigma 0",0.0,0.0),("grip bias +0.05, sigma 0",0.05,0.0),("grip bias +0.1, sigma 0.1",0.1,0.1),("no bias, sigma 0.1",0.0,0.1)):
         env.reset(); spawn=t(obj.data.root_pos_w).clone()
         for k in range(30):
-            act=torch.randn(N,A,device=dev); act[:,:arm_dim]*=arm_s; act[:,arm_dim:]*=grip_s
+            act=sigma*torch.randn(N,A,device=dev); act[:,arm_dim:]+=bias_grip
             env.step(act)
-        stats(f"HELD | grip k={k_grip:.0f} | {tag} t=30", spawn)
+        stats(f"HELD goff {goff:+.3f} | {tag} t=30", spawn)
 env.close()

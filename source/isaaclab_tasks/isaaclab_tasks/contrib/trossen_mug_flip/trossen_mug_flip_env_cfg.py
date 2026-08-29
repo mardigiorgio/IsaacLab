@@ -71,7 +71,8 @@ FLIP_GRASP_BANK_POSE = {
     "follower_left_joint_5": -0.0001,
     # Jaws seeded AT contact with the 11.7 mm bar (5.85 mm each side + 0.15 mm,
     # inside the 0.5 mm contact gap: contact live, no penetration, no pop); the
-    # bank's gripper_offset=0.0 squeezes from step 0 -> a HELD start.
+    # bank's gripper_offset=-0.01 (target below the limit: ~14 N squeeze) holds
+# through a +0.05 initial gripper bias (offset 0 released at +0.05) -> a HELD start.
     "follower_left_left_carriage_joint": 0.0060,
     "follower_left_right_carriage_joint": 0.0060,
 }
@@ -258,7 +259,10 @@ class FlipRewardsCfg:
         func=mdp.body_contact, weight=-6.0, params={"sensor_name": "arm_body_contact", "threshold": 1.0}
     )
     pads_on_mug_body = RewTerm(
-        func=mdp.body_contact, weight=-6.0, params={"sensor_name": "pad_body_contact", "threshold": 1.0}
+        # threshold 1 -> 5 N (2026-08-28, measured): a legitimate 14 N handle
+        # pinch presses the fingertips into the wall at the handle root at
+        # 1.4-2.1 N; a body grab at the vendor gripper gain reads ~44 N.
+        func=mdp.body_contact, weight=-6.0, params={"sensor_name": "pad_body_contact", "threshold": 5.0}
     )
     table_scrape = RewTerm(
         func=mdp.body_contact, weight=-6.0, params={"sensor_name": "arm_table_contact", "threshold": 1.0}
@@ -382,7 +386,7 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
         # SQUEEZED (gripper_offset 0), so the anneal stays near alpha=1 while the
         # pinch is learned; the home half carries the approach.
         apply_reverse_curriculum(
-            self, bank_pose=FLIP_GRASP_BANK_POSE, bank_fraction=0.5, end_step=24_000, gripper_offset=0.0
+            self, bank_pose=FLIP_GRASP_BANK_POSE, bank_fraction=0.5, end_step=24_000, gripper_offset=-0.01
         )
 
 
