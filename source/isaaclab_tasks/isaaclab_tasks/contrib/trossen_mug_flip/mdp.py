@@ -150,11 +150,19 @@ class upright_progress(ManagerTermBase):
     def __init__(self, cfg, env: ManagerBasedRLEnv):
         super().__init__(cfg, env)
         self.best = torch.full((env.num_envs,), -2.0, device=env.device)
+        # Per-episode latch: the mug crossed UPRIGHT while the handle was held.
+        # upright_at_goal / arm_retreated_after_flip / the by-handle metric read
+        # it through env.flip_by_handle: a tumble that lands upright (measured
+        # 2026-08-28: upright_at_goal 28/episode at iter 5 from yanked mugs)
+        # must not collect the arrival annuity -- the task is a HANDLE flip.
+        self.flipped_held = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+        env.flip_by_handle = self.flipped_held
 
     def reset(self, env_ids=None):
         if env_ids is None:
             env_ids = slice(None)
         self.best[env_ids] = -2.0
+        self.flipped_held[env_ids] = False
 
     def __call__(
         self,
@@ -170,7 +178,21 @@ class upright_progress(ManagerTermBase):
         self.best[unseeded] = up[unseeded]
         improved = gate & (up > self.best + min_improvement)
         self.best[improved] = up[improved]
+        self.flipped_held |= (handle_held(env, threshold=contact_threshold) > 0.5) & (up > UPRIGHT_MIN_COS)
         return improved.float()
+
+
+def _flip_by_handle(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Latch from upright_progress: True once the mug crossed upright while held this episode."""
+    latch = getattr(env, "flip_by_handle", None)
+    if latch is None:
+        return torch.ones(env.num_envs, dtype=torch.bool, device=env.device)
+    return latch
+
+
+def flip_by_handle_metric(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Metric at 1e-3 scale (weight 1.0 in cfg): fraction of steps with the by-handle latch set."""
+    return _flip_by_handle(env).float() * 1e-3
 
 
 def upright_at_goal(
@@ -198,6 +220,7 @@ def upright_at_goal(
         (_up_cos(env, object_cfg) > UPRIGHT_MIN_COS)
         & (z_local < z_max)
         & _object_calm(env, max_speed, object_cfg)
+        & _flip_by_handle(env)
     )
     return _finite(gate * (1.0 - torch.tanh(distance / std)))
 
@@ -234,6 +257,7 @@ def arm_retreated_after_flip(
         & (z_local < z_max)
         & _object_calm(env, max_speed, object_cfg)
         & (_sensor_force_mag(env, contact_sensor) < contact_threshold)
+        & _flip_by_handle(env)
     )
     speed = torch.linalg.vector_norm(robot.data.joint_vel.torch[:, arm_cfg.joint_ids], dim=1)
     return _finite(gate * (1.0 - torch.tanh(distance / std)) * (1.0 - torch.tanh(speed / vel_std)))

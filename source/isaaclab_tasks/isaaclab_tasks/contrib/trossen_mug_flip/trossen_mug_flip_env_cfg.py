@@ -276,6 +276,9 @@ class FlipRewardsCfg:
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=["follower_left_joint_[0-5]"])},
     )
 
+    # Diagnostic at metric scale (x1e-3 inside; read W&B x150 x1000 = fraction of
+    # steps with the by-handle latch set): did the flip happen BY THE HANDLE?
+    flip_by_handle = RewTerm(func=mdp.flip_by_handle_metric, weight=1.0)
 
 @configclass
 class FlipTerminationsCfg:
@@ -382,11 +385,12 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
         # BANK STARTS (2026-08-28): half the resets begin at the validated handle
         # pre-grasp hover (FLIP_GRASP_BANK_POSE) and anneal back toward home over
         # 2400 env-steps -- the hang's recipe. No placement DR here, so no Jacobian.
-        # end_step 24_000 (1000 iters): interpolated home<->grasp starts are
-        # SQUEEZED (gripper_offset 0), so the anneal stays near alpha=1 while the
-        # pinch is learned; the home half carries the approach.
+        # NO anneal (end_step 1e9): the pinch window is ~1% of the joint-space
+        # home->grasp path, so alpha_min 0.955 at iter 45 already left only ~22%
+        # of bank starts pinched (handle_pinch 10 -> 3 per episode, run y92g80kp).
+        # The held half stays at alpha=1; the home half carries the approach.
         apply_reverse_curriculum(
-            self, bank_pose=FLIP_GRASP_BANK_POSE, bank_fraction=0.5, end_step=24_000, gripper_offset=-0.01
+            self, bank_pose=FLIP_GRASP_BANK_POSE, bank_fraction=0.5, end_step=1_000_000_000, gripper_offset=-0.01
         )
 
 
