@@ -410,7 +410,8 @@ def advance_action_offset_waypoint(
     env_ids: torch.Tensor,
     from_pose: dict[str, float],
     to_pose: dict[str, float],
-    tol: float = 0.08,
+    tol: float = 0.15,
+    max_wait: int = 15,
     action_name: str = "arm_action",
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
 ):
@@ -432,7 +433,12 @@ def advance_action_offset_waypoint(
     asset = env.scene[asset_cfg.name]
     jid, _ = asset.find_joints(names, preserve_order=True)
     q = asset.data.joint_pos.torch[env_ids][:, jid]
-    reached = (q - frm).abs().max(dim=1).values < tol
+    # ``tol`` on every joint, OR ``max_wait`` steps into the episode: the policy's
+    # own mean action holds a roll joint ~0.15 rad off the via, and with tol 0.08
+    # the offset never advanced on half the envs (fast-I@250: 47% from home,
+    # 99% of failures never pinched, arm parked 6 cm out). The nominal reaches
+    # the via in <= 10 steps.
+    reached = ((q - frm).abs().max(dim=1).values < tol) | (env.episode_length_buf[env_ids] >= max_wait)
     hit = at_from & reached
     if hit.any():
         term._offset[env_ids[hit]] = to

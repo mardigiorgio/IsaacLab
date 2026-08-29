@@ -688,7 +688,7 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
                 mode="interval",
                 interval_range_s=(0.0, 0.0),
                 is_global_time=False,
-                params={"from_pose": FLIP_VIA_POSE, "to_pose": FLIP_OPEN_GRASP_BANK_POSE, "tol": 0.08},
+                params={"from_pose": FLIP_VIA_POSE, "to_pose": FLIP_OPEN_GRASP_BANK_POSE, "tol": 0.15, "max_wait": 15},
             )
             self.events.reset_arm_hover_bank.params["offset_pose"] = FLIP_OPEN_GRASP_BANK_POSE
         # FLIP_FAR_PENALTY=1 (2026-08-29): with the waypoint offsets zero action is
