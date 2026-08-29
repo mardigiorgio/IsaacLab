@@ -79,6 +79,23 @@ FLIP_LIFTED_BANK_POSE = {
 }
 FLIP_LIFTED_MUG_POSE = (-0.0203, 0.0392, 0.2348, 0.6518, 0.6404, -0.2885, 0.2827)  # env frame, (x y z qx qy qz qw)
 
+# ROTATED-held bank (probe_flip_scripted_rotate, 2026-08-28): from the lifted
+# bank, forearm roll -> 1.4 and wrist roll -> -1.8 over 45 steps put the held
+# mug past up_cos 0.7 in 64/64 envs (FSM ROTATED 91%); this is the median
+# state at that frame -- mug 46 cm up, near upright in the jaws. Placement
+# (descend, set down upright, release) is learned from here.
+FLIP_ROTATED_BANK_POSE = {
+    "follower_left_joint_0": -0.0001,
+    "follower_left_joint_1": 1.3842,
+    "follower_left_joint_2": 0.7955,
+    "follower_left_joint_3": 1.3045,
+    "follower_left_joint_4": -0.0007,
+    "follower_left_joint_5": -1.7711,
+    "follower_left_left_carriage_joint": 0.0040,
+    "follower_left_right_carriage_joint": 0.0040,
+}
+FLIP_ROTATED_MUG_POSE = (0.0244, 0.052, 0.458, 0.0428, 0.2585, -0.9399, -0.1623)
+
 FLIP_GRASP_BANK_POSE = {
     "follower_left_joint_0": -0.0001,
     "follower_left_joint_1": 1.6277,
@@ -282,6 +299,12 @@ class FlipTerminationsCfg:
             "lift_height": 0.06,
             "rotate_min_cos": 0.7,
             "rest_z": OBJECT_REST_Z_INVERTED,
+            # ROTATE ratchet 15 -> 40 (2026-08-28, probe_flip_scripted_rotate): from
+            # the lifted bank, j3+j5 rotate the held mug -0.63 -> +0.62 (ROTATED in
+            # 36%) and the mug drops right after; a partial rotation paid ~3 against
+            # a ~7 shaping loss on the drop, so first steps were net-negative.
+            # Max pre-completion 55 + 105 + 20 = 180 < SUCCESS_BONUS 200 (asserted).
+            "ratchet_w": (10.0, 10.0, 40.0, 15.0, 30.0),
             "wrist_cfg": SceneEntityCfg("robot", body_names=["follower_left_link_6"]),
         },
     )
@@ -406,6 +429,21 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
                 "alpha_min": 1.0,
                 "gripper_offset": -0.01,
                 "object_pose": FLIP_LIFTED_MUG_POSE,
+                "write_home": False,
+                "asset_cfg": SceneEntityCfg("robot"),
+            },
+        )
+        # THIRD bank: the ROTATED-held state (stacks again): ~20% rotated, ~20% lifted, ~30% grasp, ~30% home.
+        self.events.reset_arm_rotate_bank = EventTerm(
+            func=mdp.reset_arm_reverse_curriculum,
+            mode="reset",
+            params={
+                "pose": FLIP_ROTATED_BANK_POSE,
+                "bank_fraction": 0.2,
+                "noise": 0.0,
+                "alpha_min": 1.0,
+                "gripper_offset": -0.01,
+                "object_pose": FLIP_ROTATED_MUG_POSE,
                 "write_home": False,
                 "asset_cfg": SceneEntityCfg("robot"),
             },

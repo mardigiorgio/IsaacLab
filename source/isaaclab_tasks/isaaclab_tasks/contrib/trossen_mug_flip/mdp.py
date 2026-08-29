@@ -264,7 +264,7 @@ class flip_fsm(ManagerTermBase):
 
     def __init__(self, cfg, env):
         super().__init__(cfg, env)
-        self.fsm = HangFsm(env.num_envs, env.device)
+        self.fsm = HangFsm(env.num_envs, env.device, ratchet_w=cfg.params.get("ratchet_w"))
         self.flipped_held = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
         self._z0 = torch.full((env.num_envs,), float("nan"), device=env.device)
         env.flip_by_handle = self.flipped_held
@@ -291,6 +291,7 @@ class flip_fsm(ManagerTermBase):
         reach_std: float = 0.2,
         rotate_min_cos: float = 0.7,
         rest_z: float | None = None,
+        ratchet_w: tuple | None = None,
         wrist_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=["follower_left_link_6"]),
     ) -> torch.Tensor:
         """``rotate_min_cos`` (2026-08-28, probe_flip_rotate_sweep): from an 11 cm

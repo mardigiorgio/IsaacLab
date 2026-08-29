@@ -78,7 +78,17 @@ class FsmInputs:
 class HangFsm:
     """Latched per-env stage machine. All buffers torch, device-resident."""
 
-    def __init__(self, num_envs: int, device):
+    def __init__(self, num_envs: int, device, ratchet_w=None, milestone_bonus=None):
+        # Per-task economy (2026-08-28): the flip needs a heavier ROTATE ratchet
+        # (partial rotation must out-earn the shaping loss of the drop that
+        # follows it); the hang keeps the module defaults. The anti-farming
+        # inequality is asserted for whatever tuples are used.
+        self.ratchet_w = tuple(RATCHET_W if ratchet_w is None else ratchet_w)
+        self.milestone_bonus = tuple(MILESTONE_BONUS if milestone_bonus is None else milestone_bonus)
+        assert len(self.ratchet_w) == 5 and len(self.milestone_bonus) == 5
+        assert sum(self.milestone_bonus) + sum(self.ratchet_w) + PHI_MAX < SUCCESS_BONUS, (
+            f"max pre-completion return {sum(self.milestone_bonus) + sum(self.ratchet_w) + PHI_MAX} >= success {SUCCESS_BONUS}"
+        )
         z = lambda dt: torch.zeros(num_envs, dtype=dt, device=device)  # noqa: E731
         self.stage = z(torch.long)
         self.awarded = torch.zeros(num_envs, 5, dtype=torch.bool, device=device)
@@ -175,11 +185,11 @@ class HangFsm:
         prog_now = prog.gather(1, stage.unsqueeze(1).clamp(0, 4)).squeeze(1).clamp(0.0, 1.0)
         best = self.best_prog.gather(1, stage.unsqueeze(1)).squeeze(1)
         gain = (prog_now - best).clamp(min=0.0)
-        w = torch.tensor(RATCHET_W, device=phi.device).gather(0, stage.clamp(0, 4))
+        w = torch.tensor(self.ratchet_w, device=phi.device).gather(0, stage.clamp(0, 4))
         ratchet_r = w * gain
         self.best_prog.scatter_(1, stage.unsqueeze(1), torch.maximum(best, prog_now).unsqueeze(1))
 
-        milestone_r = (new_ms.float() * torch.tensor(MILESTONE_BONUS, device=phi.device)).sum(dim=1)
+        milestone_r = (new_ms.float() * torch.tensor(self.milestone_bonus, device=phi.device)).sum(dim=1)
         milestone_r = milestone_r + ratchet_r
         return {
             "success": success,
