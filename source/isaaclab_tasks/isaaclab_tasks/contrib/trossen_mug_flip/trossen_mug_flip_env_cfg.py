@@ -505,7 +505,7 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
         # of bank starts pinched (handle_pinch 10 -> 3 per episode, run y92g80kp).
         # The held half stays at alpha=1; the home half carries the approach.
         apply_reverse_curriculum(
-            self, bank_pose=FLIP_GRASP_BANK_POSE, bank_fraction=0.4, end_step=1_000_000_000, gripper_offset=-0.05,
+            self, bank_pose=FLIP_GRASP_BANK_POSE, bank_fraction=0.5, end_step=1_000_000_000, gripper_offset=-0.05,
             home_offset_pose=FLIP_VIA_POSE,
         )
         # SECOND bank (2026-08-28): the LIFTED-HELD state -- arm + mug 11 cm up in
@@ -517,7 +517,7 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
             mode="reset",
             params={
                 "pose": FLIP_LIFTED_BANK_POSE,
-                "bank_fraction": 0.25,
+                "bank_fraction": 0.35,
                 "noise": 0.0,
                 "alpha_min": 1.0,
                 "gripper_offset": -0.05,  # firm (~45 N): rigid enough for the rotation on the low pinch
@@ -605,7 +605,11 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
             mode="reset",
             params={
                 "pose": FLIP_VIA_POSE,
-                "bank_fraction": 0.3,
+                # 0.3 -> 0.25, grasp 0.4 -> 0.5, lift 0.25 -> 0.35 (2026-08-29): with
+                # far starts at 49% of envs the held skills decayed even under the
+                # 60-step truncation (lift bank 100% -> 29% in 1500 iterations of
+                # fsm39). Effective shares now: held 63%, far-field 28%.
+                "bank_fraction": 0.25,
                 "noise": 0.0,
                 "alpha_min": 1.0,
                 "alpha_max": 1.0,
