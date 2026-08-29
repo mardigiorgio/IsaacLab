@@ -22,6 +22,19 @@ import torch
 from isaaclab.managers import ManagerTermBase, SceneEntityCfg
 from isaaclab.utils.math import combine_frame_transforms, quat_apply
 
+from isaaclab_tasks.contrib.trossen_mug_tree.hang_fsm_core import FsmInputs, HangFsm
+from isaaclab_tasks.contrib.trossen_mug_tree.mdp import (  # noqa: F401  (they read env._fsm)
+    fsm_metric_ms_grasp,
+    fsm_metric_ms_lift,
+    fsm_metric_ms_release,
+    fsm_metric_ms_retreat,
+    fsm_metric_regressions,
+    fsm_metric_stage,
+    fsm_milestones,
+    fsm_shaping,
+)
+from isaaclab_tasks.contrib.trossen_mug_tree.mdp import fsm_metric_ms_insert as fsm_metric_ms_rotate  # noqa: F401
+
 from isaaclab_tasks.contrib.trossen_mug_slide.mdp import *  # noqa: F401,F403
 from isaaclab_tasks.contrib.trossen_mug_slide.mdp import _finite, _object_calm, _sensor_force_mag
 from isaaclab_tasks.contrib.trossen_mug_lift.mdp import (  # noqa: F401
@@ -110,6 +123,11 @@ def handle_tip_distance(
     handle reach (run xw2q8ppv) asks for the finger roots on the bar, which
     puts 70 mm of finger through the 8 mm handle-wall gap: unlearnable.
     """
+    return _finite(1.0 - torch.tanh(_tip_handle_distance(env, object_cfg, ee_frame_cfg, wrist_cfg) / std))
+
+
+def _tip_handle_distance(env, object_cfg, ee_frame_cfg, wrist_cfg) -> torch.Tensor:
+    """Fingertip-midpoint to handle_middle distance [m] (wrist_cfg must be resolved)."""
     obj = env.scene[object_cfg.name]
     robot = env.scene[wrist_cfg.name]
     ee_frame = env.scene[ee_frame_cfg.name]
@@ -117,11 +135,14 @@ def handle_tip_distance(
     q = obj.data.root_quat_w.torch
     handle_w = p + quat_apply(q, torch.tensor(_HANDLE_OFFSET_B, device=p.device, dtype=p.dtype).expand_as(p))
     tcp_w = ee_frame.data.target_pos_w.torch[..., 0, :]
-    wrist_w = robot.data.body_pos_w.torch[:, wrist_cfg.body_ids[0]]
+    wid = wrist_cfg.body_ids
+    wrist_w = robot.data.body_pos_w.torch[:, wid[0] if isinstance(wid, list) else wid]
+    if wrist_w.dim() == 3:
+        wrist_w = wrist_w[:, 0]
     tool = tcp_w - wrist_w
     tool = tool / torch.linalg.vector_norm(tool, dim=-1, keepdim=True).clamp_min(1e-6)
     tip_w = tcp_w + FINGER_LEN * tool
-    return _finite(1.0 - torch.tanh(torch.linalg.vector_norm(handle_w - tip_w, dim=-1) / std))
+    return torch.linalg.vector_norm(handle_w - tip_w, dim=-1)
 
 
 def handle_held(
@@ -222,6 +243,97 @@ class lift_progress(ManagerTermBase):
         improved = gate & (z > self.best + min_improvement) & (z <= self.seed_z + max_lift)
         self.best[improved] = z[improved]
         return improved.float()
+
+
+class flip_fsm(ManagerTermBase):
+    """The hang's staged economy (hang_fsm_core) on the flip's predicates.
+
+    Stages: 0 APPROACH -> 1 PINCHED (handle held) -> 2 LIFTED (held, root
+    lift_height above its inverted rest) -> 3 ROTATED (mug crossed upright
+    WHILE HELD; a tumble never counts) -> 4 PLACED (upright on the table, calm,
+    released) -> success when the arm parks at ``pose`` (ready pose).
+    Publishes outputs on ``env._fsm`` (fsm_milestones / fsm_shaping / metrics
+    are the hang's, imported) and the by-handle latch on ``env.flip_by_handle``.
+    Runs in the termination manager (before rewards).
+
+    Why (run wt7f4r33, 2026-08-28): per-step pinch income made "hold on the
+    table" a local optimum -- handle_pinch 36/episode, lift <1 cm, no flip.
+    Here holding pays once (milestone + reach ratchet) and only progress pays.
+    """
+
+    def __init__(self, cfg, env):
+        super().__init__(cfg, env)
+        self.fsm = HangFsm(env.num_envs, env.device)
+        self.flipped_held = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+        self._z0 = torch.full((env.num_envs,), float("nan"), device=env.device)
+        env.flip_by_handle = self.flipped_held
+
+    def reset(self, env_ids=None):
+        if env_ids is None:
+            env_ids = slice(None)
+        self.fsm.reset(env_ids)
+        self.flipped_held[env_ids] = False
+        self._z0[env_ids] = float("nan")
+        if hasattr(self, "_err0"):
+            self._err0[env_ids] = float("nan")
+
+    def __call__(
+        self,
+        env,
+        pose: dict[str, float],
+        joint_tol: float,
+        sensor_name: str = "pad_object_contact",
+        contact_threshold: float = 0.01,
+        lift_height: float = 0.06,
+        z_max: float = 0.06,
+        max_speed: float = 0.1,
+        reach_std: float = 0.2,
+        wrist_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=["follower_left_link_6"]),
+    ) -> torch.Tensor:
+        obj = env.scene["object"]
+        robot = env.scene["robot"]
+        p = obj.data.root_pos_w.torch - env.scene.env_origins
+        up = _up_cos(env, SceneEntityCfg("object")).nan_to_num(nan=-1.0)
+        held = handle_held(env, threshold=contact_threshold) > 0.5
+        pad_f = _sensor_force_mag(env, sensor_name)
+        released = pad_f < contact_threshold
+        # per-episode rest height of the root (inverted spawn), seeded on the first frame
+        unseeded = torch.isnan(self._z0)
+        self._z0 = torch.where(unseeded, p[:, 2], self._z0)
+        lifted = p[:, 2] > self._z0 + lift_height
+        upright = up > UPRIGHT_MIN_COS
+        self.flipped_held |= upright & held  # crossed upright while held: a HANDLE flip
+        rotated = upright & self.flipped_held
+        calm = torch.linalg.vector_norm(obj.data.root_lin_vel_w.torch, dim=-1) < max_speed
+        placed = rotated & (p[:, 2] < z_max) & calm
+        ids, _ = robot.find_joints(list(pose.keys()), preserve_order=True)
+        target = torch.tensor([pose[n] for n in pose], device=env.device)
+        arm_err = torch.abs(robot.data.joint_pos.torch[:, ids] - target).max(dim=1).values
+        arm_ok = arm_err < joint_tol
+        # bounded progress scalars
+        d_tip = _tip_handle_distance(env, SceneEntityCfg("object"), SceneEntityCfg("ee_frame"), wrist_cfg)
+        reach_prog = 1.0 - torch.tanh(d_tip / reach_std)
+        lift_prog = ((p[:, 2] - self._z0) / lift_height).clamp(0.0, 1.0)
+        rotate_prog = ((up + 1.0) / 2.0).clamp(0.0, 1.0)
+        gid, _ = robot.find_joints(["follower_left_left_carriage_joint"], preserve_order=True)
+        open_frac = (robot.data.joint_pos.torch[:, gid[0]] / 0.044).clamp(0.0, 1.0)
+        release_prog = 0.5 * open_frac + 0.5 * (self.fsm.persist.float() / 12.0).clamp(0.0, 1.0)
+        if not hasattr(self, "_err0"):
+            self._err0 = torch.full((env.num_envs,), float("nan"), device=env.device)
+        just_placed = (self.fsm.stage == 4) & torch.isnan(self._err0)
+        self._err0 = torch.where(just_placed, arm_err.clamp(min=1e-3), self._err0)
+        self._err0 = torch.where(self.fsm.stage < 4, torch.full_like(self._err0, float("nan")), self._err0)
+        retreat_prog = torch.where(
+            torch.isnan(self._err0), torch.zeros_like(arm_err), (1.0 - arm_err / self._err0).clamp(0.0, 1.0)
+        )
+        out = self.fsm.step(FsmInputs(
+            held=held, lifted=lifted, threaded=rotated, supported=placed, released=released, arm_ok=arm_ok,
+            reach_prog=reach_prog, lift_prog=lift_prog, insert_prog=rotate_prog,
+            release_prog=release_prog, retreat_prog=retreat_prog,
+        ))
+        out["regress_total"] = self.fsm.regressions
+        env._fsm = out
+        return out["success"]
 
 
 def _flip_by_handle(env: ManagerBasedRLEnv) -> torch.Tensor:

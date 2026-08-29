@@ -21,6 +21,9 @@ class TrossenMugFlipPPORunnerCfg(TrossenMugLiftPPORunnerCfg):
 
     def __post_init__(self):
         super().__post_init__()
+        self.algorithm.gamma = 0.99  # the staged economy's discount (hang_fsm_core.GAMMA)
+        self.actor.obs_normalization = True
+        self.critic.obs_normalization = True
         # Between the lift's pinch guard and the plate's hot search: the
         # flip needs the wrist reorientation DISCOVERED, then a pinch HELD.
         self.actor.distribution_cfg = RslRlMLPModelCfg.GaussianDistributionCfg(

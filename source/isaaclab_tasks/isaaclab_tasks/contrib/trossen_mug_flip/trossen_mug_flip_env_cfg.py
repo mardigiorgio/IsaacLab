@@ -48,6 +48,8 @@ from isaaclab_tasks.contrib.trossen_mug_lift.trossen_mug_lift_env_cfg import (
 )
 
 from isaaclab_tasks.contrib.trossen_mug_lift.bedrock import apply_reverse_curriculum
+from isaaclab_tasks.contrib.trossen_mug_tree.hang_fsm_core import SUCCESS_BONUS
+from isaaclab_tasks.contrib.trossen_mug_tree.trossen_mug_tree_env_cfg import ARM_FINISH_POSE
 
 from . import mdp
 
@@ -204,9 +206,22 @@ class FlipObservationsCfg:
 
 @configclass
 class FlipRewardsCfg:
-    """The flip's reward set, on the slide's expected-value design: gates
-    unpay wrong styles (shoved, flung, airborne mugs earn nothing), fines
-    price the two behaviors that are never en route to a handle flip."""
+    """The hang's STAGED economy on the flip (2026-08-28): one-shot milestones
+    + rest-neutral shaping (hang_fsm_core, via flip_fsm) + one success bonus,
+    plus the family's action taxes, blowup fine and the flip's standing body
+    fines. No per-step proximity or contact income anywhere: run wt7f4r33 showed
+    a hold annuity makes "pinch and sit on the table" the optimum."""
+    milestones = RewTerm(func=mdp.fsm_milestones, params={}, weight=1.0)
+    shaping = RewTerm(func=mdp.fsm_shaping, params={}, weight=1.0)
+    success_bonus = RewTerm(func=mdp.is_terminated_term, weight=SUCCESS_BONUS, params={"term_keys": ["task_complete"]})
+    metric_stage = RewTerm(func=mdp.fsm_metric_stage, params={}, weight=1.0)
+    metric_regressions = RewTerm(func=mdp.fsm_metric_regressions, params={}, weight=1.0)
+    metric_ms_pinch = RewTerm(func=mdp.fsm_metric_ms_grasp, params={}, weight=1.0)
+    metric_ms_lift = RewTerm(func=mdp.fsm_metric_ms_lift, params={}, weight=1.0)
+    metric_ms_rotate = RewTerm(func=mdp.fsm_metric_ms_rotate, params={}, weight=1.0)
+    metric_ms_place = RewTerm(func=mdp.fsm_metric_ms_release, params={}, weight=1.0)
+    metric_ms_retreat = RewTerm(func=mdp.fsm_metric_ms_retreat, params={}, weight=1.0)
+    flip_by_handle = RewTerm(func=mdp.flip_by_handle_metric, weight=1.0)
 
     early_termination = RewTerm(
         func=mdp.is_terminated_term,
@@ -214,64 +229,17 @@ class FlipRewardsCfg:
         params={"term_keys": ["robot_abnormal", "physics_diverged"]},
     )
 
-    # Reach toward the HANDLE (TRI handle_middle frame under the live mug pose).
-    # The mug root is its bottom plane -- the TOP of an inverted mug -- so the
-    # root-targeted reach taught 1000 iterations of hovering over the base.
-    reaching_object = RewTerm(
-        func=mdp.handle_tip_distance,
-        # wrist_cfg passed as a PARAM so the manager resolves body_ids (defaults are not resolved)
-        params={"std": 0.2, "wrist_cfg": SceneEntityCfg("robot", body_names=["follower_left_link_6"])},
-        weight=0.5,
-    )
-    # Contact income ONLY on the handle (2026-08-28): run 9uil59fv pre-grasped
-    # at the mug and never closed -- the only contact terms were body fines.
-    # The lift's tested rungs (good_finger_contact 0.75, contact_count 0.1,
-    # threshold 0.01) on the flip's per-pad handle sensors; body stays fined.
-    handle_pinch = RewTerm(func=mdp.handle_held, params={"threshold": 0.01}, weight=0.75)
-    handle_contact_count = RewTerm(func=mdp.handle_contact_count, params={"threshold": 0.01}, weight=0.1)
-    # Flip ratchet: pays per 0.05 of NEW episode-best up-cosine, only while
-    # the handle is held in an opposed pinch and the mug is calm — rocking it
-    # back and forth or shoving it over with a link earns nothing, ever.
-    flip_progress = RewTerm(
-        func=mdp.upright_progress,
-        params={"min_improvement": 0.05, "max_speed": FLIP_SPEED_MAX},
-        weight=5.0,
-    )
-    # Lift ratchet (2026-08-28): 1 per cm of NEW best held height, up to 12 cm.
-    # A flip needs the bar ~11 cm up; without this rung the held policy only
-    # tilted the mug against the table (run zbe5j091, one ratchet step, plateau).
-    lift_progress = RewTerm(
-        func=mdp.lift_progress,
-        params={"min_improvement": 0.01, "max_lift": 0.12},
-        weight=1.0,
-    )
-    # Arrival annuity: STRICTLY upright, at the spot, on the table, calm.
-    upright_at_goal = RewTerm(
-        func=mdp.upright_at_goal,
-        params={"std": 0.05, "max_speed": FLIP_SPEED_MAX, "command_name": "object_pose"},
-        weight=16.0,
-    )
-    # Post-flip retreat: the arrival gates times arm stillness times pads-off
-    # — "let go and settle" is itself the paid behavior.
-    arm_retreated = RewTerm(
-        func=mdp.arm_retreated_after_flip,
-        params={"std": 0.05, "vel_std": 4.0, "max_speed": FLIP_SPEED_MAX, "command_name": "object_pose"},
-        weight=2.0,
-    )
-
-    # The two standing fines: non-handle mug contact (arm links on the body
-    # via the lift's no-batting sensor, pads on the body via the flip's own
-    # split sensor) and table scraping. Heavy by order: each is priced above
-    # the flip ratchet's per-event payment.
     arm_on_mug_body = RewTerm(
         func=mdp.body_contact, weight=-6.0, params={"sensor_name": "arm_body_contact", "threshold": 1.0}
     )
+
     pads_on_mug_body = RewTerm(
         # threshold 1 -> 5 N (2026-08-28, measured): a legitimate 14 N handle
         # pinch presses the fingertips into the wall at the handle root at
         # 1.4-2.1 N; a body grab at the vendor gripper gain reads ~44 N.
         func=mdp.body_contact, weight=-6.0, params={"sensor_name": "pad_body_contact", "threshold": 5.0}
     )
+
     table_scrape = RewTerm(
         func=mdp.body_contact, weight=-6.0, params={"sensor_name": "arm_table_contact", "threshold": 1.0}
     )
@@ -284,15 +252,22 @@ class FlipRewardsCfg:
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=["follower_left_joint_[0-5]"])},
     )
 
-    # Diagnostic at metric scale (x1e-3 inside; read W&B x150 x1000 = fraction of
-    # steps with the by-handle latch set): did the flip happen BY THE HANDLE?
-    flip_by_handle = RewTerm(func=mdp.flip_by_handle_metric, weight=1.0)
-
 @configclass
 class FlipTerminationsCfg:
     """The slide's containment set, verbatim."""
 
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
+    # POSITIVE termination: flipped by the handle, placed upright, released, arm parked.
+    task_complete = DoneTerm(
+        func=mdp.flip_fsm,
+        params={
+            "pose": ARM_FINISH_POSE,
+            "joint_tol": 0.5,
+            "sensor_name": "pad_object_contact",
+            "lift_height": 0.06,
+            "wrist_cfg": SceneEntityCfg("robot", body_names=["follower_left_link_6"]),
+        },
+    )
     robot_abnormal = DoneTerm(func=mdp.robot_state_abnormal, params={"max_joint_vel": 25.0})
     physics_diverged = DoneTerm(func=mdp.physics_diverged)
     object_out_of_bound = DoneTerm(
@@ -365,7 +340,7 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
         # 7 s episodes: approach + handle pinch + flip + release + settle is
         # a longer program than a push.
         self.decimation = 3
-        self.episode_length_s = 7.0
+        self.episode_length_s = 8.0  # 5 -> 8 (2026-08-28): pinch-lift-rotate-place-release-retreat, like the hang
         self.sim.dt = 1 / 90
         self.sim.render_interval = self.decimation
         from isaaclab_visualizers.newton import NewtonVisualizerCfg  # noqa: PLC0415
