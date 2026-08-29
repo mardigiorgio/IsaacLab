@@ -322,7 +322,15 @@ class FlipRewardsCfg:
     # the via and pinch 100% from home; saturated first actions were the whole
     # approach failure. -0.02 x |a|^2: ~-0.5/step on the measured garbage,
     # ~-0.02/step on the descent's own actions.
-    action_l2_approach = RewTerm(func=mdp.arm_action_l2_before_pinch, weight=-2e-2)
+    # -> far-field only, 5x (2026-08-29): -0.02 on all of stage 0 quieted the
+    # first step from |a|^2 ~40 to ~3 and taxed the descent (rung 0.85 ->
+    # 0.75) with no home pinch; 6 zero-action steps from home then the policy
+    # gives 77%. Bill only beyond 10 cm from the handle (the via is ~11 cm).
+    action_l2_approach = RewTerm(
+        func=mdp.arm_action_l2_far,
+        weight=-1e-1,
+        params={"far": 0.10, "wrist_cfg": SceneEntityCfg("robot", body_names=["follower_left_link_6"])},
+    )
     action_jerk = RewTerm(func=mdp.arm_action_jerk_l2, weight=-1e-3)
     joint_vel = RewTerm(
         func=mdp.joint_vel_l2,

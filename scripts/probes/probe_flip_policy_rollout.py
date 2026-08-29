@@ -4,7 +4,7 @@ from isaaclab.app import AppLauncher
 parser=argparse.ArgumentParser(); parser.add_argument("--ckpt",required=True); parser.add_argument("--bank",default="reset_arm_lift_bank"); parser.add_argument("--stochastic",action="store_true"); parser.add_argument("--alpha_min",type=float,default=1.0); parser.add_argument("--alpha_max",type=float,default=1.0); parser.add_argument("--zero_steps",type=int,default=0)
 AppLauncher.add_app_launcher_args(parser); args,_=parser.parse_known_args(); args.headless=True
 app=AppLauncher(args).app
-import torch, gymnasium as gym, isaaclab_tasks  # noqa
+import os, torch, gymnasium as gym, isaaclab_tasks  # noqa
 from isaaclab_tasks.utils import parse_env_cfg, load_cfg_from_registry
 from isaaclab_tasks.utils.physics_presets import apply_solver_choice
 from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper, filter_unsupported_rsl_rl_kwargs
@@ -14,7 +14,7 @@ from rsl_rl.runners import OnPolicyRunner
 TASK="IsaacContrib-Flip-Mug-Trossen-v0"; N=64
 cfg=parse_env_cfg(TASK,num_envs=N); apply_solver_choice(cfg,"icf")
 cfg.sim.physics.collision_cfg.rigid_contact_max=200_000; cfg.sim.physics.collision_cfg.max_triangle_pairs=4_000_000
-for e in ("reset_arm_grasp_bank","reset_arm_lift_bank","reset_arm_rotate_bank","reset_arm_hover_bank"): getattr(cfg.events,e).params["bank_fraction"]=0.0  # bank none = TRUE home starts only
+for e in ("reset_arm_grasp_bank","reset_arm_lift_bank","reset_arm_rotate_bank","reset_arm_hover_bank","reset_arm_home_via_bank"): getattr(cfg.events,e).params["bank_fraction"]=0.0  # bank none = TRUE home starts only
 (getattr(cfg.events,args.bank).params.__setitem__("bank_fraction",1.0) if args.bank != "none" else None); (getattr(cfg.events,args.bank).params.__setitem__("alpha_min",args.alpha_min) if args.bank != "none" else None); (getattr(cfg.events,args.bank).params.__setitem__("alpha_max",args.alpha_max) if args.bank != "none" else None); cfg.curriculum=None
 agent_cfg=load_cfg_from_registry(TASK,"rsl_rl_cfg_entry_point")
 env=gym.make(TASK,cfg=cfg); u=env.unwrapped; wenv=RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
@@ -34,7 +34,11 @@ res=wenv.get_observations(); obs=res[0] if isinstance(res,tuple) else res
 succ=torch.zeros(N,dtype=torch.bool,device=dev); everheld=torch.zeros(N,dtype=torch.bool,device=dev); rows=[]
 with torch.inference_mode():
     for k in range(240 if args.bank == 'none' else 120):
-        act=policy(obs); act=(torch.zeros_like(act) if k<args.zero_steps else act); out=wenv.step(act); obs=out[0]; succ|=u._fsm['success']; everheld|=((fm('pad_left_handle')>0.01)&(fm('pad_right_handle')>0.01))
+        act=policy(obs); act=(torch.zeros_like(act) if k<args.zero_steps else act)
+        if os.environ.get("TRACE0") and k<14:
+            _q=u.scene["robot"].data.joint_pos.torch[0,:8]; _o=u.scene["object"].data.root_pos_w.torch[0]-(u.scene.env_origins.torch if hasattr(u.scene.env_origins,"torch") else u.scene.env_origins)[0]
+            print(f"[trace0] k={k} q={[round(float(x),3) for x in _q]} obj={[round(float(x),3) for x in _o]} act={[round(float(x),2) for x in act[0]]}", flush=True)
+        out=wenv.step(act); obs=out[0]; succ|=u._fsm['success']; everheld|=((fm('pad_left_handle')>0.01)&(fm('pad_right_handle')>0.01))
         if k%10==0 or k in (119,239):
             L,R,B=fm("pad_left_handle"),fm("pad_right_handle"),fm("pad_body_contact"); h=(L>0.01)&(R>0.01); q=t(robot.data.joint_pos)[:,aid]; a=act
             wc=SceneEntityCfg("robot", body_names=["follower_left_link_6"]); wc.resolve(u.scene); tip_d=_tip_handle_distance(u,SceneEntityCfg("object"),SceneEntityCfg("ee_frame"),wc)

@@ -192,6 +192,33 @@ def arm_action_l2_before_pinch(env: ManagerBasedRLEnv, action_name: str = "arm_a
     return (a * a).sum(dim=-1) * (fsm["stage"] == 0).float()
 
 
+def arm_action_l2_far(
+    env: ManagerBasedRLEnv,
+    wrist_cfg: SceneEntityCfg,
+    far: float = 0.10,
+    action_name: str = "arm_action",
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+) -> torch.Tensor:
+    """Squared arm action while unpinched AND the fingertips are farther than
+    ``far`` from the handle -- the free-space approach only.
+
+    The stage-0 version at -0.02 cut the first-step |a|^2 from ~40 to ~3 in
+    1300 iterations without a single home pinch, and taxed the learned
+    descent (descent rung 0.85 -> 0.75). Measured on model_18500
+    (probe_flip_policy_rollout --zero_steps): 6 zero-action steps from true
+    home, then the policy -> 77% success / 92% pinch; 0 zero steps -> 0%.
+    The via is ~11 cm from the handle, so a 10 cm gate leaves the descent
+    untaxed and bills only the far field, where zero action is the answer.
+    """
+    a = env.action_manager.get_term(action_name).raw_actions
+    fsm = getattr(env, "_fsm", None)
+    if fsm is None:
+        return torch.zeros(env.num_envs, device=env.device)
+    d = _tip_handle_distance(env, object_cfg, ee_frame_cfg, wrist_cfg)
+    return (a * a).sum(dim=-1) * ((fsm["stage"] == 0) & (d > far)).float()
+
+
 def arm_action_offset(env: ManagerBasedRLEnv, action_name: str = "arm_action") -> torch.Tensor:
     """The arm action term's current OFFSET (joint target at zero action) relative
     to the default pose, in action units: (offset - default) / scale.
