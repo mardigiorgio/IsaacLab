@@ -230,6 +230,37 @@ def arm_action_l2_before_pinch(env: ManagerBasedRLEnv, action_name: str = "arm_a
     return (a * a).sum(dim=-1) * (fsm["stage"] == 0).float()
 
 
+def wrist_roll_without_pinch(
+    env: ManagerBasedRLEnv,
+    j5_neutral: float = -0.14,
+    j5_tol: float = 0.5,
+    j3_max: float = 0.3,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Radians of doorknob motion performed with NOTHING in hand: how far the
+    wrist roll (joint_5) sits outside +-``j5_tol`` of its approach value and
+    how far the forearm roll (joint_3) sits above ``j3_max``, while the FSM is
+    still at stage 0 (no pinch).
+
+    The phantom flip (2026-08-29): from every unbanked start the policy rolls
+    joint_5 to -3.0 and joint_3 to +1.4 -- the learned doorknob -- 6-25 cm
+    from the handle, because on the rung that open-loop 'descend, close, roll'
+    pinches 25-40% of the time and PPO reinforces it; a wrist-roll sigma of
+    0.15 around a saturated -3 never samples 'wait'. The reach uses joints
+    0-2 and the gripper; the descent from the via needs joint_3 -0.48 -> +0.08
+    and joint_5 -0.14 -> 0, both inside the free band, so this bills only the
+    roll itself. Once the handle is pinched (stage >= 1) the doorknob is free.
+    """
+    fsm = getattr(env, "_fsm", None)
+    if fsm is None:
+        return torch.zeros(env.num_envs, device=env.device)
+    robot = env.scene[asset_cfg.name]
+    ids, _ = robot.find_joints(["follower_left_joint_3", "follower_left_joint_5"], preserve_order=True)
+    q = robot.data.joint_pos.torch[:, ids]
+    excess = torch.relu((q[:, 1] - j5_neutral).abs() - j5_tol) + torch.relu(q[:, 0] - j3_max)
+    return _finite(excess * (fsm["stage"] == 0).float())
+
+
 def arm_action_l2(env: ManagerBasedRLEnv, action_name: str = "arm_action") -> torch.Tensor:
     """Squared arm action, every stage. Since the via-anchored home starts
     (fsm30) the far-field swings bled into the HELD states: first-episode

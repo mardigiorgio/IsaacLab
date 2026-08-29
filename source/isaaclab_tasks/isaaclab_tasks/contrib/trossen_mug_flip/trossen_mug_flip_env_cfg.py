@@ -329,6 +329,12 @@ class FlipRewardsCfg:
         func=mdp.body_contact, weight=-6.0, params={"sensor_name": "arm_table_contact", "threshold": 1.0}
     )
 
+    # No doorknob without a pinch (2026-08-29): radians of wrist roll beyond
+    # +-0.5 of the approach value and of forearm roll above +0.3 while the FSM
+    # is at stage 0. The phantom flip takes joint_5 to -3.0 (2.4 rad excess):
+    # -4.8/step, ~-100 over the motion; a real pinch lifts the stage and frees
+    # the roll. See mdp.wrist_roll_without_pinch.
+    phantom_flip = RewTerm(func=mdp.wrist_roll_without_pinch, weight=-2.0)
     action_rate = RewTerm(func=mdp.arm_action_rate_l2, weight=-3e-3)
     # arm action magnitude while unpinched (2026-08-29): zero action = go to
     # the via and pinch 100% from home; saturated first actions were the whole
