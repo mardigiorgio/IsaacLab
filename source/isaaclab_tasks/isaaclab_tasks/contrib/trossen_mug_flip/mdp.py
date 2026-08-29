@@ -137,6 +137,11 @@ def handle_tip_distance(
 
 def _tip_handle_distance(env, object_cfg, ee_frame_cfg, wrist_cfg) -> torch.Tensor:
     """Fingertip-midpoint to handle_middle distance [m] (wrist_cfg must be resolved)."""
+    return torch.linalg.vector_norm(_tip_handle_delta_w(env, object_cfg, ee_frame_cfg, wrist_cfg), dim=-1)
+
+
+def _tip_handle_delta_w(env, object_cfg, ee_frame_cfg, wrist_cfg) -> torch.Tensor:
+    """World-frame vector from the fingertip midpoint to the handle pinch point."""
     obj = env.scene[object_cfg.name]
     robot = env.scene[wrist_cfg.name]
     ee_frame = env.scene[ee_frame_cfg.name]
@@ -151,7 +156,40 @@ def _tip_handle_distance(env, object_cfg, ee_frame_cfg, wrist_cfg) -> torch.Tens
     tool = tcp_w - wrist_w
     tool = tool / torch.linalg.vector_norm(tool, dim=-1, keepdim=True).clamp_min(1e-6)
     tip_w = tcp_w + FINGER_LEN * tool
-    return torch.linalg.vector_norm(handle_w - tip_w, dim=-1)
+    return handle_w - tip_w
+
+
+def tip_handle_vector(
+    env: ManagerBasedRLEnv,
+    wrist_cfg: SceneEntityCfg,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+    clip: float = 0.5,
+) -> torch.Tensor:
+    """OBSERVATION (2026-08-29): fingertip-midpoint -> handle pinch-point vector
+    [m], world frame (the Trossen base is fixed, so this is a constant rotation
+    of the root frame). The policy had no end-effector pose and no contact
+    sensing: it had to do forward kinematics implicitly from joint angles to
+    know where its fingertips were, and it could not tell a closed-on-nothing
+    jaw from a pinch -- hence the 'phantom flips' (close 6 cm off the handle,
+    then the doorknob motion with nothing in hand) from home, from far rung
+    starts and after arrivals. Computable from what the policy already saw
+    (mug pose + joint angles); nothing privileged."""
+    return _finite(_tip_handle_delta_w(env, object_cfg, ee_frame_cfg, wrist_cfg).clamp(-clip, clip))
+
+
+def handle_pinch_flags(
+    env: ManagerBasedRLEnv,
+    left_sensor: str = "pad_left_handle",
+    right_sensor: str = "pad_right_handle",
+    full_force: float = 5.0,
+) -> torch.Tensor:
+    """OBSERVATION (2026-08-29): per-pad contact force on the HANDLE, scaled to
+    [0, 1] at ``full_force`` N -- the pinch the FSM sees, made visible to the
+    policy (on the real arm: gripper motor current)."""
+    l = _sensor_force_mag(env, left_sensor) / full_force
+    r = _sensor_force_mag(env, right_sensor) / full_force
+    return _finite(torch.stack([l, r], dim=-1).clamp(0.0, 1.0))
 
 
 def body_contact_without_handle(

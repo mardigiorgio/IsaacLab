@@ -265,6 +265,18 @@ class FlipObservationsCfg:
         # knows what a zero action holds after a banked start. Appended last so a
         # checkpoint trained without it can be padded (probe_pad_checkpoint).
         action_offset = ObsTerm(func=mdp.arm_action_offset, clip=(-6.0, 6.0))
+        # LAST (2026-08-29): the fingertip->handle vector and the two pads'
+        # handle contact. Until now the policy saw no end-effector pose and no
+        # contact: it could not tell a jaw closed on nothing from a pinch, and
+        # committed to the flip 6 cm off the handle (phantom flips from home,
+        # from far rung starts, after arrivals; the far-field swings it learned
+        # that way then collapsed the lifted-bank start from 100% to 0%).
+        # Appended last so a 44-dim checkpoint pads to 49 (probe_pad_checkpoint).
+        tip_handle = ObsTerm(
+            func=mdp.tip_handle_vector,
+            params={"wrist_cfg": SceneEntityCfg("robot", body_names=["follower_left_link_6"])},
+        )
+        handle_pinch = ObsTerm(func=mdp.handle_pinch_flags)
 
         def __post_init__(self):
             self.enable_corruption = True
@@ -326,15 +338,9 @@ class FlipRewardsCfg:
     # first step from |a|^2 ~40 to ~3 and taxed the descent (rung 0.85 ->
     # 0.75) with no home pinch; 6 zero-action steps from home then the policy
     # gives 77%. Bill only beyond 10 cm from the handle (the via is ~11 cm).
-    # every stage, small (2026-08-29): the far-field swings bled into the held
-    # states -- lifted-bank first-episode success 100% (fsm28/29) -> 0% (fsm31
-    # on): the policy throws the mug to 55 cm and drops it. See mdp.arm_action_l2.
-    action_l2_arm = RewTerm(func=mdp.arm_action_l2, weight=-2e-2)
-    action_l2_approach = RewTerm(
-        func=mdp.arm_action_l2_far,
-        weight=-1e-1,
-        params={"far": 0.10, "wrist_cfg": SceneEntityCfg("robot", body_names=["follower_left_link_6"])},
-    )
+    # (2026-08-29) the stage-0 / far-field / all-stage arm-action penalties tried
+    # here traded the far-field swings for freezing 6 cm off the handle; the
+    # cause was the blind observation set, fixed in FlipObservationsCfg.
     action_jerk = RewTerm(func=mdp.arm_action_jerk_l2, weight=-1e-3)
     joint_vel = RewTerm(
         func=mdp.joint_vel_l2,
