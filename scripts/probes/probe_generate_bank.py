@@ -320,6 +320,8 @@ def main() -> int:
                     if step == 9 and tgt is not None:
                         print(f"[proof]   q_cmd {np.round(q_cmd, 3)}\n[proof]   q_now {np.round(qa, 3)}\n[proof]   processed target {np.round(tgt, 3)}")
         dz = float((obj.data.root_pos_w.torch[:, 2] - obj_spawn[:, 2]).max())
+        _q = obj.data.root_quat_w.torch[0]
+        print(f"[bank-gen] object up_cos after the raise (env 0): {float(1 - 2 * (_q[0] ** 2 + _q[1] ** 2)):+.3f}  (+1 upright, -1 inverted)")
         def _fmag(name):
             if name not in u.scene.sensors:
                 return None

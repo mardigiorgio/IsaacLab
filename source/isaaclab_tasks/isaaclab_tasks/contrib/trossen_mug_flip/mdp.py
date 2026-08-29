@@ -329,6 +329,10 @@ class flip_fsm(ManagerTermBase):
         # lift reference is the spawn's rest height when given, not the episode's first z.
         self._z0 = torch.where(unseeded, torch.full_like(p[:, 2], rest_z) if rest_z is not None else p[:, 2], self._z0)
         lifted = p[:, 2] > self._z0 + lift_height
+        # CARRY validity uses a lower bar (hysteresis): the root of a rotating mug
+        # dips as it turns (the base swings below the handle), which must not
+        # regress the stage mid-rotation.
+        lifted_hold = p[:, 2] > self._z0 + 0.4 * lift_height
         upright = up > UPRIGHT_MIN_COS
         self.flipped_held |= (up > rotate_min_cos) & held  # rotated past the threshold while held: a HANDLE flip
         rotated = (up > rotate_min_cos) & self.flipped_held
@@ -357,7 +361,7 @@ class flip_fsm(ManagerTermBase):
         out = self.fsm.step(FsmInputs(
             held=held, lifted=lifted, threaded=rotated, supported=placed, released=released, arm_ok=arm_ok,
             reach_prog=reach_prog, lift_prog=lift_prog, insert_prog=rotate_prog,
-            release_prog=release_prog, retreat_prog=retreat_prog,
+            release_prog=release_prog, retreat_prog=retreat_prog, lifted_hold=lifted_hold,
         ))
         out["regress_total"] = self.fsm.regressions
         env._fsm = out

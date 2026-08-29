@@ -73,6 +73,7 @@ class FsmInputs:
     insert_prog: torch.Tensor  # [0,1] loop-to-branch, face-on weighted
     release_prog: torch.Tensor  # [0,1] gripper-open x support persistence
     retreat_prog: torch.Tensor  # [0,1] arm-to-finish progress
+    lifted_hold: torch.Tensor | None = None  # optional lower-threshold 'still lifted' for CARRY validity (hysteresis)
 
 
 class HangFsm:
@@ -120,7 +121,8 @@ class HangFsm:
         # -------- regression: the CURRENT stage's own predicate must hold.
         # Losing it falls back to the deepest stage whose predicate holds.
         ok1 = x.held | x.threaded  # GRASPED remains valid while held (or already threaded)
-        ok2 = ((x.held & x.lifted) if self.carry_requires_lifted else x.held) | x.threaded  # CARRY likewise
+        still_lifted = x.lifted if x.lifted_hold is None else x.lifted_hold
+        ok2 = ((x.held & still_lifted) if self.carry_requires_lifted else x.held) | x.threaded  # CARRY likewise
         ok3 = x.threaded  # INSERTED requires the loop on the branch
         ok4 = x.supported  # PLACED requires live support
         target = torch.zeros_like(stage)
