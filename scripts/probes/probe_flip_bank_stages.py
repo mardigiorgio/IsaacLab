@@ -21,7 +21,7 @@ def fm(name):
 def upcos():
     q=t(obj.data.root_quat_w); return 1-2*(q[:,0]**2+q[:,1]**2)
 for bank in ("reset_arm_lift_bank","reset_arm_rotate_bank"):
-    for goff in (-0.01,-0.05,-0.15):
+    for goff in (-0.05,):
         for e in ("reset_arm_grasp_bank","reset_arm_lift_bank","reset_arm_rotate_bank"): env.event_manager.get_term_cfg(e).params["bank_fraction"]=0.0
         env.event_manager.get_term_cfg(bank).params["bank_fraction"]=1.0; env.event_manager.get_term_cfg(bank).params["gripper_offset"]=goff
         env.reset(); act=torch.zeros(N,A,device=dev); maxstage=torch.zeros(N,dtype=torch.long,device=dev); bodymax=torch.zeros(N,device=dev); heldsteps=torch.zeros(N,device=dev)
