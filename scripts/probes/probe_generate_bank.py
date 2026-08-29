@@ -183,6 +183,7 @@ def main() -> int:
 
         q_sol, err_p, err_a = solve(target)
         print(f"[bank-gen] IK: pos err {err_p * 1000:.1f} mm, axis err {err_a:.3f}")
+        print(f"[bank-gen] q_sol (hover) = {[round(float(v), 4) for v in q_sol]}")
         if err_p > args_cli.pos_tol or err_a > args_cli.axis_tol:
             lo = limits[arm_ids, 0].cpu().numpy(); hi = limits[arm_ids, 1].cpu().numpy()
             at = ["lo" if q_sol[i] - lo[i] < 0.02 else ("hi" if hi[i] - q_sol[i] < 0.02 else "--") for i in range(len(ARM))]
@@ -196,6 +197,7 @@ def main() -> int:
         grasp_target = np.array(args_cli.tcp_pos, dtype=np.float64) - 0.006 * approach
         q_grasp, err_g, _ = solve(grasp_target, q0=q_sol)
         print(f"[bank-gen] IK grasp point: pos err {err_g * 1000:.1f} mm")
+        print(f"[bank-gen] q_grasp = {[round(float(v), 4) for v in q_grasp]}")
         if err_g > args_cli.pos_tol:
             print("[bank-gen] FAILED: grasp point unreachable. No pose emitted.")
             env.close()

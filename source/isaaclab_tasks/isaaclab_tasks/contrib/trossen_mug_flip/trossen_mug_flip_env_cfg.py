@@ -435,6 +435,7 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
                 "gripper_offset": -0.05,  # firm (~45 N): rigid enough for the rotation on the low pinch
                 "object_pose": FLIP_LIFTED_MUG_POSE,
                 "write_home": False,
+                "offset_pose": FLIP_GRASP_BANK_POSE,  # one action semantics across rungs
                 "asset_cfg": SceneEntityCfg("robot"),
             },
         )
@@ -450,6 +451,7 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
                 "gripper_offset": -0.05,
                 "object_pose": FLIP_ROTATED_MUG_POSE,
                 "write_home": False,
+                "offset_pose": FLIP_GRASP_BANK_POSE,
                 "asset_cfg": SceneEntityCfg("robot"),
             },
         )

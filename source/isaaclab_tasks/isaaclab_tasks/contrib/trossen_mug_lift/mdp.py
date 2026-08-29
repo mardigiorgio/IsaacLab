@@ -200,10 +200,19 @@ def reset_arm_reverse_curriculum(
     gripper_offset: float | None = None,
     object_pose: tuple | None = None,
     write_home: bool = True,
+    offset_pose: dict[str, float] | None = None,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
 ):
     """Reverse-curriculum start states: interpolate home -> pre-grasp.
+
+    ``offset_pose`` (flip, 2026-08-28): the pose the ACTION OFFSETS are anchored
+    to for selected envs (default: the start pose itself). With several bank
+    rungs, per-rung offsets give the same observation different action
+    semantics -- from a rotated start any action <= 0 held the flipped mug,
+    from a grasp start the same action rolled it back -- and the policy learned
+    the average (success stuck at the rotated-bank fraction). Anchoring every
+    rung to one pose makes 'hold' the same action everywhere.
 
     ``object_pose`` (flip, 2026-08-28): env-frame (x, y, z, qx, qy, qz, qw)
     written for the SELECTED envs, so a bank can seed a later stage (mug in
@@ -302,8 +311,13 @@ def reset_arm_reverse_curriculum(
                 continue  # binary-style terms hold no offset (the slide's gripper)
             cols = torch.tensor([resolved.index(n) for n in term._joint_names], device=env.device)
             env._bank_offset_map.append((term, cols))
+    if offset_pose is not None:
+        off_target = torch.tensor([offset_pose[n] for n in resolved], device=env.device, dtype=torch.float32)
+        offsets = torch.where(sel.unsqueeze(1), off_target.unsqueeze(0).expand_as(start), start)
+    else:
+        offsets = start
     for term, cols in env._bank_offset_map:
-        term._offset[env_ids] = start[:, cols]
+        term._offset[env_ids] = offsets[:, cols]
     if gripper_offset is not None:
         gterm = env.action_manager.get_term("gripper_action")
         goff = getattr(gterm, "_offset", None)
