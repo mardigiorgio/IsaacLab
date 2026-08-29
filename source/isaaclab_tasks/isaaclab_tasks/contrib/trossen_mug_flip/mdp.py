@@ -258,7 +258,13 @@ def wrist_roll_without_pinch(
     ids, _ = robot.find_joints(["follower_left_joint_3", "follower_left_joint_5"], preserve_order=True)
     q = robot.data.joint_pos.torch[:, ids]
     excess = torch.relu((q[:, 1] - j5_neutral).abs() - j5_tol) + torch.relu(q[:, 0] - j3_max)
-    return _finite(excess * (fsm["stage"] == 0).float())
+    # Gate on the EPISODE latch, not the live stage: the live stage regresses
+    # when the pinch flickers mid-doorknob (probe_flip_hold_flicker), and at
+    # the first step of a held bank start the contact sensor has not read yet,
+    # so the stage-0 gate billed real flips -- grasp-bank first-episode success
+    # 37% -> 17% and lift 86% -> 58% within 350 iterations (fsm37).
+    never_pinched = ~fsm["pinched_ever"] if "pinched_ever" in fsm else (fsm["stage"] == 0)
+    return _finite(excess * never_pinched.float())
 
 
 def arm_action_l2(env: ManagerBasedRLEnv, action_name: str = "arm_action") -> torch.Tensor:
@@ -542,6 +548,7 @@ class flip_fsm(ManagerTermBase):
             release_prog=release_prog, retreat_prog=retreat_prog, lifted_hold=lifted_hold, threaded_hold=rotated_hold,
         ))
         out["regress_total"] = self.fsm.regressions
+        out["pinched_ever"] = self.fsm.awarded[:, 0]  # pinch milestone paid this episode (one-shot latch)
         if success_mode == "in_hand":
             # Success = flipped BY THE HANDLE and held upright in hand for hold_frames
             # (2026-08-28): setting the mug down upright from a single pinch is
