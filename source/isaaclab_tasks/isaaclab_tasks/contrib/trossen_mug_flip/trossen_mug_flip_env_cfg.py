@@ -296,7 +296,12 @@ class FlipTerminationsCfg:
             "joint_tol": 0.5,
             "sensor_name": "pad_object_contact",
             "lift_height": 0.06,
-            "rotate_min_cos": 0.7,
+            # 0.7 -> 0.5 (2026-08-28, probe_flip_low_pinch_chain static sweep): the
+            # STATIC held up_cos tops out at 0.66 (forearm roll 1.2, wrist roll -3.0,
+            # any wrist pitch); every reading above 0.7 was a transient overshoot, and
+            # the one pose peaking at 0.81 drops the mug within 2 s. Stable holds at
+            # 0.53-0.66 (100% held) clear 0.5 with margin.
+            "rotate_min_cos": 0.5,
             "rest_z": OBJECT_REST_Z_INVERTED,
             # ROTATE ratchet 15 -> 40 (2026-08-28, probe_flip_scripted_rotate): from
             # the lifted bank, j3+j5 rotate the held mug -0.63 -> +0.62 (ROTATED in
