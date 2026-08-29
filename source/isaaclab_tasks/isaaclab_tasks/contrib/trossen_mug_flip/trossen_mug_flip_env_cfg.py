@@ -255,6 +255,8 @@ class FlipRewardsCfg:
     metric_ms_place = RewTerm(func=mdp.fsm_metric_ms_release, params={}, weight=1.0)
     metric_ms_retreat = RewTerm(func=mdp.fsm_metric_ms_retreat, params={}, weight=1.0)
     flip_by_handle = RewTerm(func=mdp.flip_by_handle_metric, weight=1.0)
+    # Diagnostic at metric scale: in-hand hold progress (hold_count / hold_frames), mean over the episode.
+    metric_hold = RewTerm(func=mdp.flip_hold_metric, weight=1.0)
 
     early_termination = RewTerm(
         func=mdp.is_terminated_term,
@@ -312,7 +314,12 @@ class FlipTerminationsCfg:
             # 36%) and the mug drops right after; a partial rotation paid ~3 against
             # a ~7 shaping loss on the drop, so first steps were net-negative.
             # Max pre-completion 55 + 105 + 20 = 180 < SUCCESS_BONUS 200 (asserted).
-            "ratchet_w": (10.0, 10.0, 40.0, 15.0, 30.0),
+            # (10, 10, 40, 40, 0) (2026-08-28): in-hand mode never reaches the retreat
+            # rung, so its 30-point ratchet budget moves to the HOLD (stage 3): a
+            # ~8-frame hold earned ~4 points against ~60 of flip income per episode
+            # and the policy kept its flip/unflip limit cycle for 600 iterations.
+            # Max pre-completion 55 + 100 + 20 = 175 < SUCCESS_BONUS 200 (asserted).
+            "ratchet_w": (10.0, 10.0, 40.0, 40.0, 0.0),
             # "in_hand": flipped by the handle and held upright for hold_frames (1 s)
             # ends the episode with the success bonus. "placed" (set down upright,
             # released, arm parked) is kept as the alternative; measured 2026-08-28

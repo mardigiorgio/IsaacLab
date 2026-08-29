@@ -418,6 +418,16 @@ class flip_fsm(ManagerTermBase):
         return out["success"]
 
 
+def flip_hold_metric(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Metric at 1e-3 scale: in-hand hold progress (hold_count / hold_frames) this step."""
+    term = env.termination_manager.get_term_cfg("task_complete").func if hasattr(env, "termination_manager") else None
+    count = getattr(term, "_hold_count", None)
+    if not torch.is_tensor(count):
+        return torch.zeros(env.num_envs, device=env.device)
+    frames = float(env.termination_manager.get_term_cfg("task_complete").params.get("hold_frames", 30))
+    return (count.float() / frames).clamp(0.0, 1.0) * 1e-3
+
+
 def _flip_by_handle(env: ManagerBasedRLEnv) -> torch.Tensor:
     """Latch from upright_progress: True once the mug crossed upright while held this episode."""
     latch = getattr(env, "flip_by_handle", None)
