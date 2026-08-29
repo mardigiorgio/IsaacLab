@@ -24,6 +24,13 @@ class TrossenMugFlipPPORunnerCfg(TrossenMugLiftPPORunnerCfg):
         # Between the lift's pinch guard and the plate's hot search: the
         # flip needs the wrist reorientation DISCOVERED, then a pinch HELD.
         self.actor.distribution_cfg = RslRlMLPModelCfg.GaussianDistributionCfg(
-            init_std=1.0, std_type="log", std_range=(0.05, 2.5)
+            # init_std 1.0 -> 0.1 (2026-08-28, measured): the handle pinch is a
+            # fingertip-edge hold with ~6 mm of margin (bar 8 mm off the wall,
+            # fingers 36 mm blocks) and the vendor gripper gain gives ~6 N at the
+            # bar. A held bank start survives 30 steps of exploration 65-77% at
+            # sigma 0.05, 14-17% at 0.15, ~0% at 0.3 -- at ANY arm scale, gripper
+            # scale, gripper gain (10k/50k) or EMA smoothing tested. Wrist joints
+            # (scale 1.5) still explore +-0.15 rad at 0.1.
+            init_std=0.1, std_type="log", std_range=(0.05, 2.5)
         )
 

@@ -51,6 +51,7 @@ def apply_reverse_curriculum(
     nominal_object_xy: tuple[float, float] | None = None,
     bank_fraction: float = 0.5,
     end_step: int = 2_400,
+    gripper_offset: float | None = None,
 ) -> None:
     """Attach the bank event and its anneal to a task cfg, with the guards.
 
@@ -85,6 +86,8 @@ def apply_reverse_curriculum(
         "alpha_min": 1.0,
         "asset_cfg": SceneEntityCfg("robot"),
     }
+    if gripper_offset is not None:
+        params["gripper_offset"] = float(gripper_offset)
     if bank_xy_jacobian is not None:
         if nominal_object_xy is None:
             raise ValueError("bank_xy_jacobian requires nominal_object_xy.")

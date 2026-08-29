@@ -197,10 +197,18 @@ def reset_arm_reverse_curriculum(
     track_object_xy: list | None = None,
     nominal_object_pos: tuple | None = None,
     safe_yaw_range: tuple | None = None,
+    gripper_offset: float | None = None,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
 ):
     """Reverse-curriculum start states: interpolate home -> pre-grasp.
+
+    ``gripper_offset`` (flip, 2026-08-28): when set, bank starts command the
+    gripper to this joint position instead of the seeded one, so a pose seeded
+    at jaw-object CONTACT (no penetration, no pop) is squeezed from step 0 --
+    a held start whose object rides with the jittering hand instead of being
+    batted away (measured: open-jaw starts beside the inverted mug lose it to
+    arm exploration within 15 steps at every sigma down to 0.25).
 
     Selected envs start at ``q = home + alpha * (pose - home)`` with
     ``alpha ~ U(alpha_min, 1)``: at ``alpha_min = 1`` every bank start is the
@@ -275,6 +283,11 @@ def reset_arm_reverse_curriculum(
             env._bank_offset_map.append((term, cols))
     for term, cols in env._bank_offset_map:
         term._offset[env_ids] = start[:, cols]
+    if gripper_offset is not None:
+        gterm = env.action_manager.get_term("gripper_action")
+        goff = getattr(gterm, "_offset", None)
+        if torch.is_tensor(goff):
+            goff[env_ids] = torch.where(sel.unsqueeze(1), torch.full_like(goff[env_ids], float(gripper_offset)), goff[env_ids])
     asset.write_joint_position_to_sim_index(position=start, joint_ids=joint_ids, env_ids=env_ids)
     asset.write_joint_velocity_to_sim_index(velocity=torch.zeros_like(start), joint_ids=joint_ids, env_ids=env_ids)
 
