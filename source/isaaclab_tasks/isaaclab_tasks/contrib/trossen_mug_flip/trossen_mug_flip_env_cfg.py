@@ -452,7 +452,10 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
                 "gripper_offset": -0.05,  # firm (~45 N): rigid enough for the rotation on the low pinch
                 "object_pose": FLIP_LIFTED_MUG_POSE,
                 "write_home": False,
-                "offset_pose": FLIP_GRASP_BANK_POSE,  # one action semantics across rungs
+                # offset_pose removed (2026-08-29): with the offset OBSERVED (action_offset
+                # obs term) per-rung offsets are no longer ambiguous; each rung anchors to
+                # its own pose so the hold from a rotated start is a small action there,
+                # and the critic carries that state's value over to the self-flips.
                 "asset_cfg": SceneEntityCfg("robot"),
             },
         )
@@ -468,7 +471,6 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
                 "gripper_offset": -0.05,
                 "object_pose": FLIP_ROTATED_MUG_POSE,
                 "write_home": False,
-                "offset_pose": FLIP_GRASP_BANK_POSE,
                 "asset_cfg": SceneEntityCfg("robot"),
             },
         )
