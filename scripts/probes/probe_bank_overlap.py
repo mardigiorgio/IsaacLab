@@ -9,11 +9,11 @@ from isaaclab_tasks.utils.physics_presets import apply_solver_choice
 TASK="IsaacContrib-Flip-Mug-Trossen-v0"; N=512
 cfg=parse_env_cfg(TASK,num_envs=N); apply_solver_choice(cfg,"icf")
 cfg.sim.physics.collision_cfg.rigid_contact_max=400_000; cfg.sim.physics.collision_cfg.max_triangle_pairs=8_000_000
-cfg.events.reset_arm_hover_bank.params["alpha_min"]=0.0; cfg.events.reset_arm_home_via_bank.params["alpha_min"]=0.6; cfg.curriculum=None
+cfg.events.reset_arm_hover_bank.params["alpha_min"]=0.0; cfg.curriculum=None
 print("[ovl] event order:", [n for n in cfg.events.__dict__ if not n.startswith('_')])
 env=gym.make(TASK,cfg=cfg); u=env.unwrapped; t=lambda x: x.torch if hasattr(x,"torch") else x
 obj=u.scene["object"]; org=t(u.scene.env_origins)
-names={"reset_arm_grasp_bank":"grasp","reset_arm_lift_bank":"lift","reset_arm_rotate_bank":"rotate","reset_arm_hover_bank":"hover","reset_arm_home_via_bank":"home_via"}
+names={"reset_arm_grasp_bank":"grasp","reset_arm_lift_bank":"lift","reset_arm_rotate_bank":"rotate","reset_arm_hover_bank":"hover"}
 keymap={}
 for n,short in names.items():
     p=u.event_manager.get_term_cfg(n).params["pose"]; keymap[id(p)]=short
@@ -25,7 +25,7 @@ for rep in range(4):
     sel={keymap.get(k,str(k)):v.clone() for k,v in u._bank_selected.items()}
     for s,v in sel.items():
         tot[s]+=int(v.sum()); air[s]+=int((v&(z>0.15)).sum())
-    for s in ("home_via","hover"):
+    for s in ("hover",):
         for o in ("lift","rotate","grasp"):
             overlap[(s,o)]=overlap.get((s,o),0)+int((sel[s]&sel[o]).sum())
 print("[ovl] flags:", {k:list(keymap.values()).count(k) for k in keymap.values()})

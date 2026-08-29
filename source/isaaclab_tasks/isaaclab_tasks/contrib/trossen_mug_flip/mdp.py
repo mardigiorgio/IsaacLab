@@ -41,6 +41,7 @@ from isaaclab_tasks.contrib.trossen_mug_lift.mdp import (  # noqa: F401
     _HANDLE_OFFSET_B,
     anneal_by_competence,
     competence_rate,
+    home_success_rate,
     anneal_reverse_curriculum,
     reset_arm_reverse_curriculum,
     SUCCESS_POS_THRESHOLD,

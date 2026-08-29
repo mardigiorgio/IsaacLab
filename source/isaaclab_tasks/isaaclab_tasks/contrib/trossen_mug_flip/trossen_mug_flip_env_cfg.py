@@ -471,7 +471,8 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
         # of bank starts pinched (handle_pinch 10 -> 3 per episode, run y92g80kp).
         # The held half stays at alpha=1; the home half carries the approach.
         apply_reverse_curriculum(
-            self, bank_pose=FLIP_GRASP_BANK_POSE, bank_fraction=0.5, end_step=1_000_000_000, gripper_offset=-0.05
+            self, bank_pose=FLIP_GRASP_BANK_POSE, bank_fraction=0.5, end_step=1_000_000_000, gripper_offset=-0.05,
+            home_offset_pose=FLIP_VIA_POSE,
         )
         # SECOND bank (2026-08-28): the LIFTED-HELD state -- arm + mug 11 cm up in
         # the jaws, captured by probe_flip_lifted_state (56% of lifts settle held) --
@@ -543,34 +544,24 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
             params={"event_name": "reset_arm_hover_bank", "lower_at": 0.22, "raise_at": 0.10, "step": 0.01, "window": 256},
         )
         self.curriculum.rung_success = CurrTerm(func=mdp.competence_rate, params={"event_name": "reset_arm_hover_bank"})
-        # FIFTH bank (2026-08-29): home -> via-point, the segment above the descent
-        # rung; competence-gated on its own success so it only advances once the
-        # descent from the via-point is learned. Stacks last: ~12% of starts.
-        self.events.reset_arm_home_via_bank = EventTerm(
-            func=mdp.reset_arm_reverse_curriculum,
-            mode="reset",
-            params={
-                "pose": FLIP_VIA_POSE,
-                "bank_fraction": 0.2,
-                "noise": 0.0,
-                "alpha_min": 1.0,
-                "write_home": False,
-                "asset_cfg": SceneEntityCfg("robot"),
-            },
-        )
-        self.curriculum.grow_home_via = CurrTerm(
-            func=mdp.anneal_by_competence,
-            params={"event_name": "reset_arm_home_via_bank", "lower_at": 0.22, "raise_at": 0.10, "step": 0.01, "window": 128},
-        )
-        self.curriculum.rung_success_home_via = CurrTerm(func=mdp.competence_rate, params={"event_name": "reset_arm_home_via_bank"})
+        # HOME starts (2026-08-29): no fifth rung. The alpha-interpolated
+        # home->via rung anchored each start's action offset to the start pose,
+        # so every alpha was its own action regime; the policy learned the
+        # via-side half (55% at alpha >= 0.68) and 0% below alpha 0.5 while the
+        # whole-rung gate still let alpha_min reach 0 (probe_flip_policy_rollout
+        # --alpha_max slices, model_14000). Plain home starts instead carry the
+        # VIA as their action offset (home_offset_pose on the grasp bank): zero
+        # action drives the arm home -> via along the verified collision-free
+        # path and the arrival state is the descent rung's own start. Their
+        # success is logged as Curriculum/home_success.
+        self.curriculum.home_success = CurrTerm(func=mdp.home_success_rate, params={"window": 256})
         # Banks that WRITE THE MUG (lift, rotate) must run after the arm-only
         # rungs: events stack by selection, and a later arm-only rung inherited
         # the airborne mug of an earlier lift/rotate selection -- 41% of
         # home->via and 40% of descent starts began with the mug falling
         # (probe_bank_overlap, 2026-08-29), so the rung metrics read ~0.6x and
         # the 0.22 gate was effectively ~0.37. Moving them last makes every
-        # start self-consistent; home->via 0.12 -> 0.2 keeps its clean share
-        # (~0.12) after lift/rotate take theirs.
+        # start self-consistent.
         for name in ("reset_arm_lift_bank", "reset_arm_rotate_bank"):
             term = getattr(self.events, name)
             delattr(self.events, name)

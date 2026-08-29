@@ -194,6 +194,7 @@ def reset_arm_reverse_curriculum(
     bank_fraction: float,
     noise: float,
     alpha_min: float = 1.0,
+    alpha_max: float = 1.0,
     track_object_xy: list | None = None,
     nominal_object_pos: tuple | None = None,
     safe_yaw_range: tuple | None = None,
@@ -202,6 +203,7 @@ def reset_arm_reverse_curriculum(
     write_home: bool = True,
     offset_pose: dict[str, float] | None = None,
     anchor_pose: dict[str, float] | None = None,
+    home_offset_pose: dict[str, float] | None = None,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
 ):
@@ -258,7 +260,7 @@ def reset_arm_reverse_curriculum(
         home = env._bank_home_anchor.expand(env_ids.shape[0], -1)
     sel = torch.rand(env_ids.shape[0], device=env.device) < bank_fraction
     target = torch.tensor([pose[n] for n in resolved], device=env.device, dtype=torch.float32)
-    alpha = sample_uniform(alpha_min, 1.0, (env_ids.shape[0], 1), env.device)
+    alpha = sample_uniform(alpha_min, alpha_max, (env_ids.shape[0], 1), env.device)  # alpha_max < 1: probe a slice of the rung
     start = home + alpha * (target.unsqueeze(0) - home)
     start = start + sample_uniform(-noise, noise, start.shape, start.device)
     # Under randomized placement the authored pose must FOLLOW the mug: one
@@ -333,11 +335,21 @@ def reset_arm_reverse_curriculum(
                 continue  # binary-style terms hold no offset (the slide's gripper)
             cols = torch.tensor([resolved.index(n) for n in term._joint_names], device=env.device)
             env._bank_offset_map.append((term, cols))
+    sel_off = start
     if offset_pose is not None:
-        off_target = torch.tensor([offset_pose[n] for n in resolved], device=env.device, dtype=torch.float32)
-        offsets = torch.where(sel.unsqueeze(1), off_target.unsqueeze(0).expand_as(start), start)
-    else:
-        offsets = start
+        sel_off = torch.tensor([offset_pose[n] for n in resolved], device=env.device, dtype=torch.float32).unsqueeze(0).expand_as(start)
+    # ``home_offset_pose`` (flip, 2026-08-29): the action-offset anchor for the
+    # UNSELECTED (home) envs of a write_home bank. The policy conditions on the
+    # offset (arm_action_offset obs), so a home start with a home-anchored
+    # offset is a regime the rung starts never visit: model_14000 reached the
+    # via region from home and hovered there at 0% pinch while the same state
+    # from a via-anchored rung start descended at 55% (probe_flip_policy_rollout
+    # --alpha_max slices). Anchoring home starts to the via makes home == the
+    # rung's alpha=0 and makes zero action carry the arm home -> via.
+    home_off = start
+    if home_offset_pose is not None:
+        home_off = torch.tensor([home_offset_pose[n] for n in resolved], device=env.device, dtype=torch.float32).unsqueeze(0).expand_as(start)
+    offsets = torch.where(sel.unsqueeze(1), sel_off, home_off)
     for term, cols in env._bank_offset_map:
         term._offset[env_ids] = offsets[:, cols]
     if gripper_offset is not None:
@@ -397,6 +409,30 @@ def competence_rate(env, env_ids: torch.Tensor, event_name: str = "reset_arm_gra
     (measured by anneal_by_competence); -1 until the first window completes."""
     hist = getattr(env, "_competence_hist", {}).get(event_name, {})
     return torch.tensor(float(hist.get("rate", -1.0)))
+
+
+def home_success_rate(env, env_ids: torch.Tensor, success_term: str = "task_complete", window: int = 256):
+    """Curriculum-logged rolling success rate of the PLAIN HOME starts -- episodes whose
+    env was claimed by no bank at its last reset (banks clear each other's claims, so
+    'no flag' is exact); -1 until the first window completes. This is the number a
+    home-start evaluation measures, read during training."""
+    if not hasattr(env, "_home_hist"):
+        env._home_hist = {"n": 0, "s": 0, "rate": -1.0}
+    h = env._home_hist
+    flags = getattr(env, "_bank_selected", None)
+    if flags:
+        banked = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+        for f in flags.values():
+            banked |= f
+        mask = ~banked[env_ids]
+        done = env.termination_manager.get_term(success_term)[env_ids].bool()
+        h["n"] += int(mask.sum())
+        h["s"] += int((done & mask).sum())
+        if h["n"] >= window:
+            h["rate"] = h["s"] / h["n"]
+            h["n"] = 0
+            h["s"] = 0
+    return torch.tensor(float(h["rate"]))
 
 
 def anneal_reverse_curriculum(
