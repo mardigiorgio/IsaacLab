@@ -326,6 +326,10 @@ class FlipRewardsCfg:
     # first step from |a|^2 ~40 to ~3 and taxed the descent (rung 0.85 ->
     # 0.75) with no home pinch; 6 zero-action steps from home then the policy
     # gives 77%. Bill only beyond 10 cm from the handle (the via is ~11 cm).
+    # every stage, small (2026-08-29): the far-field swings bled into the held
+    # states -- lifted-bank first-episode success 100% (fsm28/29) -> 0% (fsm31
+    # on): the policy throws the mug to 55 cm and drops it. See mdp.arm_action_l2.
+    action_l2_arm = RewTerm(func=mdp.arm_action_l2, weight=-2e-2)
     action_l2_approach = RewTerm(
         func=mdp.arm_action_l2_far,
         weight=-1e-1,

@@ -192,6 +192,19 @@ def arm_action_l2_before_pinch(env: ManagerBasedRLEnv, action_name: str = "arm_a
     return (a * a).sum(dim=-1) * (fsm["stage"] == 0).float()
 
 
+def arm_action_l2(env: ManagerBasedRLEnv, action_name: str = "arm_action") -> torch.Tensor:
+    """Squared arm action, every stage. Since the via-anchored home starts
+    (fsm30) the far-field swings bled into the HELD states: first-episode
+    success from the lifted bank went 100% (fsm28/29) -> 41% (model_14650) ->
+    0% (fsm31 on, probe_flip_success_by_bank); the policy answers the lifted
+    start with |a|^2 ~ 44 (j1 +4.7, j5 +3.2), throws the mug to 55 cm --
+    upright for a moment, so the rotate milestone is still collected -- and
+    drops it. The calm doorknob is |a|^2 ~ 8 for ~20 steps: at -0.02 it costs
+    ~3 against +40/+40/+200, the throw ~18."""
+    a = env.action_manager.get_term(action_name).raw_actions
+    return (a * a).sum(dim=-1)
+
+
 def arm_action_l2_far(
     env: ManagerBasedRLEnv,
     wrist_cfg: SceneEntityCfg,
