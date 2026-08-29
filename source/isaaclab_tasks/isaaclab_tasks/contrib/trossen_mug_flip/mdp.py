@@ -88,6 +88,42 @@ def handle_contact_count(
     return _finite(left.float() + right.float())
 
 
+# Finger collision block length along link_6 +x, from the rig USD (carriage joints
+# at link_6 x = 0.0865, finger boxes 0..0.0696 beyond them; EE_TCP_OFFSET 0.087 is
+# therefore the finger BASE and the fingertips sit FINGER_LEN further along the tool axis).
+FINGER_LEN = 0.0696
+
+
+def handle_tip_distance(
+    env: ManagerBasedRLEnv,
+    std: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+    wrist_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=["follower_left_link_6"]),
+) -> torch.Tensor:
+    """``1 - tanh(d / std)`` from the FINGERTIP midpoint to the mug's handle_middle.
+
+    The proven pinch (probe_generate_bank, 2026-08-28: 60-degree downward
+    approach, jaws stop at 5.0/5.0 mm on the 11.7 mm bar, 111 N per pad on
+    the handle pieces, 0 N on the body, mug raised 143 mm) has the fingertips
+    at handle_middle and the TCP 70 mm back along the tool axis. A TCP-to-
+    handle reach (run xw2q8ppv) asks for the finger roots on the bar, which
+    puts 70 mm of finger through the 8 mm handle-wall gap: unlearnable.
+    """
+    obj = env.scene[object_cfg.name]
+    robot = env.scene[wrist_cfg.name]
+    ee_frame = env.scene[ee_frame_cfg.name]
+    p = obj.data.root_pos_w.torch
+    q = obj.data.root_quat_w.torch
+    handle_w = p + quat_apply(q, torch.tensor(_HANDLE_OFFSET_B, device=p.device, dtype=p.dtype).expand_as(p))
+    tcp_w = ee_frame.data.target_pos_w.torch[..., 0, :]
+    wrist_w = robot.data.body_pos_w.torch[:, wrist_cfg.body_ids[0]]
+    tool = tcp_w - wrist_w
+    tool = tool / torch.linalg.vector_norm(tool, dim=-1, keepdim=True).clamp_min(1e-6)
+    tip_w = tcp_w + FINGER_LEN * tool
+    return _finite(1.0 - torch.tanh(torch.linalg.vector_norm(handle_w - tip_w, dim=-1) / std))
+
+
 def handle_held(
     env: ManagerBasedRLEnv,
     left_sensor: str = "pad_left_handle",

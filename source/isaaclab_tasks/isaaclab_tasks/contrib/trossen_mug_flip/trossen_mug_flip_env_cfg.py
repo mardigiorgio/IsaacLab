@@ -47,7 +47,27 @@ from isaaclab_tasks.contrib.trossen_mug_lift.trossen_mug_lift_env_cfg import (
     TrossenMugLiftSceneCfg,
 )
 
+from isaaclab_tasks.contrib.trossen_mug_lift.bedrock import apply_reverse_curriculum
+
 from . import mdp
+
+# Pre-grasp HOVER for the inverted mug's handle, generated and VALIDATED by
+# probe_generate_bank.py on this scene (2026-08-28): fingers pitched 60 degrees
+# down from the base side, jaws closing along env x across the 11.7 mm handle
+# bar, TCP env (-0.02, 0.112, 0.127), fingertips 2 cm short of handle_middle.
+# Existence proof: close -> jaws 5.0/5.0 mm on the bar, 111 N per pad on the
+# HANDLE pieces, 0.00 N on the body, mug raised 143 mm by the handle (HELD).
+# A horizontal approach is kinematically impossible (joint_3 saturates +1.57).
+FLIP_GRASP_BANK_POSE = {
+    "follower_left_joint_0": -0.0001,
+    "follower_left_joint_1": 1.5651,
+    "follower_left_joint_2": 0.8440,
+    "follower_left_joint_3": -0.1989,
+    "follower_left_joint_4": 0.0000,
+    "follower_left_joint_5": -0.0001,
+    "follower_left_left_carriage_joint": 0.0440,
+    "follower_left_right_carriage_joint": 0.0440,
+}
 
 # Speed gate [m/s]: the mug pivots and briefly swings during an honest
 # handle flip, so the cap sits at the slide's push cap — a fling still
@@ -189,7 +209,12 @@ class FlipRewardsCfg:
     # Reach toward the HANDLE (TRI handle_middle frame under the live mug pose).
     # The mug root is its bottom plane -- the TOP of an inverted mug -- so the
     # root-targeted reach taught 1000 iterations of hovering over the base.
-    reaching_object = RewTerm(func=mdp.handle_ee_distance, params={"std": 0.2}, weight=0.5)
+    reaching_object = RewTerm(
+        func=mdp.handle_tip_distance,
+        # wrist_cfg passed as a PARAM so the manager resolves body_ids (defaults are not resolved)
+        params={"std": 0.2, "wrist_cfg": SceneEntityCfg("robot", body_names=["follower_left_link_6"])},
+        weight=0.5,
+    )
     # Contact income ONLY on the handle (2026-08-28): run 9uil59fv pre-grasped
     # at the mug and never closed -- the only contact terms were body fines.
     # The lift's tested rungs (good_finger_contact 0.75, contact_count 0.1,
@@ -260,6 +285,17 @@ class FlipEventCfg:
     tape-measure protocol."""
 
     reset_all = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
+    # Declared BEFORE the bank event (bedrock checks it by name): the home
+    # half's start diversity is part of the recipe. Zero range = tape-measure.
+    randomize_arm_start = EventTerm(
+        func=mdp.reset_joints_by_offset,
+        mode="reset",
+        params={
+            "position_range": (0.0, 0.0),
+            "velocity_range": (0.0, 0.0),
+            "asset_cfg": SceneEntityCfg("robot", joint_names="follower_left_joint_[0-5]"),
+        },
+    )
     reset_object_position = EventTerm(
         func=mdp.reset_root_state_uniform,
         mode="reset",
@@ -332,6 +368,10 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
                 ),
             ],
         )
+        # BANK STARTS (2026-08-28): half the resets begin at the validated handle
+        # pre-grasp hover (FLIP_GRASP_BANK_POSE) and anneal back toward home over
+        # 2400 env-steps -- the hang's recipe. No placement DR here, so no Jacobian.
+        apply_reverse_curriculum(self, bank_pose=FLIP_GRASP_BANK_POSE, bank_fraction=0.5, end_step=2_400)
 
 
 @configclass

@@ -85,6 +85,8 @@ def main() -> int:
         n_env = 1 + 2 * len(ARM)  # nominal + central differences per arm joint
         env_cfg.scene.num_envs = n_env
         apply_solver_choice(env_cfg, "icf")
+        env_cfg.sim.physics.collision_cfg.rigid_contact_max = 100_000
+        env_cfg.sim.physics.collision_cfg.max_triangle_pairs = 2_000_000
         env_cfg.observations.policy.enable_corruption = False
         # Kinematic queries only need the events cleared of arm scatter.
         if hasattr(env_cfg.events, "randomize_arm_start"):
@@ -136,9 +138,13 @@ def main() -> int:
             pads = robot.data.body_pos_w.torch[:, pad_body_ids]
             sep = (pads[:, 0] - pads[:, 1]).cpu().numpy()
             sep = sep / np.linalg.norm(sep, axis=1, keepdims=True)
-            return pos, sep
+            l6 = robot.data.body_pos_w.torch[:, link6_id].cpu().numpy() - u.scene.env_origins.cpu().numpy()
+            tool = pos - l6
+            tool = tool / np.linalg.norm(tool, axis=1, keepdims=True)
+            return pos, sep, tool
 
         pad_body_ids, _ = robot.find_bodies("follower_left_gripper_.*", preserve_order=True)
+        link6_id = robot.find_bodies("follower_left_link_6")[0][0]
 
         q = q_home[arm_ids].cpu().numpy().astype(np.float64)
 
@@ -150,20 +156,25 @@ def main() -> int:
                 for j in range(len(ARM)):
                     batch[1 + 2 * j, j] += FD_EPS
                     batch[2 + 2 * j, j] -= FD_EPS
-                pos, seps = fk_batch(batch)
+                pos, seps, tools = fk_batch(batch)
                 e_pos = target_pos - pos[0]
                 d0 = seps[0]
                 e_axis = close_axis - np.dot(close_axis, d0) * d0  # align, sign-free
-                err_p, err_a = float(np.linalg.norm(e_pos)), float(np.linalg.norm(e_axis))
+                # TOOL AXIS (finger direction) must point along the approach, sign-SENSITIVE:
+                # with only the jaw axis constrained the fingers were free to point down and
+                # closed 5 cm behind a side-on handle bar (2026-08-28 flip forensics).
+                e_tool = approach - tools[0]
+                err_p, err_a = float(np.linalg.norm(e_pos)), float(max(np.linalg.norm(e_axis), np.linalg.norm(e_tool)))
                 if err_p < args_cli.pos_tol and err_a < args_cli.axis_tol:
                     break
-                J = np.zeros((6, len(ARM)))
+                J = np.zeros((9, len(ARM)))
                 for j in range(len(ARM)):
                     J[:3, j] = (pos[1 + 2 * j] - pos[2 + 2 * j]) / (2 * FD_EPS)
-                    J[3:, j] = (seps[1 + 2 * j] - seps[2 + 2 * j]) / (2 * FD_EPS)
-                e = np.concatenate([e_pos, 0.12 * e_axis])
+                    J[3:6, j] = (seps[1 + 2 * j] - seps[2 + 2 * j]) / (2 * FD_EPS)
+                    J[6:, j] = (tools[1 + 2 * j] - tools[2 + 2 * j]) / (2 * FD_EPS)
+                e = np.concatenate([e_pos, 0.12 * e_axis, 0.12 * e_tool])
                 lam = args_cli.damping
-                dq = J.T @ np.linalg.solve(J @ J.T + lam * lam * np.eye(6), e)
+                dq = J.T @ np.linalg.solve(J @ J.T + lam * lam * np.eye(9), e)
                 qq = qq + np.clip(dq, -0.2, 0.2)
                 lo = limits[arm_ids, 0].cpu().numpy()
                 hi = limits[arm_ids, 1].cpu().numpy()
@@ -172,7 +183,10 @@ def main() -> int:
 
         q_sol, err_p, err_a = solve(target)
         print(f"[bank-gen] IK: pos err {err_p * 1000:.1f} mm, axis err {err_a:.3f}")
-        if err_p > args_cli.pos_tol:
+        if err_p > args_cli.pos_tol or err_a > args_cli.axis_tol:
+            lo = limits[arm_ids, 0].cpu().numpy(); hi = limits[arm_ids, 1].cpu().numpy()
+            at = ["lo" if q_sol[i] - lo[i] < 0.02 else ("hi" if hi[i] - q_sol[i] < 0.02 else "--") for i in range(len(ARM))]
+            print(f"[bank-gen]   q_sol {np.round(q_sol, 3)} limits lo {np.round(lo, 2)} hi {np.round(hi, 2)} at-limit {at}")
             print("[bank-gen] FAILED: IK did not reach the hover point. No pose emitted.")
             env.close()
             return 1
@@ -196,10 +210,17 @@ def main() -> int:
         # at spawn. A pose that starts touching (or inside) the object can
         # pass the hold check through penetration-seated grip, which is the
         # artifact class this program exists to expose, not a validation.
+        def _scale_vec(t):
+            sc = getattr(t, "_scale", None)
+            if torch.is_tensor(sc):
+                sc = sc.reshape(-1, sc.shape[-1])[0] if sc.dim() > 1 else sc.reshape(-1)
+                return sc.cpu().numpy() if sc.numel() > 1 else float(sc[0])
+            return float(t.cfg.scale)
+
         am0 = u.action_manager
         term0 = am0.get_term("arm_action")
         arm_dim0 = term0.action_dim
-        scale0 = float(term0.cfg.scale)
+        scale0 = _scale_vec(term0)
         q_def0 = robot.data.default_joint_pos.torch[0, arm_ids].cpu().numpy()
         hold = torch.zeros(n_env, am0.total_action_dim, device=u.device)
         # HOLD THE HOVER: zero action on this offset-based term commands the
@@ -219,6 +240,13 @@ def main() -> int:
         for nm, d in zip(pad_names, pp.cpu().numpy()):
             print(f"[bank-gen]   pad {nm} rel plate: [{d[0]:+.3f}, {d[1]:+.3f}, {d[2]:+.3f}] m")
         ee0 = u.scene["ee_frame"].data.target_pos_w.torch[0, 0] - u.scene.env_origins[0]
+        rq = robot.data.root_quat_w.torch[0].cpu().numpy(); oq = obj.data.root_quat_w.torch[0].cpu().numpy(); op = (obj.data.root_pos_w.torch[0] - u.scene.env_origins[0]).cpu().numpy()
+        from scipy.spatial.transform import Rotation as _R
+        h_b = np.array([0.062, 0.0, 0.058])
+        h_xyzw = op + _R.from_quat(oq).apply(h_b)                      # buffer read as (x,y,z,w)
+        h_wxyz = op + _R.from_quat([oq[1], oq[2], oq[3], oq[0]]).apply(h_b)  # buffer read as (w,x,y,z)
+        print(f"[bank-gen]   robot root quat (buffer order) {rq.round(3)}  -> identity is (0,0,0,1) if xyzw, (1,0,0,0) if wxyz")
+        print(f"[bank-gen]   mug root pos {op.round(3)} quat {oq.round(3)}; handle_middle if xyzw {h_xyzw.round(3)} | if wxyz {h_wxyz.round(3)}")
         print(f"[bank-gen]   TCP env-frame: {ee0.cpu().numpy().round(3)}")
         print(f"[bank-gen] spawn clearance: max pad-object force {f0:.3f} N")
         if f0 > 0.1:
@@ -229,7 +257,7 @@ def main() -> int:
         am = u.action_manager
         term = am.get_term("arm_action")
         arm_dim = term.action_dim
-        scale = float(term.cfg.scale)
+        scale = _scale_vec(term)
         # Retarget the action OFFSETS to the hover, exactly as the bank event
         # does: home-anchored offsets make every scripted target a clipped
         # (q - default)/scale command, and the arm sags toward home instead
@@ -248,13 +276,18 @@ def main() -> int:
                 # All arm commands are DELTAS from the retargeted hover.
                 a = min(step / approach_steps, 1.0)
                 q_cmd = (1.0 - a) * q_sol + a * q_grasp
-                act[:, :arm_dim] = torch.tensor((q_cmd - q_sol) / scale, dtype=torch.float32, device=u.device)
+                if step == 0:
+                    q_int = np.zeros_like(q_cmd)
+                q_meas = robot.data.joint_pos.torch[0, arm_ids].cpu().numpy()
+                if step < approach_steps + args_cli.close_steps:
+                    q_int = np.clip(q_int + 0.5 * (q_cmd - q_meas), -0.3, 0.3)  # integral action: PD sag under gravity
+                act[:, :arm_dim] = torch.tensor((q_cmd + q_int - q_sol) / scale, dtype=torch.float32, device=u.device)
                 if step >= approach_steps:
                     act[:, arm_dim:] = -1.0  # close
                 if step >= approach_steps + args_cli.close_steps:
                     ramp = (step - approach_steps - args_cli.close_steps + 1) / args_cli.raise_steps
                     j1 = term._joint_names.index("follower_left_joint_1")
-                    act[:, j1] = (q_grasp[j1] - q_sol[j1] - args_cli.raise_rad * ramp) / scale
+                    act[:, j1] = (q_grasp[j1] + q_int[j1] - q_sol[j1] - args_cli.raise_rad * ramp) / (scale[j1] if hasattr(scale, '__len__') else scale)
                 env.step(act)
                 if step % 10 == 9:
                     tcp = u.scene["ee_frame"].data.target_pos_w.torch[0, 0] - u.scene.env_origins[0]
@@ -263,11 +296,39 @@ def main() -> int:
                     fmax = 0.0
                     if cf2 is not None:
                         fmax = float(torch.linalg.vector_norm(cf2.torch.sum(dim=2), dim=-1).nan_to_num(0.0).max())
+                    qa = robot.data.joint_pos.torch[0, arm_ids].cpu().numpy()
+                    qerr = np.abs(qa - q_cmd)
+                    tgt = am.get_term("arm_action").processed_actions[0].cpu().numpy() if hasattr(am.get_term("arm_action"), "processed_actions") else None
+                    def _fm(n):
+                        if n not in u.scene.sensors:
+                            return None
+                        fmw = u.scene.sensors[n].data.force_matrix_w
+                        return 0.0 if fmw is None else round(float(torch.linalg.vector_norm(fmw.torch.sum(dim=2), dim=-1).nan_to_num(0.0)[0].max()), 2)
+                    fh = [_fm(nm) for nm in ("pad_left_handle", "pad_right_handle", "pad_body_contact")]
+                    try:
+                        tq = robot.data.applied_torque.torch[0, arm_ids].cpu().numpy().round(2)
+                    except Exception:
+                        tq = None
                     print(
-                        f"[proof {step:03d}] tcp z {float(tcp[2]):.3f} carriage {car[0] * 1000:.1f}/{car[1] * 1000:.1f} mm"
+                        f"[proof {step:03d}] torque {tq} |"
+                        f" tcp {tcp.cpu().numpy().round(3)} carriage {car[0] * 1000:.1f}/{car[1] * 1000:.1f} mm"
                         f" pad force {fmax:7.2f} N  obj dz {float((obj.data.root_pos_w.torch[:, 2] - obj_spawn[:, 2]).max()) * 1000:+.1f} mm"
+                        f"  |q-q_cmd| max {qerr.max():.3f} rad (j{int(qerr.argmax())})  handleL/R/body {fh}"
                     )
+                    if step == 9 and tgt is not None:
+                        print(f"[proof]   q_cmd {np.round(q_cmd, 3)}\n[proof]   q_now {np.round(qa, 3)}\n[proof]   processed target {np.round(tgt, 3)}")
         dz = float((obj.data.root_pos_w.torch[:, 2] - obj_spawn[:, 2]).max())
+        def _fmag(name):
+            if name not in u.scene.sensors:
+                return None
+            fm = u.scene.sensors[name].data.force_matrix_w
+            if fm is None:
+                return 0.0
+            return float(torch.linalg.vector_norm(fm.torch.sum(dim=2), dim=-1).nan_to_num(0.0)[0].max())
+        fl, fr, fb = _fmag("pad_left_handle"), _fmag("pad_right_handle"), _fmag("pad_body_contact")
+        if fl is not None:
+            print(f"[bank-gen] end-of-raise forces: left pad on HANDLE {fl:.2f} N, right pad on HANDLE {fr:.2f} N, pads on BODY {fb:.2f} N -> "
+                  f"{'HANDLE-ONLY PINCH' if (fl > 0.5 and fr > 0.5 and fb < 1.0) else 'NOT a clean handle pinch'}")
         held = dz > args_cli.held_dz
         print(f"[bank-gen] existence proof: max object dz {dz * 1000:.1f} mm -> {'HELD' if held else 'FAILED'}")
         if not held:
