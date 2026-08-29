@@ -315,6 +315,8 @@ def main() -> int:
                         f" pad force {fmax:7.2f} N  obj dz {float((obj.data.root_pos_w.torch[:, 2] - obj_spawn[:, 2]).max()) * 1000:+.1f} mm"
                         f"  |q-q_cmd| max {qerr.max():.3f} rad (j{int(qerr.argmax())})  handleL/R/body {fh}"
                     )
+                    if step == approach_steps + args_cli.close_steps - 1:
+                        print(f"[proof]   PD-sag integral at the grasp: q_int {np.round(q_int, 4)}  -> compensated bank {np.round(q_sol + q_int, 4)}")
                     if step == 9 and tgt is not None:
                         print(f"[proof]   q_cmd {np.round(q_cmd, 3)}\n[proof]   q_now {np.round(qa, 3)}\n[proof]   processed target {np.round(tgt, 3)}")
         dz = float((obj.data.root_pos_w.torch[:, 2] - obj_spawn[:, 2]).max())

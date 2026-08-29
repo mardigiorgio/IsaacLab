@@ -54,15 +54,19 @@ from . import mdp
 # Pre-grasp HOVER for the inverted mug's handle, generated and VALIDATED by
 # probe_generate_bank.py on this scene (2026-08-28): fingers pitched 60 degrees
 # down from the base side, jaws closing along env x across the 11.7 mm handle
-# bar, TCP env (-0.02, 0.112, 0.127), fingertips 2 cm short of handle_middle.
+# bar, banked AT the grasp point (jaws open around the bar, 0.000 N at spawn):
+# a 2 cm hover is fine for a 10 cm mug body, not for a 12 mm bar.
 # Existence proof: close -> jaws 5.0/5.0 mm on the bar, 111 N per pad on the
 # HANDLE pieces, 0.00 N on the body, mug raised 143 mm by the handle (HELD).
 # A horizontal approach is kinematically impossible (joint_3 saturates +1.57).
+# Joints are PRE-COMPENSATED by the measured PD gravity sag (q_int at the grasp:
+# j1 -0.0315, j2 +0.0296, j3 +0.0129) so the PD-held start puts the fingertips
+# mid-bar (env y 0.062, z 0.071), not on the curved lower arm where a pinch slips.
 FLIP_GRASP_BANK_POSE = {
     "follower_left_joint_0": -0.0001,
-    "follower_left_joint_1": 1.5651,
-    "follower_left_joint_2": 0.8440,
-    "follower_left_joint_3": -0.1989,
+    "follower_left_joint_1": 1.6277,
+    "follower_left_joint_2": 0.8602,
+    "follower_left_joint_3": -0.0645,
     "follower_left_joint_4": 0.0000,
     "follower_left_joint_5": -0.0001,
     "follower_left_left_carriage_joint": 0.0440,
