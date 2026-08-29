@@ -318,6 +318,11 @@ class FlipRewardsCfg:
     )
 
     action_rate = RewTerm(func=mdp.arm_action_rate_l2, weight=-3e-3)
+    # arm action magnitude while unpinched (2026-08-29): zero action = go to
+    # the via and pinch 100% from home; saturated first actions were the whole
+    # approach failure. -0.02 x |a|^2: ~-0.5/step on the measured garbage,
+    # ~-0.02/step on the descent's own actions.
+    action_l2_approach = RewTerm(func=mdp.arm_action_l2_before_pinch, weight=-2e-2)
     action_jerk = RewTerm(func=mdp.arm_action_jerk_l2, weight=-1e-3)
     joint_vel = RewTerm(
         func=mdp.joint_vel_l2,

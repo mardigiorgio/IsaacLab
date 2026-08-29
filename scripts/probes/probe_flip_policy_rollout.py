@@ -1,7 +1,7 @@
 """Roll a checkpoint's deterministic policy from LIFTED-bank starts: up_cos, j3/j5, hold and FSM stage over time."""
 import argparse, sys
 from isaaclab.app import AppLauncher
-parser=argparse.ArgumentParser(); parser.add_argument("--ckpt",required=True); parser.add_argument("--bank",default="reset_arm_lift_bank"); parser.add_argument("--stochastic",action="store_true"); parser.add_argument("--alpha_min",type=float,default=1.0); parser.add_argument("--alpha_max",type=float,default=1.0)
+parser=argparse.ArgumentParser(); parser.add_argument("--ckpt",required=True); parser.add_argument("--bank",default="reset_arm_lift_bank"); parser.add_argument("--stochastic",action="store_true"); parser.add_argument("--alpha_min",type=float,default=1.0); parser.add_argument("--alpha_max",type=float,default=1.0); parser.add_argument("--zero_steps",type=int,default=0)
 AppLauncher.add_app_launcher_args(parser); args,_=parser.parse_known_args(); args.headless=True
 app=AppLauncher(args).app
 import torch, gymnasium as gym, isaaclab_tasks  # noqa
@@ -34,10 +34,10 @@ res=wenv.get_observations(); obs=res[0] if isinstance(res,tuple) else res
 succ=torch.zeros(N,dtype=torch.bool,device=dev); everheld=torch.zeros(N,dtype=torch.bool,device=dev); rows=[]
 with torch.inference_mode():
     for k in range(240 if args.bank == 'none' else 120):
-        act=policy(obs); out=wenv.step(act); obs=out[0]; succ|=u._fsm['success']; everheld|=((fm('pad_left_handle')>0.01)&(fm('pad_right_handle')>0.01))
+        act=policy(obs); act=(torch.zeros_like(act) if k<args.zero_steps else act); out=wenv.step(act); obs=out[0]; succ|=u._fsm['success']; everheld|=((fm('pad_left_handle')>0.01)&(fm('pad_right_handle')>0.01))
         if k%10==0 or k in (119,239):
             L,R,B=fm("pad_left_handle"),fm("pad_right_handle"),fm("pad_body_contact"); h=(L>0.01)&(R>0.01); q=t(robot.data.joint_pos)[:,aid]; a=act
             wc=SceneEntityCfg("robot", body_names=["follower_left_link_6"]); wc.resolve(u.scene); tip_d=_tip_handle_distance(u,SceneEntityCfg("object"),SceneEntityCfg("ee_frame"),wc)
             rows.append(f"[roll] t={k:3d} tip-handle med {tip_d.median()*100:4.1f} cm  held {h.float().mean()*100:3.0f}%  up_cos med {upcos().median():+.2f}  mug z med {(t(obj.data.root_pos_w)[:,2]-org[:,2]).median():.3f}  j3 {q[:,3].median():+.2f} j5 {q[:,5].median():+.2f}  act j3 {a[:,3].median():+.2f} j5 {a[:,5].median():+.2f} grip {a[:,6].median():+.2f}  body F med {B.median():4.1f} N  stage med {float(u._fsm['stage'].float().median()):.1f} max {int(u._fsm['stage'].max())}")
-print("\n".join(rows), flush=True); print(f"[roll] SUCCESS (in-hand, FSM) within the rollout: {succ.float().mean()*100:.0f}% of {N} envs from bank={args.bank}; ever pinched (both pads on handle) {everheld.float().mean()*100:.0f}%  stochastic={args.stochastic}", flush=True)
+print("\n".join(rows), flush=True); print(f"[roll] SUCCESS (in-hand, FSM) within the rollout: {succ.float().mean()*100:.0f}% of {N} envs from bank={args.bank}; ever pinched (both pads on handle) {everheld.float().mean()*100:.0f}%  stochastic={args.stochastic} zero_steps={args.zero_steps}", flush=True)
 env.close()

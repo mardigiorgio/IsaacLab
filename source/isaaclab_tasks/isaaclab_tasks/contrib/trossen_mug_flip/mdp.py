@@ -171,6 +171,27 @@ def body_contact_without_handle(
     return _finite((body & ~held).float())
 
 
+def arm_action_l2_before_pinch(env: ManagerBasedRLEnv, action_name: str = "arm_action") -> torch.Tensor:
+    """Squared arm action while the handle is not yet pinched (FSM stage 0).
+
+    Measured 2026-08-29 (probe_flip_policy_rollout --zero_steps, model_17000):
+    with the home starts anchored at the via, ZERO arm action for the first
+    10-12 steps carries the arm home -> via and the policy then pinches the
+    handle 100% of the time from true home; the policy's own first actions
+    from those states are saturated wrist/forearm swings (|a| up to 6) that
+    leave it 20-30 cm off, and the frontier of the home->via rung sat at
+    alpha 0.42-0.48 for 1400 iterations. This term makes large arm actions
+    cost while nothing is held; the gripper is excluded (the pinch needs a
+    hard close) and the descent from the via needs |a| ~ 0.3-0.6 per joint,
+    far below the saturated garbage.
+    """
+    a = env.action_manager.get_term(action_name).raw_actions
+    fsm = getattr(env, "_fsm", None)
+    if fsm is None:
+        return torch.zeros(env.num_envs, device=env.device)
+    return (a * a).sum(dim=-1) * (fsm["stage"] == 0).float()
+
+
 def arm_action_offset(env: ManagerBasedRLEnv, action_name: str = "arm_action") -> torch.Tensor:
     """The arm action term's current OFFSET (joint target at zero action) relative
     to the default pose, in action units: (offset - default) / scale.
