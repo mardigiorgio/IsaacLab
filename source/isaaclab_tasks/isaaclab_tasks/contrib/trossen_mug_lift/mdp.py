@@ -201,10 +201,16 @@ def reset_arm_reverse_curriculum(
     object_pose: tuple | None = None,
     write_home: bool = True,
     offset_pose: dict[str, float] | None = None,
+    anchor_pose: dict[str, float] | None = None,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
 ):
     """Reverse-curriculum start states: interpolate home -> pre-grasp.
+
+    ``anchor_pose`` (flip, 2026-08-29): the far end of the interpolation for this
+    bank (default: the home pose). The straight joint-space path from home to
+    the flip's grasp pose passes THROUGH the mug (52 N on the pads at reset for
+    alpha ~0.7), so the approach rung anchors to a via-point above the grasp.
 
     ``offset_pose`` (flip, 2026-08-28): the pose the ACTION OFFSETS are anchored
     to for selected envs (default: the start pose itself). With several bank
@@ -246,7 +252,10 @@ def reset_arm_reverse_curriculum(
     # first retarget can touch it.
     if not hasattr(env, "_bank_home_anchor"):
         env._bank_home_anchor = asset.data.default_joint_pos.torch[0:1, joint_ids].clone()
-    home = env._bank_home_anchor.expand(env_ids.shape[0], -1)
+    if anchor_pose is not None:
+        home = torch.tensor([anchor_pose[n] for n in resolved], device=env.device, dtype=torch.float32).unsqueeze(0).expand(env_ids.shape[0], -1)
+    else:
+        home = env._bank_home_anchor.expand(env_ids.shape[0], -1)
     sel = torch.rand(env_ids.shape[0], device=env.device) < bank_fraction
     target = torch.tensor([pose[n] for n in resolved], device=env.device, dtype=torch.float32)
     alpha = sample_uniform(alpha_min, 1.0, (env_ids.shape[0], 1), env.device)

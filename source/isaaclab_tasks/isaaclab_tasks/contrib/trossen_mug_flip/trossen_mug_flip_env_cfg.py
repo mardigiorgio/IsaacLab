@@ -119,6 +119,20 @@ FLIP_OPEN_GRASP_BANK_POSE = {
     "follower_left_right_carriage_joint": 0.0120,
 }
 
+# Via-point 8 cm above the low-pinch grasp along the same 60-degree approach
+# (probe_generate_bank tcp z +0.08, IK 0.2 mm, 2026-08-29): the approach rung's
+# anneal anchor. Jaws at 12 mm so nothing squeezes on the way down.
+FLIP_VIA_POSE = {
+    "follower_left_joint_0": -0.0002,
+    "follower_left_joint_1": 1.5908,
+    "follower_left_joint_2": 1.0548,
+    "follower_left_joint_3": -0.4799,
+    "follower_left_joint_4": -0.0095,
+    "follower_left_joint_5": -0.1384,
+    "follower_left_left_carriage_joint": 0.0120,
+    "follower_left_right_carriage_joint": 0.0120,
+}
+
 FLIP_GRASP_BANK_POSE = {
     "follower_left_joint_0": -0.0001,
     "follower_left_joint_1": 1.7416,
@@ -505,6 +519,7 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
             mode="reset",
             params={
                 "pose": FLIP_OPEN_GRASP_BANK_POSE,
+                "anchor_pose": FLIP_VIA_POSE,  # anneal descends from the via-point, not from home
                 "bank_fraction": 0.25,
                 "noise": 0.0,
                 "alpha_min": 1.0,
