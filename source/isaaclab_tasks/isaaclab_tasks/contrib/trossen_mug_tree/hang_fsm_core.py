@@ -78,13 +78,17 @@ class FsmInputs:
 class HangFsm:
     """Latched per-env stage machine. All buffers torch, device-resident."""
 
-    def __init__(self, num_envs: int, device, ratchet_w=None, milestone_bonus=None):
+    def __init__(self, num_envs: int, device, ratchet_w=None, milestone_bonus=None, carry_requires_lifted=False):
         # Per-task economy (2026-08-28): the flip needs a heavier ROTATE ratchet
         # (partial rotation must out-earn the shaping loss of the drop that
         # follows it); the hang keeps the module defaults. The anti-farming
         # inequality is asserted for whatever tuples are used.
         self.ratchet_w = tuple(RATCHET_W if ratchet_w is None else ratchet_w)
         self.milestone_bonus = tuple(MILESTONE_BONUS if milestone_bonus is None else milestone_bonus)
+        # carry_requires_lifted (flip, 2026-08-28): CARRY stays valid only while the
+        # object is still lifted, so letting the lift sag back to the table regresses
+        # the stage. The hang keeps the default (its carry target is off the table).
+        self.carry_requires_lifted = bool(carry_requires_lifted)
         assert len(self.ratchet_w) == 5 and len(self.milestone_bonus) == 5
         assert sum(self.milestone_bonus) + sum(self.ratchet_w) + PHI_MAX < SUCCESS_BONUS, (
             f"max pre-completion return {sum(self.milestone_bonus) + sum(self.ratchet_w) + PHI_MAX} >= success {SUCCESS_BONUS}"
@@ -116,7 +120,7 @@ class HangFsm:
         # -------- regression: the CURRENT stage's own predicate must hold.
         # Losing it falls back to the deepest stage whose predicate holds.
         ok1 = x.held | x.threaded  # GRASPED remains valid while held (or already threaded)
-        ok2 = x.held | x.threaded  # CARRY likewise
+        ok2 = ((x.held & x.lifted) if self.carry_requires_lifted else x.held) | x.threaded  # CARRY likewise
         ok3 = x.threaded  # INSERTED requires the loop on the branch
         ok4 = x.supported  # PLACED requires live support
         target = torch.zeros_like(stage)

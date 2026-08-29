@@ -429,7 +429,10 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
                 "bank_fraction": 0.25,
                 "noise": 0.0,
                 "alpha_min": 1.0,
-                "gripper_offset": -0.01,
+                # -0.15 (2026-08-28): the hard squeeze (~110 N) every scripted rotation
+                # used; the rolled-out policy squeezed ~19 N and could never rotate.
+                # Body contact while the handle is held is no longer fined.
+                "gripper_offset": -0.15,
                 "object_pose": FLIP_LIFTED_MUG_POSE,
                 "write_home": False,
                 "asset_cfg": SceneEntityCfg("robot"),

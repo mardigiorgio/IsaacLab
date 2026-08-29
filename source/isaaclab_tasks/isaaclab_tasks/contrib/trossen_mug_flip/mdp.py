@@ -281,7 +281,7 @@ class flip_fsm(ManagerTermBase):
 
     def __init__(self, cfg, env):
         super().__init__(cfg, env)
-        self.fsm = HangFsm(env.num_envs, env.device, ratchet_w=cfg.params.get("ratchet_w"))
+        self.fsm = HangFsm(env.num_envs, env.device, ratchet_w=cfg.params.get("ratchet_w"), carry_requires_lifted=True)
         self.flipped_held = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
         self._z0 = torch.full((env.num_envs,), float("nan"), device=env.device)
         env.flip_by_handle = self.flipped_held
