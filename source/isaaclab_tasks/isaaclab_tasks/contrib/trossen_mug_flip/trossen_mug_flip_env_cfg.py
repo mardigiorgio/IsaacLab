@@ -20,6 +20,7 @@ real table.
 """
 
 from isaaclab.envs import ManagerBasedRLEnvCfg
+from isaaclab.managers import CurriculumTermCfg as CurrTerm
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
@@ -97,6 +98,22 @@ FLIP_ROTATED_MUG_POSE = (-0.0065, 0.0624, 0.3471, -0.1954, 0.2644, -0.7243, -0.6
 # 2026-08-28): fingertips ~4 cm above the table on the bar, 60-degree approach.
 # Pinched 100%, held after the lift 100% at every squeeze, holds through every
 # wrist motion tested; the mid-height pinch (handle_middle) held 17-75%.
+# Open-jaw HOVER 2 cm back from the low pinch along the 60-degree approach
+# (probe_generate_bank hover_back 0.02, 2026-08-29: proof HELD, 168 mm, handle-only).
+# The approach rung: annealed toward home (Florensa) -- its jaws interpolate
+# OPEN, so intermediate starts never squeeze the mug (the grasp-point bank cannot
+# be annealed for that reason). model_2850 succeeded 100% from a pinch, 0% from home.
+FLIP_HOVER_BANK_POSE = {
+    "follower_left_joint_0": -0.0001,
+    "follower_left_joint_1": 1.6315,
+    "follower_left_joint_2": 0.7620,
+    "follower_left_joint_3": -0.0300,
+    "follower_left_joint_4": -0.0002,
+    "follower_left_joint_5": 0.0030,
+    "follower_left_left_carriage_joint": 0.0440,
+    "follower_left_right_carriage_joint": 0.0440,
+}
+
 FLIP_GRASP_BANK_POSE = {
     "follower_left_joint_0": -0.0001,
     "follower_left_joint_1": 1.7416,
@@ -473,6 +490,25 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
                 "write_home": False,
                 "asset_cfg": SceneEntityCfg("robot"),
             },
+        )
+        # FOURTH bank: the open-jaw HOVER, ANNEALED toward home over 48k env-steps
+        # (~2000 iterations) so the approach is learned from progressively farther
+        # starts. Stacks last: ~25% hover, ~15% rotated, ~15% lifted, ~22% grasp, ~22% home.
+        self.events.reset_arm_hover_bank = EventTerm(
+            func=mdp.reset_arm_reverse_curriculum,
+            mode="reset",
+            params={
+                "pose": FLIP_HOVER_BANK_POSE,
+                "bank_fraction": 0.25,
+                "noise": 0.0,
+                "alpha_min": 1.0,
+                "write_home": False,
+                "asset_cfg": SceneEntityCfg("robot"),
+            },
+        )
+        self.curriculum.grow_hover = CurrTerm(
+            func=mdp.anneal_reverse_curriculum,
+            params={"start_step": 0, "end_step": 48_000, "event_name": "reset_arm_hover_bank"},
         )
 
 
