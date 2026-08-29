@@ -333,6 +333,7 @@ class flip_fsm(ManagerTermBase):
         max_speed: float = 0.1,
         reach_std: float = 0.2,
         rotate_min_cos: float = 0.7,
+        rotate_hold_cos: float | None = None,
         rest_z: float | None = None,
         ratchet_w: tuple | None = None,
         success_mode: str = "placed",
@@ -364,6 +365,12 @@ class flip_fsm(ManagerTermBase):
         upright = up > UPRIGHT_MIN_COS
         self.flipped_held |= (up > rotate_min_cos) & held  # rotated past the threshold while held: a HANDLE flip
         rotated = (up > rotate_min_cos) & self.flipped_held
+        # Hysteresis (2026-08-28, probe swing trace): a fast flip with forearm roll 1.0
+        # settles at up_cos 0.48-0.49, a hair under the 0.5 crossing threshold, so the
+        # hold counter reset every frame; once latched, the hold and the ROTATED
+        # stage stay valid down to rotate_hold_cos.
+        hold_cos = rotate_min_cos if rotate_hold_cos is None else rotate_hold_cos
+        rotated_hold = (up > hold_cos) & self.flipped_held
         calm = torch.linalg.vector_norm(obj.data.root_lin_vel_w.torch, dim=-1) < max_speed
         placed = rotated & (p[:, 2] < z_max) & calm
         ids, _ = robot.find_joints(list(pose.keys()), preserve_order=True)
@@ -398,7 +405,7 @@ class flip_fsm(ManagerTermBase):
         out = self.fsm.step(FsmInputs(
             held=held, lifted=lifted, threaded=rotated, supported=placed, released=released, arm_ok=arm_ok,
             reach_prog=reach_prog, lift_prog=lift_prog, insert_prog=rotate_prog,
-            release_prog=release_prog, retreat_prog=retreat_prog, lifted_hold=lifted_hold,
+            release_prog=release_prog, retreat_prog=retreat_prog, lifted_hold=lifted_hold, threaded_hold=rotated_hold,
         ))
         out["regress_total"] = self.fsm.regressions
         if success_mode == "in_hand":
@@ -411,7 +418,7 @@ class flip_fsm(ManagerTermBase):
             # forth and drops it (probe_flip_policy_rollout, model_1550).
             if not hasattr(self, "_hold_count"):
                 self._hold_count = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
-            done_pred = (out["stage"] >= 3) & rotated & held
+            done_pred = (out["stage"] >= 3) & rotated_hold & held
             self._hold_count = torch.where(done_pred, self._hold_count + 1, torch.zeros_like(self._hold_count))
             out["success"] = self._hold_count >= hold_frames
         env._fsm = out

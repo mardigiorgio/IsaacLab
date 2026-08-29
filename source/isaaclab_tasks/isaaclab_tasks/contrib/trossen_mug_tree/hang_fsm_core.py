@@ -74,6 +74,7 @@ class FsmInputs:
     release_prog: torch.Tensor  # [0,1] gripper-open x support persistence
     retreat_prog: torch.Tensor  # [0,1] arm-to-finish progress
     lifted_hold: torch.Tensor | None = None  # optional lower-threshold 'still lifted' for CARRY validity (hysteresis)
+    threaded_hold: torch.Tensor | None = None  # optional lower-threshold 'still threaded' for INSERTED validity (hysteresis)
 
 
 class HangFsm:
@@ -123,7 +124,8 @@ class HangFsm:
         ok1 = x.held | x.threaded  # GRASPED remains valid while held (or already threaded)
         still_lifted = x.lifted if x.lifted_hold is None else x.lifted_hold
         ok2 = ((x.held & still_lifted) if self.carry_requires_lifted else x.held) | x.threaded  # CARRY likewise
-        ok3 = x.threaded  # INSERTED requires the loop on the branch
+        still_threaded = x.threaded if x.threaded_hold is None else x.threaded_hold
+        ok3 = still_threaded  # INSERTED requires the loop on the branch (hysteresis optional)
         ok4 = x.supported  # PLACED requires live support
         target = torch.zeros_like(stage)
         target = torch.where((stage >= 1) & ok1, torch.ones_like(stage), target)

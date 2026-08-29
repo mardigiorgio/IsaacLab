@@ -308,6 +308,7 @@ class FlipTerminationsCfg:
             # the one pose peaking at 0.81 drops the mug within 2 s. Stable holds at
             # 0.53-0.66 (100% held) clear 0.5 with margin.
             "rotate_min_cos": 0.5,
+            "rotate_hold_cos": 0.35,  # hysteresis for the hold / stage validity (see flip_fsm)
             "rest_z": OBJECT_REST_Z_INVERTED,
             # ROTATE ratchet 15 -> 40 (2026-08-28, probe_flip_scripted_rotate): from
             # the lifted bank, j3+j5 rotate the held mug -0.63 -> +0.62 (ROTATED in

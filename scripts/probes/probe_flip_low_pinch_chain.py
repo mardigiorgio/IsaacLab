@@ -23,15 +23,17 @@ def fm(name):
 def upcos():
     q=t(obj.data.root_quat_w); return 1-2*(q[:,0]**2+q[:,1]**2)
 params["pose"]=LOW; params["gripper_offset"]=-0.05
-for j3v in (1.0,1.2):
-    for j4v in (-0.8,-0.4,0.4,0.8):
-        env.reset(); act=torch.zeros(N,A,device=dev)
-        for k in range(15): env.step(act)
-        for k in range(40):
-            act[:,1]=-0.30*min(k/40,1.0)/sc[1]; env.step(act)
-        for k in range(60):
-            a=min(k/45,1.0); act[:,3]=(a*j3v)/sc[3]; act[:,4]=(a*j4v)/sc[4]; act[:,5]=(a*-3.0)/sc[5]; env.step(act)
-        for k in range(60): env.step(act)
-        L,R=fm("pad_left_handle"),fm("pad_right_handle"); h=(L>0.01)&(R>0.01); u=upcos()
-        print(f"[static] j3 {j3v:.1f} j4 {j4v:+.1f} j5 -3.0: STATIC up_cos after 2 s med {u.median():+.2f} (>0.7 in {(u>0.7).float().mean()*100:.0f}%, >0.5 in {(u>0.5).float().mean()*100:.0f}%)  held {h.float().mean()*100:.0f}%", flush=True)
+for ramp,j3v in ((15,1.0),(15,1.2),(25,1.0),(45,1.0)):
+    env.reset(); act=torch.zeros(N,A,device=dev)
+    for k in range(15): env.step(act)
+    for k in range(25):
+        act[:,1]=-0.30*min(k/25,1.0)/sc[1]; env.step(act)
+    trace=[]; hold=torch.zeros(N,device=dev); best=torch.zeros(N,device=dev); succ=torch.zeros(N,dtype=torch.bool,device=dev)
+    for k in range(ramp+75):
+        a=min(k/ramp,1.0); act[:,3]=(a*j3v)/sc[3]; act[:,5]=(a*-3.0)/sc[5]; env.step(act); u=upcos()
+        L,R=fm("pad_left_handle"),fm("pad_right_handle"); h=(L>0.01)&(R>0.01); st=env._fsm["stage"]
+        d=(st>=3)&(u>0.5)&h; hold=torch.where(d,hold+1,torch.zeros_like(hold)); best=torch.maximum(best,hold); succ|=env._fsm["success"]
+        if k%5==4: trace.append(f"{u.median():+.2f}")
+    print(f"[swing] ramp {ramp:2d} j3 {j3v:.1f}: up_cos median every 5 frames: {' '.join(trace)}", flush=True)
+    print(f"[swing]    longest hold streak median {best.median():.0f} frames (>=30 in {(best>=30).float().mean()*100:.0f}%), FSM success fired in {succ.float().mean()*100:.0f}%, held@end {h.float().mean()*100:.0f}%", flush=True)
 env.close()
