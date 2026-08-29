@@ -21,7 +21,7 @@ env=gym.make(TASK,cfg=cfg); u=env.unwrapped; wenv=RslRlVecEnvWrapper(env, clip_a
 runner=OnPolicyRunner(wenv, filter_unsupported_rsl_rl_kwargs(agent_cfg.to_dict()), log_dir=None, device=agent_cfg.device); runner.load(args.ckpt); policy=runner.get_inference_policy(device=u.device)
 if args.stochastic:
     actor=runner.alg.actor
-    policy=lambda o: actor.act(o) if hasattr(actor,'act') else actor(o)
+    policy=lambda o: actor(o, stochastic_output=True)  # rsl_rl 3.x: actor(obs) alone is the MEAN (the old branch never sampled)
 t=lambda x: x.torch if hasattr(x,"torch") else x
 robot=u.scene["robot"]; obj=u.scene["object"]; org=t(u.scene.env_origins); dev=u.device
 aid=robot.find_joints("follower_left_joint_[0-5]")[0]

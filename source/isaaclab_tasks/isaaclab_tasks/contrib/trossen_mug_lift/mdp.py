@@ -299,6 +299,11 @@ def reset_arm_reverse_curriculum(
     if key not in env._bank_selected:
         env._bank_selected[key] = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
     env._bank_selected[key][env_ids] = sel
+    if not hasattr(env, "_bank_alpha"):
+        env._bank_alpha = {}
+    if key not in env._bank_alpha:
+        env._bank_alpha[key] = torch.ones(env.num_envs, device=env.device)
+    env._bank_alpha[key][env_ids] = torch.where(sel, alpha.squeeze(1), env._bank_alpha[key][env_ids])
     # the LAST bank to select an env owns it: drop every other bank's claim on
     # those envs, so competence windows count each episode under the start it
     # actually got (stacked banks overlap: probe_bank_overlap 2026-08-29).
@@ -371,6 +376,7 @@ def anneal_by_competence(
     step: float = 0.01,
     alpha_floor: float = 0.0,
     window: int = 256,
+    frontier: float | None = None,
 ):
     """Competence-gated reverse curriculum (flip, 2026-08-29): lower the bank event's
     ``alpha_min`` by ``step`` whenever the rolling success rate of episodes that
@@ -378,7 +384,11 @@ def anneal_by_competence(
     falls below ``raise_at``. Replaces the clock-based anneal, which outran the
     policy (rung starts spread over alpha 0.68..1 succeeded 6% while the rung
     itself succeeded 78%). Resume-safe: alpha is re-derived from performance.
-    Returns the current alpha_min for logging."""
+    ``frontier`` (2026-08-29): count only episodes whose alpha lies within
+    ``frontier`` of the current alpha_min. Averaged over the whole rung the
+    gate stayed above 0.22 on the already-learned half while the new region was
+    at 0% (home->via rung: 55% at alpha >= 0.68, 0% below 0.5, alpha_min walked
+    to 0 anyway). Returns the current alpha_min for logging."""
     cfg = env.event_manager.get_term_cfg(event_name)
     key = id(cfg.params["pose"])
     selected = getattr(env, "_bank_selected", {}).get(key)
@@ -388,6 +398,9 @@ def anneal_by_competence(
     if selected is not None and env_ids.numel() > 0:
         done = env.termination_manager.get_term(success_term)[env_ids].bool()
         mask = selected[env_ids]
+        if frontier is not None:
+            a = env._bank_alpha[key][env_ids]
+            mask = mask & (a <= float(cfg.params.get("alpha_min", 1.0)) + frontier)
         hist["n"] += int(mask.sum())
         hist["s"] += int((done & mask).sum())
     alpha = float(cfg.params.get("alpha_min", 1.0))

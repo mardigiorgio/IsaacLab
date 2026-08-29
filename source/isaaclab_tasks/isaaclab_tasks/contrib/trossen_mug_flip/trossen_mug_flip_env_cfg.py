@@ -555,6 +555,30 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
         # path and the arrival state is the descent rung's own start. Their
         # success is logged as Curriculum/home_success.
         self.curriculum.home_success = CurrTerm(func=mdp.home_success_rate, params={"window": 256})
+        # FIFTH bank, re-added with ONE action offset (2026-08-29): starts along
+        # the home -> via path, every one anchored to the via (offset_pose), so
+        # the rung is a pure state-space curriculum with the same action
+        # semantics as the plain home starts (its alpha=0) and the descent rung's
+        # via start (its alpha=1). The gate counts only the FRONTIER slice
+        # (alpha within 0.15 of alpha_min), not the whole rung.
+        self.events.reset_arm_home_via_bank = EventTerm(
+            func=mdp.reset_arm_reverse_curriculum,
+            mode="reset",
+            params={
+                "pose": FLIP_VIA_POSE,
+                "bank_fraction": 0.2,
+                "noise": 0.0,
+                "alpha_min": 1.0,
+                "write_home": False,
+                "offset_pose": FLIP_VIA_POSE,
+                "asset_cfg": SceneEntityCfg("robot"),
+            },
+        )
+        self.curriculum.grow_home_via = CurrTerm(
+            func=mdp.anneal_by_competence,
+            params={"event_name": "reset_arm_home_via_bank", "lower_at": 0.22, "raise_at": 0.10, "step": 0.01, "window": 64, "frontier": 0.15},
+        )
+        self.curriculum.rung_success_home_via = CurrTerm(func=mdp.competence_rate, params={"event_name": "reset_arm_home_via_bank"})
         # Banks that WRITE THE MUG (lift, rotate) must run after the arm-only
         # rungs: events stack by selection, and a later arm-only rung inherited
         # the airborne mug of an earlier lift/rotate selection -- 41% of
