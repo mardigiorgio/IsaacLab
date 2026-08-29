@@ -366,6 +366,7 @@ def anneal_by_competence(
     alpha = float(cfg.params.get("alpha_min", 1.0))
     if hist["n"] >= window:
         rate = hist["s"] / hist["n"]
+        hist["rate"] = rate
         if rate > lower_at:
             alpha = max(alpha_floor, alpha - step)
         elif rate < raise_at:
@@ -374,6 +375,13 @@ def anneal_by_competence(
         hist["s"] = 0
         cfg.params["alpha_min"] = alpha
     return alpha
+
+
+def competence_rate(env, env_ids: torch.Tensor, event_name: str = "reset_arm_grasp_bank"):
+    """Curriculum-logged rolling success rate of episodes that started from ``event_name``'s bank
+    (measured by anneal_by_competence); -1 until the first window completes."""
+    hist = getattr(env, "_competence_hist", {}).get(event_name, {})
+    return torch.tensor(float(hist.get("rate", -1.0)))
 
 
 def anneal_reverse_curriculum(

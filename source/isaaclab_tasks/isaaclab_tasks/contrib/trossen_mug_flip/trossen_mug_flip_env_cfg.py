@@ -518,8 +518,11 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
         # episodes: down while they succeed > 60%, up when < 30%.
         self.curriculum.grow_hover = CurrTerm(
             func=mdp.anneal_by_competence,
-            params={"event_name": "reset_arm_hover_bank", "lower_at": 0.6, "raise_at": 0.3, "step": 0.01, "window": 256},
+            # 0.6/0.3 -> 0.35/0.15 (2026-08-29): under exploration noise the rung
+            # succeeds ~20% in training against 78% deterministically; the gate never opened.
+            params={"event_name": "reset_arm_hover_bank", "lower_at": 0.35, "raise_at": 0.15, "step": 0.01, "window": 256},
         )
+        self.curriculum.rung_success = CurrTerm(func=mdp.competence_rate, params={"event_name": "reset_arm_hover_bank"})
 
 
 @configclass
