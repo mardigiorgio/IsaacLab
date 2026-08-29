@@ -39,6 +39,7 @@ from isaaclab_tasks.contrib.trossen_mug_slide.mdp import *  # noqa: F401,F403
 from isaaclab_tasks.contrib.trossen_mug_slide.mdp import _finite, _object_calm, _sensor_force_mag
 from isaaclab_tasks.contrib.trossen_mug_lift.mdp import (  # noqa: F401
     _HANDLE_OFFSET_B,
+    advance_action_offset_waypoint,
     anneal_by_competence,
     competence_rate,
     home_success_rate,
@@ -235,6 +236,8 @@ def wrist_roll_without_pinch(
     j5_neutral: float = -0.14,
     j5_tol: float = 0.5,
     j3_max: float = 0.3,
+    j3_neutral: float | None = None,
+    j3_tol: float = 0.4,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
 ) -> torch.Tensor:
     """Radians of doorknob motion performed with NOTHING in hand: how far the
@@ -257,7 +260,8 @@ def wrist_roll_without_pinch(
     robot = env.scene[asset_cfg.name]
     ids, _ = robot.find_joints(["follower_left_joint_3", "follower_left_joint_5"], preserve_order=True)
     q = robot.data.joint_pos.torch[:, ids]
-    excess = torch.relu((q[:, 1] - j5_neutral).abs() - j5_tol) + torch.relu(q[:, 0] - j3_max)
+    j3_excess = torch.relu(q[:, 0] - j3_max) if j3_neutral is None else torch.relu((q[:, 0] - j3_neutral).abs() - j3_tol)
+    excess = torch.relu((q[:, 1] - j5_neutral).abs() - j5_tol) + j3_excess
     # Gate on the EPISODE latch, not the live stage: the live stage regresses
     # when the pinch flickers mid-doorknob (probe_flip_hold_flicker), and at
     # the first step of a held bank start the contact sensor has not read yet,

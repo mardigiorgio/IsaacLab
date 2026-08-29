@@ -206,6 +206,7 @@ def reset_arm_reverse_curriculum(
     anchor_pose: dict[str, float] | None = None,
     home_offset_pose: dict[str, float] | None = None,
     home_noise: float = 0.0,
+    trajectory: list | None = None,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
 ):
@@ -262,6 +263,23 @@ def reset_arm_reverse_curriculum(
         home = env._bank_home_anchor.expand(env_ids.shape[0], -1)
     sel = torch.rand(env_ids.shape[0], device=env.device) < bank_fraction
     target = torch.tensor([pose[n] for n in resolved], device=env.device, dtype=torch.float32)
+    # ``trajectory`` (flip, 2026-08-29): a recorded PATH of held states -- a list of
+    # {"pose": {joint: val}, "object_pose": [x, y, z, qx, qy, qz, qw]} -- and each
+    # selected env starts at a random sample of it (arm AND mug), so a long
+    # in-hand motion (the doorknob: 2 rad of wrist roll) is a reverse
+    # curriculum from step 0 instead of a 13-sigma mean drift. ``pose`` then
+    # only names the joints; ``object_pose`` is per env.
+    traj_obj = None
+    if trajectory:
+        key_cache = f"_traj_cache_{id(trajectory)}"
+        if not hasattr(env, key_cache):
+            P = torch.tensor([[smp["pose"][n] for n in resolved] for smp in trajectory], device=env.device, dtype=torch.float32)
+            O = torch.tensor([smp["object_pose"] for smp in trajectory], device=env.device, dtype=torch.float32)
+            setattr(env, key_cache, (P, O))
+        P, O = getattr(env, key_cache)
+        kidx = torch.randint(0, P.shape[0], (env_ids.shape[0],), device=env.device)
+        target = P[kidx]  # per-env target: the interpolation below is the identity at alpha 1
+        traj_obj = O[kidx]
     # alpha_max < 1 narrows the rung to a window above alpha_min (the anneal's
     # ``span`` slides it); ``alpha_tail`` sends that fraction of selected envs to
     # the full [alpha_min, 1] so the regions the frontier has passed keep a few
@@ -270,7 +288,7 @@ def reset_arm_reverse_curriculum(
     if alpha_tail > 0.0:
         tail = sample_uniform(alpha_min, 1.0, (env_ids.shape[0], 1), env.device)
         alpha = torch.where(torch.rand_like(alpha) < alpha_tail, tail, alpha)
-    start = home + alpha * (target.unsqueeze(0) - home)
+    start = home + alpha * ((target if target.dim() == 2 else target.unsqueeze(0)) - home)
     start = start + sample_uniform(-noise, noise, start.shape, start.device)
     # Under randomized placement the authored pose must FOLLOW the mug: one
     # precomputed Jacobian step translates the pre-grasp by each env's
@@ -331,11 +349,16 @@ def reset_arm_reverse_curriculum(
             return
         env_ids = env_ids[sel]
         start = start[sel]
+        if traj_obj is not None:
+            traj_obj = traj_obj[sel]
         sel = torch.ones(env_ids.shape[0], dtype=torch.bool, device=env.device)
-    if object_pose is not None and sel.any():
+    if (object_pose is not None or traj_obj is not None) and sel.any():
         obj = env.scene[object_cfg.name]
         ids_sel = env_ids[sel]
-        pose7 = torch.tensor(object_pose, device=env.device, dtype=torch.float32).unsqueeze(0).repeat(ids_sel.shape[0], 1)
+        if traj_obj is not None:
+            pose7 = traj_obj[sel].clone() if traj_obj.shape[0] == sel.shape[0] else traj_obj.clone()
+        else:
+            pose7 = torch.tensor(object_pose, device=env.device, dtype=torch.float32).unsqueeze(0).repeat(ids_sel.shape[0], 1)
         pose7[:, :3] += env.scene.env_origins[ids_sel]
         obj.write_root_pose_to_sim_index(root_pose=pose7, env_ids=ids_sel)
         obj.write_root_velocity_to_sim_index(root_velocity=torch.zeros(ids_sel.shape[0], 6, device=env.device), env_ids=ids_sel)
@@ -380,6 +403,39 @@ def reset_arm_reverse_curriculum(
             goff[env_ids] = torch.where(sel.unsqueeze(1), torch.full_like(goff[env_ids], float(gripper_offset)), goff[env_ids])
     asset.write_joint_position_to_sim_index(position=start, joint_ids=joint_ids, env_ids=env_ids)
     asset.write_joint_velocity_to_sim_index(velocity=torch.zeros_like(start), joint_ids=joint_ids, env_ids=env_ids)
+
+
+def advance_action_offset_waypoint(
+    env,
+    env_ids: torch.Tensor,
+    from_pose: dict[str, float],
+    to_pose: dict[str, float],
+    tol: float = 0.08,
+    action_name: str = "arm_action",
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+):
+    """Per-step INTERVAL event (flip, 2026-08-29): for envs whose arm action offset
+    is ``from_pose`` and whose arm is within ``tol`` rad of it, move the offset to
+    ``to_pose``. With the via as the home offset, zero action carries the arm
+    home -> via; this carries it one waypoint further (via -> open-jaw grasp
+    pose), so zero action performs the whole verified approach and the policy
+    learns the manipulation (close, squeeze, lift, doorknob). Measured
+    (probe_nominal_descent): the nominal descent lands the fingertips on the
+    bar 128/128 with zero body force. The offset observation (arm_action_offset)
+    shows the policy which waypoint is active."""
+    term = env.action_manager.get_term(action_name)
+    names = list(term._joint_names)
+    frm = torch.tensor([from_pose[n] for n in names], device=env.device)
+    to = torch.tensor([to_pose[n] for n in names], device=env.device)
+    off = term._offset[env_ids]
+    at_from = (off - frm).abs().max(dim=1).values < 1e-4
+    asset = env.scene[asset_cfg.name]
+    jid, _ = asset.find_joints(names, preserve_order=True)
+    q = asset.data.joint_pos.torch[env_ids][:, jid]
+    reached = (q - frm).abs().max(dim=1).values < tol
+    hit = at_from & reached
+    if hit.any():
+        term._offset[env_ids[hit]] = to
 
 
 def anneal_by_competence(

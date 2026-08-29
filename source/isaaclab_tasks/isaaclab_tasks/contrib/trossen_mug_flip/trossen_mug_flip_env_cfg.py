@@ -19,6 +19,8 @@ place — start pose and goal pose are both physically measurable on the
 real table.
 """
 
+import os
+
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import CurriculumTermCfg as CurrTerm
 from isaaclab.managers import EventTermCfg as EventTerm
@@ -334,7 +336,13 @@ class FlipRewardsCfg:
     # is at stage 0. The phantom flip takes joint_5 to -3.0 (2.4 rad excess):
     # -4.8/step, ~-100 over the motion; a real pinch lifts the stage and frees
     # the roll. See mdp.wrist_roll_without_pinch.
-    phantom_flip = RewTerm(func=mdp.wrist_roll_without_pinch, weight=-2.0)
+    phantom_flip = RewTerm(
+        func=mdp.wrist_roll_without_pinch,
+        weight=-2.0,
+        # forearm band made symmetric (2026-08-29): from home fast-D rolled j3 to
+        # -0.7 (the wrong way) and stalled 17 cm out; via -0.48, home 0, grasp +0.08
+        params={"j3_neutral": -0.2, "j3_tol": 0.4},
+    )
     action_rate = RewTerm(func=mdp.arm_action_rate_l2, weight=-3e-3)
     # arm action magnitude while unpinched (2026-08-29): zero action = go to
     # the via and pinch 100% from home; saturated first actions were the whole
@@ -520,7 +528,7 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
             mode="reset",
             params={
                 "pose": FLIP_LIFTED_BANK_POSE,
-                "bank_fraction": 0.35,
+                "bank_fraction": 0.2,
                 "noise": 0.0,
                 "alpha_min": 1.0,
                 "gripper_offset": -0.05,  # firm (~45 N): rigid enough for the rotation on the low pinch
@@ -539,7 +547,7 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
             mode="reset",
             params={
                 "pose": FLIP_ROTATED_BANK_POSE,
-                "bank_fraction": 0.2,
+                "bank_fraction": 0.1,
                 "noise": 0.0,
                 "alpha_min": 1.0,
                 "gripper_offset": -0.05,
@@ -627,6 +635,16 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
             params={"event_name": "reset_arm_home_via_bank", "lower_at": 0.22, "raise_at": 0.10, "step": 0.01, "window": 64, "frontier": 0.15, "span": 0.3},
         )
         self.curriculum.rung_success_home_via = CurrTerm(func=mdp.competence_rate, params={"event_name": "reset_arm_home_via_bank"})
+        # FLIP_NO_ANNEAL=1 (2026-08-29): every rung fully open from step 0 -- the
+        # whole home->via and via->grasp paths plus the held banks -- and no
+        # competence gates. A/B against the gated anneal for convergence speed.
+        if os.environ.get("FLIP_NO_ANNEAL") == "1":
+            self.events.reset_arm_hover_bank.params["alpha_min"] = 0.0
+            self.events.reset_arm_home_via_bank.params["alpha_min"] = 0.0
+            self.events.reset_arm_home_via_bank.params["alpha_max"] = 1.0
+            self.events.reset_arm_home_via_bank.params["alpha_tail"] = 0.0
+            self.curriculum.grow_hover = None
+            self.curriculum.grow_home_via = None
         # Banks that WRITE THE MUG (lift, rotate) must run after the arm-only
         # rungs: events stack by selection, and a later arm-only rung inherited
         # the airborne mug of an earlier lift/rotate selection -- 41% of
@@ -638,6 +656,56 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
             term = getattr(self.events, name)
             delattr(self.events, name)
             setattr(self.events, name, term)
+        # ROTATION-PATH bank (2026-08-29): held, partially rotated starts sampled
+        # from the recorded scripted doorknob (probe_flip_rotpath_dump.py ->
+        # rotpath.json: 19 states, up_cos -0.81 .. +0.96, 64/64 held). From
+        # scratch the doorknob was the bottleneck: at 500 iterations the policy
+        # lifts and lets the mug dangle (j5 never moves) because the 2 rad
+        # wrist roll is a 13-sigma mean drift. Stacks LAST (writes the mug).
+        import json
+        with open(os.path.join(os.path.dirname(__file__), "rotpath.json")) as f:
+            rotpath = json.load(f)
+        self.events.reset_arm_rotpath_bank = EventTerm(
+            func=mdp.reset_arm_reverse_curriculum,
+            mode="reset",
+            params={
+                "pose": rotpath[0]["pose"],
+                "trajectory": rotpath,
+                "bank_fraction": 0.3,
+                "noise": 0.0,
+                "alpha_min": 1.0,
+                "gripper_offset": -0.05,
+                "write_home": False,
+                "asset_cfg": SceneEntityCfg("robot"),
+            },
+        )
+        # FLIP_WAYPOINT=1 (2026-08-29): once the arm reaches the via, the action
+        # offset advances to the open-jaw grasp pose (zero action = descend along
+        # the verified path; the descent rung's starts are anchored there too).
+        if os.environ.get("FLIP_WAYPOINT") == "1":
+            self.events.approach_waypoint = EventTerm(
+                func=mdp.advance_action_offset_waypoint,
+                mode="interval",
+                interval_range_s=(0.0, 0.0),
+                is_global_time=False,
+                params={"from_pose": FLIP_VIA_POSE, "to_pose": FLIP_OPEN_GRASP_BANK_POSE, "tol": 0.08},
+            )
+            self.events.reset_arm_hover_bank.params["offset_pose"] = FLIP_OPEN_GRASP_BANK_POSE
+        # FLIP_FAR_HEAVY=1 (2026-08-29): the held skills (pinch, lift, doorknob)
+        # are learned by iteration 250 with roll sigma 0.4/0.5 even at a small
+        # share (fast-D), so the start mix can favour the approach from the
+        # start: effective shares home ~30%, home->via 20%, descent 20%,
+        # grasp 10%, lift 4%, rotate 4%, rotpath 12%.
+        if os.environ.get("FLIP_FAR_HEAVY") == "1":
+            # banks select independently and the LAST one owns the env, so a
+            # bank's effective share is f x prod(1 - f_later); order: grasp,
+            # hover, home_via, lift, rotate, rotpath (probe_bank_overlap verifies).
+            self.events.reset_arm_rotpath_bank.params["bank_fraction"] = 0.12   # 12%
+            self.events.reset_arm_rotate_bank.params["bank_fraction"] = 0.0455  # 4%
+            self.events.reset_arm_lift_bank.params["bank_fraction"] = 0.0476    # 4%
+            self.events.reset_arm_home_via_bank.params["bank_fraction"] = 0.25  # 20%
+            self.events.reset_arm_hover_bank.params["bank_fraction"] = 0.333    # 20%
+            self.events.reset_arm_grasp_bank.params["bank_fraction"] = 0.25     # 10%; plain home 30%
 
 
 @configclass

@@ -14,11 +14,12 @@ cfg=parse_env_cfg(TASK,num_envs=N); apply_solver_choice(cfg,"icf")
 cfg.sim.physics.collision_cfg.rigid_contact_max=args.rc; cfg.sim.physics.collision_cfg.max_triangle_pairs=args.tp
 cfg.events.reset_arm_hover_bank.params["alpha_min"]=0.0; cfg.events.reset_arm_home_via_bank.params["alpha_min"]=args.hv_min; cfg.events.reset_arm_home_via_bank.params["alpha_max"]=args.hv_max; cfg.curriculum=None
 if args.only != "mix":
-    for e in ("reset_arm_grasp_bank","reset_arm_lift_bank","reset_arm_rotate_bank","reset_arm_hover_bank","reset_arm_home_via_bank"): getattr(cfg.events,e).params["bank_fraction"]=(1.0 if e==args.only else 0.0)
+    for e in ("reset_arm_grasp_bank","reset_arm_lift_bank","reset_arm_rotate_bank","reset_arm_hover_bank","reset_arm_home_via_bank","reset_arm_rotpath_bank"):
+        if hasattr(cfg.events,e): getattr(cfg.events,e).params["bank_fraction"]=(1.0 if e==args.only else 0.0)
 agent_cfg=load_cfg_from_registry(TASK,"rsl_rl_cfg_entry_point")
 env=gym.make(TASK,cfg=cfg); u=env.unwrapped; wenv=RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
 runner=OnPolicyRunner(wenv, filter_unsupported_rsl_rl_kwargs(agent_cfg.to_dict()), log_dir=None, device=agent_cfg.device); runner.load(args.ckpt); policy=runner.get_inference_policy(device=u.device)
-names={"reset_arm_grasp_bank":"grasp","reset_arm_lift_bank":"lift","reset_arm_rotate_bank":"rotate","reset_arm_hover_bank":"hover","reset_arm_home_via_bank":"home_via"}
+names={n:s for n,s in {"reset_arm_grasp_bank":"grasp","reset_arm_lift_bank":"lift","reset_arm_rotate_bank":"rotate","reset_arm_hover_bank":"hover","reset_arm_home_via_bank":"home_via","reset_arm_rotpath_bank":"rotpath"}.items() if hasattr(cfg.events,n)}
 keymap={id(u.event_manager.get_term_cfg(n).params["pose"]):s for n,s in names.items()}
 res=wenv.get_observations(); obs=res[0] if isinstance(res,tuple) else res
 owner=["home"]*N
@@ -57,5 +58,5 @@ with torch.inference_mode():
 import collections
 cnt=collections.Counter(owner); ok=collections.Counter(o for o,s in zip(owner,succ.tolist()) if s)
 ended_first=int((ended).sum()); print(f"[bybank] only={args.only} envs={N} envs whose first episode ended within 240 steps: {ended_first}")
-for o in ("home","home_via","hover","grasp","lift","rotate"): print(f"[bybank] {o:9s} n={cnt[o]:4d} first-episode success {100*ok[o]/max(cnt[o],1):5.1f}%")
+for o in ("home","home_via","hover","grasp","lift","rotate","rotpath"): print(f"[bybank] {o:9s} n={cnt[o]:4d} first-episode success {100*ok[o]/max(cnt[o],1):5.1f}%")
 env.close()
