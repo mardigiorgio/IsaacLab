@@ -111,8 +111,12 @@ FLIP_OPEN_GRASP_BANK_POSE = {
     "follower_left_joint_3": 0.0754,
     "follower_left_joint_4": 0.0000,
     "follower_left_joint_5": -0.0001,
-    "follower_left_left_carriage_joint": 0.0440,
-    "follower_left_right_carriage_joint": 0.0440,
+    # jaws 6 mm from the bar (0.012: faces at +-12 mm, bar +-5.85 mm), NOT fully open:
+    # the carriage velocity limit (0.0875 m/s) makes a close from 44 mm a 13-step
+    # commitment no exploration sample sustains (fsm20: pinch at baseline for 200
+    # iterations); from 12 mm a single sampled close reaches the bar.
+    "follower_left_left_carriage_joint": 0.0120,
+    "follower_left_right_carriage_joint": 0.0120,
 }
 
 FLIP_GRASP_BANK_POSE = {
