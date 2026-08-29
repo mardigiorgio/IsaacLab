@@ -395,6 +395,11 @@ class FlipTerminationsCfg:
             "wrist_cfg": SceneEntityCfg("robot", body_names=["follower_left_link_6"]),
         },
     )
+    # Truncate un-pinched episodes at 60 steps (2026-08-29): failing far-field
+    # episodes ran 240 steps against ~40-80 for a held-bank success and were
+    # >80% of every batch, decaying the held skills each time far starts were
+    # added (lift bank 100% -> 0%, twice). See mdp.no_pinch_by.
+    no_pinch = DoneTerm(func=mdp.no_pinch_by, params={"steps": 60}, time_out=True)
     robot_abnormal = DoneTerm(func=mdp.robot_state_abnormal, params={"max_joint_vel": 25.0})
     physics_diverged = DoneTerm(func=mdp.physics_diverged)
     object_out_of_bound = DoneTerm(

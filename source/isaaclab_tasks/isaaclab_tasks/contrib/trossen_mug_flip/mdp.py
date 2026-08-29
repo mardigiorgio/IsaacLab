@@ -267,6 +267,26 @@ def wrist_roll_without_pinch(
     return _finite(excess * never_pinched.float())
 
 
+def no_pinch_by(env: ManagerBasedRLEnv, steps: int = 60) -> torch.Tensor:
+    """TRUNCATION (time_out=True, no penalty): the episode ends once ``steps``
+    control steps have passed without the pinch milestone.
+
+    Sample balance (2026-08-29): a failing far-field episode (home or rung
+    start) runs the full 240 steps while a succeeding held-bank episode ends
+    after ~40-80, so with half the envs starting far from the handle the
+    far-field FAILURES were >80% of every PPO batch. Every time such starts
+    were added the held skills decayed -- lifted-bank first-episode success
+    100% -> 41% -> 0% (fsm30-31) and 86% -> 58% -> 9% (fsm36-38) -- although
+    their own states never changed. From home the arrival takes ~10 steps and
+    the descent ~10 (probe_flip_policy_rollout --zero_steps), so 60 steps is
+    a 3x budget for the pinch; the held phases keep the remaining 180.
+    """
+    fsm = getattr(env, "_fsm", None)
+    if fsm is None or "pinched_ever" not in fsm:
+        return torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+    return (env.episode_length_buf >= steps) & ~fsm["pinched_ever"]
+
+
 def arm_action_l2(env: ManagerBasedRLEnv, action_name: str = "arm_action") -> torch.Tensor:
     """Squared arm action, every stage. Since the via-anchored home starts
     (fsm30) the far-field swings bled into the HELD states: first-episode
