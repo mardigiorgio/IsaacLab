@@ -146,6 +146,23 @@ def _tip_handle_distance(env, object_cfg, ee_frame_cfg, wrist_cfg) -> torch.Tens
     return torch.linalg.vector_norm(handle_w - tip_w, dim=-1)
 
 
+def body_contact_without_handle(
+    env: ManagerBasedRLEnv,
+    sensor_name: str,
+    threshold: float = 1.0,
+    handle_threshold: float = 0.01,
+) -> torch.Tensor:
+    """1.0 while the pads press the mug BODY above ``threshold`` and the handle is
+    NOT held: a body grab. Body contact during a handle pinch is exempt --
+    measured (probe_flip_bank_stages, 2026-08-28): a mug hanging in the jaws by
+    its handle presses the fingertips with 5 N at the weakest squeeze and 70 N at
+    a hard close (the bar sits 8 mm off the wall), so an unconditional fine made
+    dropping the mug the rational policy in every lifted start."""
+    body = _sensor_force_mag(env, sensor_name) > threshold
+    held = handle_held(env, threshold=handle_threshold) > 0.5
+    return _finite((body & ~held).float())
+
+
 def handle_held(
     env: ManagerBasedRLEnv,
     left_sensor: str = "pad_left_handle",

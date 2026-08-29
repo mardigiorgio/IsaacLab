@@ -269,7 +269,9 @@ class FlipRewardsCfg:
         # threshold 1 -> 5 N (2026-08-28, measured): a legitimate 14 N handle
         # pinch presses the fingertips into the wall at the handle root at
         # 1.4-2.1 N; a body grab at the vendor gripper gain reads ~44 N.
-        func=mdp.body_contact, weight=-6.0, params={"sensor_name": "pad_body_contact", "threshold": 5.0}
+        # Fined only WITHOUT a handle pinch (2026-08-28): a hanging mug presses the
+        # fingertips 5-70 N through the handle root; see body_contact_without_handle.
+        func=mdp.body_contact_without_handle, weight=-6.0, params={"sensor_name": "pad_body_contact", "threshold": 1.0}
     )
 
     table_scrape = RewTerm(
@@ -439,7 +441,10 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
             mode="reset",
             params={
                 "pose": FLIP_ROTATED_BANK_POSE,
-                "bank_fraction": 0.2,
+                # 0.2 -> 0.0 (2026-08-28): the median-across-envs capture is not a
+                # self-consistent state (drops on the first frame); re-capture
+                # from a single env before re-enabling.
+                "bank_fraction": 0.0,
                 "noise": 0.0,
                 "alpha_min": 1.0,
                 "gripper_offset": -0.01,
