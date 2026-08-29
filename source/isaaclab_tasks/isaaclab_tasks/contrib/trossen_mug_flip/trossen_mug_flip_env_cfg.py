@@ -98,18 +98,19 @@ FLIP_ROTATED_MUG_POSE = (-0.0065, 0.0624, 0.3471, -0.1954, 0.2644, -0.7243, -0.6
 # 2026-08-28): fingertips ~4 cm above the table on the bar, 60-degree approach.
 # Pinched 100%, held after the lift 100% at every squeeze, holds through every
 # wrist motion tested; the mid-height pinch (handle_middle) held 17-75%.
-# Open-jaw HOVER 2 cm back from the low pinch along the 60-degree approach
-# (probe_generate_bank hover_back 0.02, 2026-08-29: proof HELD, 168 mm, handle-only).
-# The approach rung: annealed toward home (Florensa) -- its jaws interpolate
-# OPEN, so intermediate starts never squeeze the mug (the grasp-point bank cannot
-# be annealed for that reason). model_2850 succeeded 100% from a pinch, 0% from home.
-FLIP_HOVER_BANK_POSE = {
+# Open-jaw GRASP-POINT rung (2026-08-29): the low-pinch grasp pose with the jaws
+# OPEN (0.044) and no squeeze offset -- fingertips at the bar, a plain close
+# pinches (probe_flip_bank_stages: 100%). The hover 2 cm back never produced a
+# pinch: the policy held still there with the gripper opening. This rung is
+# annealed toward home (jaws interpolate open, so no intermediate start squeezes
+# the mug) to teach the approach; the squeezed grasp bank cannot be annealed.
+FLIP_OPEN_GRASP_BANK_POSE = {
     "follower_left_joint_0": -0.0001,
-    "follower_left_joint_1": 1.6315,
-    "follower_left_joint_2": 0.7620,
-    "follower_left_joint_3": -0.0300,
-    "follower_left_joint_4": -0.0002,
-    "follower_left_joint_5": 0.0030,
+    "follower_left_joint_1": 1.7416,
+    "follower_left_joint_2": 0.7745,
+    "follower_left_joint_3": 0.0754,
+    "follower_left_joint_4": 0.0000,
+    "follower_left_joint_5": -0.0001,
     "follower_left_left_carriage_joint": 0.0440,
     "follower_left_right_carriage_joint": 0.0440,
 }
@@ -491,14 +492,15 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
                 "asset_cfg": SceneEntityCfg("robot"),
             },
         )
-        # FOURTH bank: the open-jaw HOVER, ANNEALED toward home over 48k env-steps
+        # FOURTH bank: the open-jaw GRASP POINT, ANNEALED toward home over 48k env-steps
         # (~2000 iterations) so the approach is learned from progressively farther
-        # starts. Stacks last: ~25% hover, ~15% rotated, ~15% lifted, ~22% grasp, ~22% home.
+        # starts. Stacks last: ~25% open-grasp, ~15% rotated, ~15% lifted, ~22% grasp, ~22% home.
+        # NOTE: the anneal counts env steps of the CURRENT run -- it restarts on resume.
         self.events.reset_arm_hover_bank = EventTerm(
             func=mdp.reset_arm_reverse_curriculum,
             mode="reset",
             params={
-                "pose": FLIP_HOVER_BANK_POSE,
+                "pose": FLIP_OPEN_GRASP_BANK_POSE,
                 "bank_fraction": 0.25,
                 "noise": 0.0,
                 "alpha_min": 1.0,
