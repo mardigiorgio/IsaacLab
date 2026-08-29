@@ -520,7 +520,9 @@ class TrossenMugFlipEnvCfg(ManagerBasedRLEnvCfg):
             func=mdp.anneal_by_competence,
             # 0.6/0.3 -> 0.35/0.15 (2026-08-29): under exploration noise the rung
             # succeeds ~20% in training against 78% deterministically; the gate never opened.
-            params={"event_name": "reset_arm_hover_bank", "lower_at": 0.35, "raise_at": 0.15, "step": 0.01, "window": 256},
+            # 0.35/0.15 -> 0.30/0.12 (2026-08-29): deterministic success from alpha 0.78..1
+            # starts is 62% while the stochastic training rate reads 25-29%.
+            params={"event_name": "reset_arm_hover_bank", "lower_at": 0.30, "raise_at": 0.12, "step": 0.01, "window": 256},
         )
         self.curriculum.rung_success = CurrTerm(func=mdp.competence_rate, params={"event_name": "reset_arm_hover_bank"})
 
