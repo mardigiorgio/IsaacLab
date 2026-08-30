@@ -130,3 +130,39 @@ class TrossenMugSlideDistillEnvCfg(TrossenMugSlideTeacherEnvCfg):
 
         self.observations.student = StudentObsCfg()
         self.observations.policy.enable_corruption = False
+
+
+# Placement-error sim2real (2026-08-30): the rig is set up by tape measure
+# (trossen_mug_lift/REAL_SETUP.md), so position and orientation are CORRECT
+# and the residual is slight — a hand-placed mug on a taped mark and the
+# home pose the driver actually reaches. Dynamics stay authored; this is
+# the pose-error axis, composable with the teacher DR above if wanted.
+S2R_MUG_XY_SHIFT_M = 0.01
+S2R_MUG_YAW_SHIFT_RAD = 0.17
+S2R_ARM_HOME_SHIFT_RAD = 0.03
+
+
+@configclass
+class TrossenMugSlideS2REnvCfg(TrossenMugSlideEnvCfg):
+    """Slide under slight placement shifts only: mug ±1 cm / ±10° yaw on the
+    taped mark, arm home ±0.03 rad (the value that un-knife-edged the flip's
+    exact-home start). Everything else byte-identical to the campaign task."""
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.events.reset_object_position.params["pose_range"] = {
+            "x": (-S2R_MUG_XY_SHIFT_M, S2R_MUG_XY_SHIFT_M),
+            "y": (-S2R_MUG_XY_SHIFT_M, S2R_MUG_XY_SHIFT_M),
+            "z": (0.0, 0.0),
+            "yaw": (-S2R_MUG_YAW_SHIFT_RAD, S2R_MUG_YAW_SHIFT_RAD),
+        }
+        # The slide has no arm-start term (pure default home); the shift adds one.
+        self.events.randomize_arm_start = EventTerm(
+            func=mdp.reset_joints_by_offset,
+            mode="reset",
+            params={
+                "position_range": (-S2R_ARM_HOME_SHIFT_RAD, S2R_ARM_HOME_SHIFT_RAD),
+                "velocity_range": (0.0, 0.0),
+                "asset_cfg": SceneEntityCfg("robot", joint_names="follower_left_joint_[0-5]"),
+            },
+        )
