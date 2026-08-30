@@ -56,7 +56,7 @@ run() { # run <gym-task> <solver> <name> <log> <iters> [K overrides]
   local k=$(echo "$name" | grep -oE 'K[0-9]wall|K[0-9]' | head -1); k=${k:-adaptive}
   local sol=icf-fixed; case "$name" in *adaptive*) sol=icf-adaptive;; esac
   # Tags: exp/<task> and exp/<K>, the K tag carrying its rung name and dt.
-  declare -A KDT=( [K1]=1_30 [K2]=1_60 [K3]=1_90 [K4]=1_120 [K5]=1_150 [K5wall]=1_150 [adaptive]=1_90 )
+  declare -A KDT=( [K1]=33.3ms [K2]=16.7ms [K3]=11.1ms [K4]=8.3ms [K5]=6.7ms [K5wall]=6.7ms [adaptive]=11.1ms )
   export WANDB_TAGS="exp/$tsk,exp/${k}_dt${KDT[$k]:-na},$sol,campaign"
   case "$tsk" in plate) export ICF_MAX_RIGID_CONTACT=8192;; *) export ICF_MAX_RIGID_CONTACT=1024;; esac
   # Wait for the previous trainer's GPU teardown to drain (up to 5 min):
