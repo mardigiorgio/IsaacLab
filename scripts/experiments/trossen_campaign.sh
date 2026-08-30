@@ -70,7 +70,7 @@ run() { # run <gym-task> <solver> <name> <log> <iters> [K overrides]
     ./isaaclab.sh -p scripts/reinforcement_learning/train.py --rl_library rsl_rl \
       --task "$task" --num_envs 2048 --seed 42 --max_iterations "$iters" \
       --solver "$solver" physics=newton --logger wandb \
-      --log_project_name rubato-trossen \
+      --log_project_name icra2027 \
       --run_name "$name" --video --video_length 200 --video_interval 300 \
       --viz newton "$@" > "$SP/$log" 2>&1 &
     local pid=$!
