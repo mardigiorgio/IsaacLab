@@ -18,15 +18,17 @@ import math
 
 # The K ladder: (env.sim.dt override, decimation override); K3 is each task's
 # authored default. Every rung must preserve the 30 Hz control boundary.
-K_LADDER = {"K1": (1 / 30, 1), "K2": (1 / 60, 2), "K3": (None, None)}
+K_LADDER = {"K1": (1 / 30, 1), "K2": (1 / 60, 2), "K3": (1 / 90, 3), "K4": (1 / 120, 4), "K5": (1 / 150, 5)}
 CONTROL_HZ = 30.0
 SEED = 42
 NUM_ENVS = 2048
-CONTACT_CAP = {"slide": 1024, "lift": 1024, "flip": 1024, "plate": 8192}
+CONTACT_CAP = {"slide": 1024, "lift": 1024, "flip": 1024, "plate": 8192, "tree": 1024}
 
 
 def main() -> int:
     from isaaclab_tasks.contrib.trossen_mug_flip.trossen_mug_flip_env_cfg import TrossenMugFlipEnvCfg
+    from isaaclab_tasks.contrib.trossen_mug_tree.trossen_mug_tree_env_cfg import TrossenMugHangEnvCfg
+    from isaaclab_tasks.contrib.trossen_mug_tree.agents.rsl_rl_ppo_cfg import TrossenMugHangPPORunnerCfg
     from isaaclab_tasks.contrib.trossen_mug_lift.agents.rsl_rl_ppo_cfg import TrossenMugLiftPPORunnerCfg
     from isaaclab_tasks.contrib.trossen_mug_flip.agents.rsl_rl_ppo_cfg import TrossenMugFlipPPORunnerCfg
     from isaaclab_tasks.contrib.trossen_mug_lift.trossen_mug_lift_env_cfg import TrossenMugLiftEnvCfg
@@ -40,6 +42,7 @@ def main() -> int:
         "lift": (TrossenMugLiftEnvCfg(), TrossenMugLiftPPORunnerCfg()),
         "plate": (TrossenPlatePickEnvCfg(), TrossenPlatePickPPORunnerCfg()),
         "flip": (TrossenMugFlipEnvCfg(), TrossenMugFlipPPORunnerCfg()),
+        "tree": (TrossenMugHangEnvCfg(), TrossenMugHangPPORunnerCfg()),
     }
 
     failures: list[str] = []
@@ -73,7 +76,10 @@ def main() -> int:
                 check(abs(dt * dec - 1 / CONTROL_HZ) < 1e-9, f"{name}: {k} override breaks the 30 Hz boundary")
         check(cmd.position_success_threshold == 0.05, f"{name}: success pos gate != 0.05")
         check(abs(cmd.orientation_success_threshold - math.acos(0.87)) < 1e-6, f"{name}: success tilt gate != acos(0.87)")
-        check(env.rewards.early_termination.weight == -50, f"{name}: divergence fine != -50")
+        # Divergence fine: -50 in the direct economies; the staged FSM tasks
+        # (flip 2026-08-29, tree) price it inside their potential scale.
+        fine = {"flip": -8.0}.get(name, -50)
+        check(env.rewards.early_termination.weight == fine, f"{name}: divergence fine != {fine}")
         check("physics_diverged" in vars(env.terminations), f"{name}: physics_diverged termination missing")
         dr = [k for k in events if "material" in k or "mass" in k or "com" in k or "nudge" in k]
         check(not dr, f"{name}: DR terms present in campaign cfg: {dr}")
@@ -98,7 +104,16 @@ def main() -> int:
         "lift": {"std": (0.5, (0.05, 1.5)), "arm": 0.1, "grip": 0.05},
         "slide": {"std": (1.5, (0.05, 3.0)), "arm": WIDE_ARM, "grip": 0.15},
         "plate": {"std": (1.5, (0.05, 3.0)), "arm": WIDE_ARM, "grip": 0.15},
-        "flip": {"std": (1.0, (0.05, 2.5)), "arm": WIDE_ARM, "grip": 0.15},
+        # Flip re-recipe 2026-08-28/29 (measured): per-dim init_std, scalar
+        # floor 0.05, zero entropy; the probe checks the scalar + range.
+        "flip": {"std": (0.05, (0.05, 2.5)), "arm": WIDE_ARM, "grip": 0.15},
+        # Tree (Marco-authored 2026-08-29): narrower wrist search than the
+        # discovery trio, tight position gripper for the hang insert.
+        "tree": {
+            "std": (0.5, (0.05, 3.0)),
+            "arm": {"follower_left_joint_[0-2]": 0.5, "follower_left_joint_[3-5]": 1.0},
+            "grip": 0.05,
+        },
     }
     for t, (env, agent) in tasks.items():
         exp = EXPECT[t]
