@@ -16,7 +16,7 @@
 #   BENCH_LONG=1 ./.../bench_contact_iter.sh
 set -u
 cd "$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
-export VIRTUAL_ENV="${VIRTUAL_ENV:-$HOME/Documents/code/IsaacLabRubato/.venv}"
+export VIRTUAL_ENV="${VIRTUAL_ENV:-$HOME/Documents/code/icra2027/.venv}"
 # --max_iterations is ADDITIVE under --resume (verified: 158 resolved to 150+158=308),
 # so this is the count of ADDITIONAL iterations: 3 warmup + 5 measured.
 ITERS=$(( ${BENCH_LONG:-0} == 1 ? 300 : 8 ))

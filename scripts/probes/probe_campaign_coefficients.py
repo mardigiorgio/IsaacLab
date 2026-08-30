@@ -9,7 +9,7 @@ Pure config instantiation - no simulator, no GPU. Run it before every
 campaign launch; a failed assertion is a broken invariant, not a style issue.
 
 USAGE (single line, from the IsaacLab root)
-  ~/Documents/code/IsaacLabRubato/.venv/bin/python scripts/probes/probe_campaign_coefficients.py
+  ~/Documents/code/icra2027/.venv/bin/python scripts/probes/probe_campaign_coefficients.py
 """
 
 from __future__ import annotations

@@ -20,7 +20,7 @@ set -u
 cd "$(dirname "$0")/../.."
 SP=${CAMPAIGN_LOG_DIR:-/tmp/trossen_campaign}
 mkdir -p "$SP"
-export VIRTUAL_ENV="$HOME/Documents/code/IsaacLabRubato/.venv"
+export VIRTUAL_ENV="$HOME/Documents/code/icra2027/.venv"
 export TROSSEN_RAILS=1
 Q=$SP/campaign.log
 

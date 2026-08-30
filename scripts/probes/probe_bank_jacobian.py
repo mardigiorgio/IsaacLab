@@ -16,7 +16,7 @@ Run whenever GRASP_BANK_POSE changes and paste the printed matrix into
 trossen_mug_lift_env_cfg.BANK_POSE_XY_JACOBIAN.
 
 USAGE (single line, CPU only)
-  ~/Documents/code/IsaacLabRubato/.venv/bin/python scripts/probes/probe_bank_jacobian.py
+  ~/Documents/code/icra2027/.venv/bin/python scripts/probes/probe_bank_jacobian.py
 """
 
 import mujoco

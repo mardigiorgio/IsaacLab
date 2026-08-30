@@ -37,7 +37,7 @@ accumulators (torch elementwise ops for the pose observable, one Warp kernel for
 the contact census) and read back exactly once, after the loop.
 
 USAGE (from the IsaacLab root; single lines only)
-  export VIRTUAL_ENV=$HOME/Documents/code/IsaacLabRubato/.venv
+  export VIRTUAL_ENV=$HOME/Documents/code/icra2027/.venv
   export P="scripts/probes/probe_contact_compliance.py"
   export A="--num_envs 16 --steps 300 --tail 150 --settle_win 60 --viz none"
   ./isaaclab.sh -p $P --arm mujoco $A --out /tmp/cal_mujoco.json

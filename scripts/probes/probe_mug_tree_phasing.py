@@ -20,7 +20,7 @@ inside the wall before the 0.5 mm gap band can raise a contact. The "pushed
 THROUGH" column of the driven case is not meaningful (the velocity write
 overrides the contact response); read the penetration column.
 
-    SUBS=1,2,5,10 SPEED=0.5 PROBE_SOLVER=icf uv run --no-sync --project ~/Documents/research/IsaacLabRubato \
+    SUBS=1,2,5,10 SPEED=0.5 PROBE_SOLVER=icf uv run --no-sync --project ~/Documents/research/icra2027 \
         isaaclab -p scripts/probes/probe_mug_tree_phasing.py
 """
 

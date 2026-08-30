@@ -5,7 +5,7 @@
 
 """Author the TRI mug tree USD (dorhors_wood_mug_holder) -- TRI geometry, raw.
 
-    uv run --no-sync --project ~/Documents/research/IsaacLabRubato isaaclab -p \
+    uv run --no-sync --project ~/Documents/research/icra2027 isaaclab -p \
       source/isaaclab_tasks/isaaclab_tasks/contrib/trossen_mug_tree/assets/convert_mug_tree.py
 
 Writes ``usd/mug_tree.usd`` next to this script:

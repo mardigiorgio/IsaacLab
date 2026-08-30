@@ -15,7 +15,7 @@ and the step loop rewrites the PD targets from it.
 
 Run::
 
-    VIRTUAL_ENV=$PWD/../IsaacLabRubato/.venv MUG_COLLISION=hull ./isaaclab.sh -p \
+    VIRTUAL_ENV=$PWD/../icra2027/.venv MUG_COLLISION=hull ./isaaclab.sh -p \
       source/isaaclab_tasks/isaaclab_tasks/contrib/trossen_mug_lift/pose_grasp.py --viz newton
 
     ... --selftest      # headless: drive the panel through a stub, non-zero on failure

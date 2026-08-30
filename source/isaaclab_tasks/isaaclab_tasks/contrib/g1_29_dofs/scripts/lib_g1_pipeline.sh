@@ -4,7 +4,7 @@
 set -uo pipefail
 
 CODE_DIR=${CODE_DIR:-$HOME/Documents/code}
-RUBATO_DIR=${RUBATO_DIR:-$CODE_DIR/IsaacLabRubato}
+RUBATO_DIR=${RUBATO_DIR:-$CODE_DIR/icra2027}
 ISAACLAB_DIR=${ISAACLAB_DIR:-$CODE_DIR/IsaacLab}
 
 PROJECT=${PROJECT:-g1-walking-policy}

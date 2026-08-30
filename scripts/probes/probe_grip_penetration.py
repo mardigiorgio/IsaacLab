@@ -37,7 +37,7 @@ owed. CUDA graph capture is disabled for the probe (the tick hook and per-tick
 buffer indexing are host-side); this probe measures penetration, never wall time.
 
 USAGE (from the IsaacLab root; single lines only)
-  export VIRTUAL_ENV=$HOME/Documents/code/IsaacLabRubato/.venv
+  export VIRTUAL_ENV=$HOME/Documents/code/icra2027/.venv
   export P="scripts/probes/probe_grip_penetration.py"
   ./isaaclab.sh -p $P --arm icf --pose_check_only --viz none --out /tmp/pose_check.json
   ./isaaclab.sh -p $P --arm icf --checkpoint <model.pt> --num_envs 16 --steps 150 --viz none --out /tmp/grip.json

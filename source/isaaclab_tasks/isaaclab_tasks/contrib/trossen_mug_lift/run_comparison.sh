@@ -26,7 +26,7 @@
 #   ./source/isaaclab_tasks/isaaclab_tasks/contrib/trossen_mug_lift/run_comparison.sh
 set -u
 cd "$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
-export VIRTUAL_ENV="${VIRTUAL_ENV:-$HOME/Documents/code/IsaacLabRubato/.venv}"
+export VIRTUAL_ENV="${VIRTUAL_ENV:-$HOME/Documents/code/icra2027/.venv}"
 
 COMMON=(--rl_library rsl_rl --task IsaacContrib-Lift-Mug-Trossen-v0 --seed 42
   --num_envs 4096 --max_iterations 2000

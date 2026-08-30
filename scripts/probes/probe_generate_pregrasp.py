@@ -16,7 +16,7 @@ Paste the printed dict into GRASP_BANK_POSE and re-run
 probe_bank_jacobian.py for the matching placement Jacobian.
 
 USAGE (single line, CPU only)
-  ~/Documents/code/IsaacLabRubato/.venv/bin/python scripts/probes/probe_generate_pregrasp.py
+  ~/Documents/code/icra2027/.venv/bin/python scripts/probes/probe_generate_pregrasp.py
 """
 
 import mujoco
