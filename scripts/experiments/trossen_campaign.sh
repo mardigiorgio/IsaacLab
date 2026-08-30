@@ -32,6 +32,8 @@ K2="env.sim.dt=0.016666666666666666 env.decimation=2"
 # run must be pinned back to the family's 1/90 x 3 boundary explicitly.
 declare -A ADAPT_OVERRIDES
 ADAPT_OVERRIDES[flip]="env.sim.dt=0.011111111111111112 env.decimation=3 env.sim.render_interval=3"
+# The mug tree is authored at the same 1/450 x 15 fixed recipe; same pin.
+ADAPT_OVERRIDES[tree]="env.sim.dt=0.011111111111111112 env.decimation=3 env.sim.render_interval=3"
 
 epoch() { date -d "2026-$1 $2" +%s; }
 wall() { # wall <run-name> -> seconds from last START to DONE
@@ -44,7 +46,7 @@ wall() { # wall <run-name> -> seconds from last START to DONE
 
 run() { # run <gym-task> <solver> <name> <log> <iters> [K overrides]
   local task=$1 solver=$2 name=$3 log=$4 iters=$5; shift 5
-  local tsk=$(echo "$name" | grep -oE 'slide|lift|plate|flip')
+  local tsk=$(echo "$name" | grep -oE 'slide|lift|plate|flip|tree')
   local k=$(echo "$name" | grep -oE 'K[0-9]wall|K[0-9]' | head -1); k=${k:-adaptive}
   local sol=icf-fixed; case "$name" in *adaptive*) sol=icf-adaptive;; esac
   export WANDB_TAGS="$tsk,$sol,$k,campaign"
@@ -114,4 +116,5 @@ task_ladder IsaacContrib-Slide-Mug-Trossen-v0     slide 700
 task_ladder IsaacContrib-Lift-Mug-Trossen-v0      lift  1000
 task_ladder IsaacContrib-PlatePick-Trossen-v0     plate 1000
 task_ladder IsaacContrib-Flip-Mug-Trossen-v0      flip  1000
+task_ladder IsaacContrib-MugHang-Trossen-v0       tree  1000
 echo "[cq $(date '+%m-%d %H:%M:%S')] CAMPAIGN COMPLETE" >> "$Q"
