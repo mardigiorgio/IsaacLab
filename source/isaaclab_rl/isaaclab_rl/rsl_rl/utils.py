@@ -291,9 +291,14 @@ def filter_unsupported_rsl_rl_kwargs(agent_cfg_dict: dict) -> dict:
                 return cls
         return None
 
+    # Fields isaaclab_rl consumes itself (train_rsl_rl.apply_actor_init); never rsl_rl's.
+    isaaclab_only = {"init_std_per_dim", "zero_init_output"}
+
     def _filter(target: dict, cls, keep_extra: set[str], label: str):
         accepted = set(inspect.signature(cls.__init__).parameters) - {"self"}
         accepted |= keep_extra
+        for key in [k for k in target if k in isaaclab_only]:
+            del target[key]
         for key in [k for k in target if k not in accepted]:
             print(
                 f"[isaaclab_rl] installed rsl_rl {cls.__name__} does not accept '{key}' -> DROPPING it"

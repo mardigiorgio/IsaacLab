@@ -22,7 +22,7 @@ import torch
 from isaaclab.managers import ManagerTermBase, SceneEntityCfg
 from isaaclab.utils.math import combine_frame_transforms, quat_apply
 
-from isaaclab_tasks.contrib.trossen_mug_tree.hang_fsm_core import FsmInputs, HangFsm
+from isaaclab_tasks.contrib.trossen_mug_flip.flip_fsm_core import UPRIGHT_COS, FlipFsm7
 from isaaclab_tasks.contrib.trossen_mug_tree.mdp import (  # noqa: F401  (they read env._fsm)
     fsm_metric_ms_grasp,
     fsm_metric_ms_lift,
@@ -498,142 +498,251 @@ class lift_progress(ManagerTermBase):
 
 
 class flip_fsm(ManagerTermBase):
-    """The hang's staged economy (hang_fsm_core) on the flip's predicates.
+    """The flip's authoritative 7-stage FSM (flip_fsm_core.FlipFsm7) as the
+    ``task_complete`` termination term. Runs in the termination manager (before
+    rewards), publishes every output on ``env._fsm`` for the reward/metric
+    terms, and keeps the grasp-history latch on ``env.flip_by_handle``.
 
-    Stages: 0 APPROACH -> 1 PINCHED (handle held) -> 2 LIFTED (held, root
-    lift_height above its inverted rest) -> 3 ROTATED (mug crossed upright
-    WHILE HELD; a tumble never counts) -> 4 PLACED (upright on the table, calm,
-    released) -> success when the arm parks at ``pose`` (ready pose).
-    Publishes outputs on ``env._fsm`` (fsm_milestones / fsm_shaping / metrics
-    are the hang's, imported) and the by-handle latch on ``env.flip_by_handle``.
-    Runs in the termination manager (before rewards).
+    Stages: 0 APPROACH_HANDLE -> 1 HANDLE_GRASPED (both pads on the handle,
+    neither on the body, 12 frames) -> 2 MUG_LIFTED -> 3 MUG_UPRIGHT (crossed
+    upright in a valid grasp) -> 4 MUG_PLACED (upright on the table, calm) ->
+    5 HANDLE_RELEASED -> 6 COMPLETE (no pad contact, stable 30 frames).
 
-    Why (run wt7f4r33, 2026-08-28): per-step pinch income made "hold on the
-    table" a local optimum -- handle_pinch 36/episode, lift <1 cm, no flip.
-    Here holding pays once (milestone + reach ratchet) and only progress pays.
+    Measured adaptations (2026-08-29, placed2 successes + scripted sweeps):
+    stage 3+ validity rides the grasp-history latch because the working
+    set-down is a timed mid-flip release (the mug is ballistic between release
+    and touchdown; lowering a held mug lands upright 0/13 ramps x 4 squeezes);
+    release-before-touchdown therefore threads 4 -> 5 by re-advancement.
     """
 
     def __init__(self, cfg, env):
         super().__init__(cfg, env)
-        self.fsm = HangFsm(env.num_envs, env.device, ratchet_w=cfg.params.get("ratchet_w"), carry_requires_lifted=True)
-        self.flipped_held = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+        self.fsm = FlipFsm7(env.num_envs, env.device)
         self._z0 = torch.full((env.num_envs,), float("nan"), device=env.device)
-        env.flip_by_handle = self.flipped_held
+        env.flip_by_handle = self.fsm.grasp_latch
 
     def reset(self, env_ids=None):
         if env_ids is None:
             env_ids = slice(None)
         self.fsm.reset(env_ids)
-        self.flipped_held[env_ids] = False
         self._z0[env_ids] = float("nan")
-        if hasattr(self, "_hold_count"):
-            self._hold_count[env_ids] = 0
-        if hasattr(self, "_err0"):
-            self._err0[env_ids] = float("nan")
 
     def __call__(
         self,
-        env,
-        pose: dict[str, float],
-        joint_tol: float,
+        env: ManagerBasedRLEnv,
         sensor_name: str = "pad_object_contact",
-        contact_threshold: float = 0.01,
-        lift_height: float = 0.06,
-        z_max: float = 0.06,
-        max_speed: float = 0.1,
-        reach_std: float = 0.2,
-        rotate_min_cos: float = 0.7,
-        rotate_hold_cos: float | None = None,
+        body_sensor: str = "pad_body_contact",
+        contact_threshold: float = 0.5,
+        body_threshold: float = 1.0,
+        lift_height: float = 0.05,
         rest_z: float | None = None,
-        ratchet_w: tuple | None = None,
-        success_mode: str = "placed",
-        hold_frames: int = 30,
-        wrist_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=["follower_left_link_6"]),
+        rest_z_upright: float = 0.021,
+        placed_z_tol: float = 0.01,
+        max_speed: float = 0.05,
+        max_ang_speed: float = 2.0,
+        reach_std: float = 0.1,
+        retreat_std: float = 0.15,
+        descend_range: float = 0.35,
+        wrist_cfg: SceneEntityCfg | None = None,
+        object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+        ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
     ) -> torch.Tensor:
-        """``rotate_min_cos`` (2026-08-28, probe_flip_rotate_sweep): from an 11 cm
-        held lift, sweeping forearm roll x wrist pitch x wrist roll reaches held
-        up_cos > 0.87 in 1/180 cells, > 0.7 in 6, > 0.5 in 11, and the pinch is
-        lost at the end of every top cell -- ROTATED means 'past 45 degrees from
-        upright while held'; PLACED still demands upright (0.87) on the table."""
-        obj = env.scene["object"]
-        robot = env.scene["robot"]
+        """``max_speed``/``max_ang_speed``/``placed_z_tol``/``retreat_std`` are
+        assumptions to tune experimentally; the orientation/latch thresholds
+        live in flip_fsm_core with their measurements."""
+        # consume bank stage seeds (written by reset_arm_reverse_curriculum at reset)
+        seed = getattr(env, "_flip_seed_stage", None)
+        if seed is not None:
+            m = seed >= 0
+            if m.any():
+                self.fsm.stage[m] = seed[m].clamp(0, 5)
+                self.fsm.grasp_latch[m] |= env._flip_seed_latch[m]
+                self.fsm.latch_seeded[m] |= env._flip_seed_latch[m]
+                seed[m] = -1
+
+        obj = env.scene[object_cfg.name]
         p = obj.data.root_pos_w.torch - env.scene.env_origins
-        up = _up_cos(env, SceneEntityCfg("object")).nan_to_num(nan=-1.0)
+        up = _up_cos(env, object_cfg).nan_to_num(nan=-1.0)
+
+        # -------- grasp validity: both pads on the HANDLE, neither on the body
         held = handle_held(env, threshold=contact_threshold) > 0.5
-        pad_f = _sensor_force_mag(env, sensor_name)
-        released = pad_f < contact_threshold
-        # per-episode rest height of the root (inverted spawn), seeded on the first frame
+        pad_on_body = _sensor_force_mag(env, body_sensor) > body_threshold
+        valid_grasp = held & ~pad_on_body
+        pad_f = _sensor_force_mag(env, sensor_name)  # any pad force on the mug (handle or body)
+        released = ~held & (pad_f < max(contact_threshold, 1.0))
+        no_contact = pad_f < 0.1
+
+        # -------- mug state
         unseeded = torch.isnan(self._z0)
-        # rest_z (2026-08-28): with a LIFTED bank the first frame is not the rest, so the
-        # lift reference is the spawn's rest height when given, not the episode's first z.
         self._z0 = torch.where(unseeded, torch.full_like(p[:, 2], rest_z) if rest_z is not None else p[:, 2], self._z0)
         lifted = p[:, 2] > self._z0 + lift_height
-        # CARRY validity uses a lower bar (hysteresis): the root of a rotating mug
-        # dips as it turns (the base swings below the handle), which must not
-        # regress the stage mid-rotation.
         lifted_hold = p[:, 2] > self._z0 + 0.4 * lift_height
-        upright = up > UPRIGHT_MIN_COS
-        self.flipped_held |= (up > rotate_min_cos) & held  # rotated past the threshold while held: a HANDLE flip
-        rotated = (up > rotate_min_cos) & self.flipped_held
-        # Hysteresis (2026-08-28, probe swing trace): a fast flip with forearm roll 1.0
-        # settles at up_cos 0.48-0.49, a hair under the 0.5 crossing threshold, so the
-        # hold counter reset every frame; once latched, the hold and the ROTATED
-        # stage stay valid down to rotate_hold_cos.
-        hold_cos = rotate_min_cos if rotate_hold_cos is None else rotate_hold_cos
-        rotated_hold = (up > hold_cos) & self.flipped_held
-        calm = torch.linalg.vector_norm(obj.data.root_lin_vel_w.torch, dim=-1) < max_speed
-        placed = rotated & (p[:, 2] < z_max) & calm
-        ids, _ = robot.find_joints(list(pose.keys()), preserve_order=True)
-        target = torch.tensor([pose[n] for n in pose], device=env.device)
-        arm_err = torch.abs(robot.data.joint_pos.torch[:, ids] - target).max(dim=1).values
-        arm_ok = arm_err < joint_tol
-        # bounded progress scalars
-        d_tip = _tip_handle_distance(env, SceneEntityCfg("object"), SceneEntityCfg("ee_frame"), wrist_cfg)
+        z_up = (p[:, 2] - float(rest_z_upright)).clamp(min=0.0)
+        on_table = p[:, 2] < float(rest_z_upright) + placed_z_tol
+        lin = torch.linalg.vector_norm(obj.data.root_lin_vel_w.torch, dim=-1)
+        ang = torch.linalg.vector_norm(obj.data.root_ang_vel_w.torch, dim=-1)
+        calm = (lin < max_speed) & (ang < max_ang_speed)
+        upright = up > UPRIGHT_COS
+        placed = upright & on_table & calm
+        placed_hold = upright & (p[:, 2] < float(rest_z_upright) + 2.0 * placed_z_tol)
+
+        # -------- bounded progress scalars
+        d_tip = _tip_handle_distance(env, object_cfg, ee_frame_cfg, wrist_cfg)
         reach_prog = 1.0 - torch.tanh(d_tip / reach_std)
         lift_prog = ((p[:, 2] - self._z0) / lift_height).clamp(0.0, 1.0)
-        rotate_prog = ((up + 1.0) / 2.0).clamp(0.0, 1.0)
-        gid, _ = robot.find_joints(["follower_left_left_carriage_joint"], preserve_order=True)
-        open_frac = (robot.data.joint_pos.torch[:, gid[0]] / 0.044).clamp(0.0, 1.0)
-        if success_mode == "in_hand":
-            # Stage-3 progress is the HOLD (2026-08-28): with the hang's release_prog
-            # here, shaping and the stage-3 ratchet paid for OPENING the gripper on
-            # the flipped mug -- the policy flipped in 0.7 s, opened, slipped, re-flipped
-            # (probe_flip_policy_rollout, model_1650: ~1.3 s flip/unflip period).
-            if not hasattr(self, "_hold_count"):
-                self._hold_count = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
-            release_prog = (self._hold_count.float() / float(hold_frames)).clamp(0.0, 1.0)
-        else:
-            release_prog = 0.5 * open_frac + 0.5 * (self.fsm.persist.float() / 12.0).clamp(0.0, 1.0)
-        if not hasattr(self, "_err0"):
-            self._err0 = torch.full((env.num_envs,), float("nan"), device=env.device)
-        just_placed = (self.fsm.stage == 4) & torch.isnan(self._err0)
-        self._err0 = torch.where(just_placed, arm_err.clamp(min=1e-3), self._err0)
-        self._err0 = torch.where(self.fsm.stage < 4, torch.full_like(self._err0, float("nan")), self._err0)
-        retreat_prog = torch.where(
-            torch.isnan(self._err0), torch.zeros_like(arm_err), (1.0 - arm_err / self._err0).clamp(0.0, 1.0)
+        upright_prog = ((up + 1.0) / 2.0).clamp(0.0, 1.0)
+        # placement: pays only above the on-table upright gate, growing as the
+        # upright mug nears the table (during the ballistic descent and settle)
+        upright_gate = ((up - 0.5) / (UPRIGHT_COS - 0.5)).clamp(0.0, 1.0)
+        place_prog = upright_gate * (1.0 - z_up / float(descend_range)).clamp(0.0, 1.0)
+        retreat_prog = torch.tanh(d_tip / retreat_std)
+
+        out = self.fsm.step(
+            up=up, valid_grasp=valid_grasp, lifted=lifted, lifted_hold=lifted_hold,
+            placed=placed, placed_hold=placed_hold, released=released, no_contact=no_contact,
+            reach_prog=reach_prog, lift_prog=lift_prog, upright_prog=upright_prog,
+            place_prog=place_prog, retreat_prog=retreat_prog,
         )
-        out = self.fsm.step(FsmInputs(
-            held=held, lifted=lifted, threaded=rotated, supported=placed, released=released, arm_ok=arm_ok,
-            reach_prog=reach_prog, lift_prog=lift_prog, insert_prog=rotate_prog,
-            release_prog=release_prog, retreat_prog=retreat_prog, lifted_hold=lifted_hold, threaded_hold=rotated_hold,
-        ))
-        out["regress_total"] = self.fsm.regressions
-        out["pinched_ever"] = self.fsm.awarded[:, 0]  # pinch milestone paid this episode (one-shot latch)
-        if success_mode == "in_hand":
-            # Success = flipped BY THE HANDLE and held upright in hand for hold_frames
-            # (2026-08-28): setting the mug down upright from a single pinch is
-            # kinematically out of reach on this rig (fingers point ~40 deg up when
-            # the mug is upright; no IK reaches that at table height; drops land
-            # upright 0-2%), so PLACED/retreat cannot pay. Without a terminal success
-            # the learned policy flips the mug in 0.7 s, then rolls it back and
-            # forth and drops it (probe_flip_policy_rollout, model_1550).
-            if not hasattr(self, "_hold_count"):
-                self._hold_count = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
-            done_pred = (out["stage"] >= 3) & rotated_hold & held
-            self._hold_count = torch.where(done_pred, self._hold_count + 1, torch.zeros_like(self._hold_count))
-            out["success"] = self._hold_count >= hold_frames
+        # drop after grasp: had the latch, mug ended low and NOT upright
+        out["dropped"] = (out["grasp_latch"] & ~valid_grasp & (up < 0.5) & (p[:, 2] < self._z0 + 0.02)).float()
         env._fsm = out
-        return out["success"]
+        env.flip_by_handle = out["grasp_latch"]
+        return _finite(out["success"])
+
+
+def fsm_progress(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Stage-gated, positive-only progress (episode-best deltas; see flip_fsm_core)."""
+    return env._fsm["progress_reward"]
+
+
+def fsm_regressed_raw(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """1.0 on an FSM regression step (wire with a small negative weight)."""
+    return env._fsm["regressed"]
+
+
+_FSM_METRIC_SCALE = 1e-3  # metrics carry 1e-3 x the true value at weight 1.0 (W&B x1000)
+
+
+def fsm_stage_fraction(env: ManagerBasedRLEnv, stage: int) -> torch.Tensor:
+    return _FSM_METRIC_SCALE * (env._fsm["stage"] == float(stage)).float()
+
+
+_FSM_EVENT_SCALE = 0.03  # once-per-episode events: logged sum = 1e-3 x count (dt 1/30 folded in)
+
+
+def fsm_transition_rate(env: ManagerBasedRLEnv, k: int) -> torch.Tensor:
+    return _FSM_EVENT_SCALE * env._fsm["transitions"][:, k].float()
+
+
+def fsm_flag_metric(env: ManagerBasedRLEnv, key: str) -> torch.Tensor:
+    v = env._fsm[key]
+    return _FSM_METRIC_SCALE * (v.float() if v.dtype == torch.bool else v)
+
+
+class mug_fallen(ManagerTermBase):
+    """Truncate an episode once a handle-flip attempt has demonstrably failed:
+    the latch is set (a real flip happened) but the mug ended on the table NOT
+    upright, released, and stayed there ``frames`` control steps. A failed toss
+    otherwise idles for ~200 steps (97% of fsm7b episodes were time-outs),
+    diluting every batch (Pardo 2018: truncation, not termination -- no fine).
+    Recovery (re-grasp a fallen mug and re-flip) is not a trained skill and
+    never appeared in any rollout; the wasted steps are real.
+    """
+
+    def __init__(self, cfg, env):
+        super().__init__(cfg, env)
+        self.count = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
+
+    def reset(self, env_ids=None):
+        if env_ids is None:
+            env_ids = slice(None)
+        self.count[env_ids] = 0
+
+    def __call__(
+        self,
+        env: ManagerBasedRLEnv,
+        frames: int = 15,
+        up_max: float = 0.3,
+        rest_z_upright: float = 0.021,
+        z_tol: float = 0.06,
+        object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    ) -> torch.Tensor:
+        """``z_tol`` 0.06 (2026-08-29): a mug on its SIDE rests with root z ~0.056
+        (the body radius), well above the upright rest +0.02 -- the first gate
+        never fired (fsm7c it=67: mug_fallen 0%, time_out 93%)."""
+        fsm = env._fsm if hasattr(env, "_fsm") else None
+        if fsm is None:
+            return torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+        obj = env.scene[object_cfg.name]
+        z = obj.data.root_pos_w.torch[:, 2] - env.scene.env_origins[:, 2]
+        up = _up_cos(env, object_cfg).nan_to_num(nan=-1.0)
+        down = fsm["grasp_latch"] & (up < up_max) & (z < rest_z_upright + z_tol) & ~fsm["valid_grasp"]
+        self.count = torch.where(down, self.count + 1, torch.zeros_like(self.count))
+        return _finite(self.count >= frames)
+
+
+class staged_bank_gates(ManagerTermBase):
+    """Competence-gated reverse curriculum over the reset banks (spec 2026-08-29).
+
+    Phases latch forward on MEASURED rates over a rolling window of finished
+    episodes (never on elapsed steps):
+      P0 start:      held/toss starts dominate (rotate, place, release first)
+      P1 completion > 30%: add pre-grasp states (hover / home->via)
+      P2 grasp rate > 50%: add approach states (wider home->via share)
+      P3 completion > 20% while P2 held: grow plain-home starts
+    """
+
+    PHASES = [
+        {"reset_arm_toss_bank": 0.25, "reset_arm_rotpath_bank": 0.35, "reset_arm_lift_bank": 0.20,
+         "reset_arm_rotate_bank": 0.10, "reset_arm_hover_bank": 0.0, "reset_arm_home_via_bank": 0.0},
+        {"reset_arm_toss_bank": 0.15, "reset_arm_rotpath_bank": 0.25, "reset_arm_lift_bank": 0.15,
+         "reset_arm_rotate_bank": 0.05, "reset_arm_hover_bank": 0.10, "reset_arm_home_via_bank": 0.15},
+        {"reset_arm_toss_bank": 0.10, "reset_arm_rotpath_bank": 0.20, "reset_arm_lift_bank": 0.10,
+         "reset_arm_rotate_bank": 0.05, "reset_arm_hover_bank": 0.10, "reset_arm_home_via_bank": 0.25},
+        {"reset_arm_toss_bank": 0.10, "reset_arm_rotpath_bank": 0.15, "reset_arm_lift_bank": 0.05,
+         "reset_arm_rotate_bank": 0.05, "reset_arm_hover_bank": 0.05, "reset_arm_home_via_bank": 0.20},
+    ]
+
+    def __init__(self, cfg, env):
+        super().__init__(cfg, env)
+        self.phase = 0
+        self.n = 0
+        self.s_complete = 0
+        self.s_grasp = 0
+        self._applied = -1
+
+    def __call__(self, env: ManagerBasedRLEnv, env_ids, window: int = 512):
+        if hasattr(env, "_fsm") and len(env_ids) > 0:
+            self.n += len(env_ids)
+            self.s_complete += int(env._fsm["success"][env_ids].sum())
+            self.s_grasp += int(env._fsm["earned_grasp"][env_ids].sum())
+            if self.n >= window:
+                comp, grasp = self.s_complete / self.n, self.s_grasp / self.n
+                # 0.30 -> 0.12 (2026-08-29, fsm7i): phase-0 bank shares cap overall
+                # completion at ~23-25%, so 0.30 could never trip; 7i crossed 12% by
+                # iteration 160. Grasp gate reads EARNED latches only (seeded latches
+                # cover 65% of starts and would trip the gate trivially).
+                if self.phase == 0 and comp > 0.12:
+                    self.phase = 1
+                # 0.10 reverted to 0.25 (2026-08-30, fsm7n vs fsm7k): letting the
+                # curriculum walk to P2 within 1000 iters traded the held chain away
+                # (lift 90% -> 24%, rotpath 75% -> 21%) for zero approach completions.
+                # At 0.25 the run stays in P1 and masters the held chain first (fsm7k:
+                # lift 90 / rotpath 75 / toss 49, training completion 35% and climbing);
+                # the walk to P2+ needs more than 1000 iterations on this rig.
+                elif self.phase == 1 and grasp > 0.25:
+                    self.phase = 2
+                elif self.phase == 2 and comp > 0.15:
+                    self.phase = 3
+                self.n = self.s_complete = self.s_grasp = 0
+        if self._applied != self.phase:
+            for name, frac in self.PHASES[self.phase].items():
+                try:
+                    env.event_manager.get_term_cfg(name).params["bank_fraction"] = frac
+                except ValueError:
+                    pass  # bank not registered (e.g. tosspath.json absent)
+            self._applied = self.phase
+        return torch.tensor(float(self.phase))
 
 
 def flip_hold_metric(env: ManagerBasedRLEnv) -> torch.Tensor:
@@ -734,3 +843,41 @@ def object_orientation_in_world(
     env-aligned so world doubles as the base frame. The flip policy cannot
     act on an orientation it cannot see."""
     return _finite(env.scene[object_cfg.name].data.root_quat_w.torch)
+
+
+def approach_pose_reach(
+    env: ManagerBasedRLEnv,
+    wrist_cfg: SceneEntityCfg,
+    tool_dir: tuple = (0.0, -0.5, -0.866),
+    jaw_dir: tuple = (1.0, 0.0, 0.0),
+    std: float = 0.10,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+    pad_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=["follower_left_gripper_left", "follower_left_gripper_right"]),
+) -> torch.Tensor:
+    """POSE reach for the pinch (Factory / IndustReal keypoint pattern): the fingertip position
+    kernel times the alignment of the tool axis with the 60-degree approach and of the jaw
+    axis with env x. Measured 2026-08-29 (probe_capture_region): the pinch's capture window is
+    one-sided and 0.09 rad wide in wrist pitch and 0.08 rad in elbow depth, and the
+    position-only reach kernel carries no gradient on either; this term does. Pays only
+    before the pinch (FSM stage 0)."""
+    fsm = getattr(env, "_fsm", None)
+    robot = env.scene[wrist_cfg.name]
+    d = _tip_handle_distance(env, object_cfg, ee_frame_cfg, wrist_cfg)
+    tcp_w = env.scene[ee_frame_cfg.name].data.target_pos_w.torch[..., 0, :]
+    wid = wrist_cfg.body_ids
+    wrist_w = robot.data.body_pos_w.torch[:, wid[0] if isinstance(wid, list) else wid]
+    if wrist_w.dim() == 3:
+        wrist_w = wrist_w[:, 0]
+    tool = tcp_w - wrist_w
+    tool = tool / torch.linalg.vector_norm(tool, dim=-1, keepdim=True).clamp_min(1e-6)
+    pads = robot.data.body_pos_w.torch[:, pad_cfg.body_ids]
+    jaw = pads[:, 0] - pads[:, 1]
+    jaw = jaw / torch.linalg.vector_norm(jaw, dim=-1, keepdim=True).clamp_min(1e-6)
+    t_star = torch.tensor(tool_dir, device=env.device, dtype=tool.dtype)
+    j_star = torch.tensor(jaw_dir, device=env.device, dtype=jaw.dtype)
+    align_tool = 0.5 * (1.0 + (tool * t_star).sum(-1))
+    align_jaw = (jaw * j_star).sum(-1).abs()
+    pos = 1.0 - torch.tanh(d / std)
+    pre_pinch = (fsm["stage"] == 0).float() if fsm is not None else torch.ones_like(d)
+    return _finite(pos * align_tool * align_jaw * pre_pinch)

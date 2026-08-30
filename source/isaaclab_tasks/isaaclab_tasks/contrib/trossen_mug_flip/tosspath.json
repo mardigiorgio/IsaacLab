@@ -1,0 +1,3554 @@
+[
+ {
+  "step": -52,
+  "held": 1,
+  "up_cos": 0.947,
+  "pose": {
+   "follower_left_joint_0": -0.007,
+   "follower_left_joint_1": 1.8009,
+   "follower_left_joint_2": 0.8708,
+   "follower_left_joint_3": 0.8237,
+   "follower_left_joint_4": -0.1137,
+   "follower_left_joint_5": 3.0841,
+   "follower_left_left_carriage_joint": 0.0031,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   0.0442,
+   -0.0617,
+   0.1589,
+   0.1245,
+   -0.1048,
+   0.9867,
+   0.0026
+  ]
+ },
+ {
+  "step": -56,
+  "held": 1,
+  "up_cos": 0.638,
+  "pose": {
+   "follower_left_joint_0": 0.044,
+   "follower_left_joint_1": 1.8044,
+   "follower_left_joint_2": 0.9174,
+   "follower_left_joint_3": 1.2554,
+   "follower_left_joint_4": -0.0687,
+   "follower_left_joint_5": 2.4445,
+   "follower_left_left_carriage_joint": 0.004,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   0.0217,
+   -0.0769,
+   0.2699,
+   0.4165,
+   0.0877,
+   0.9019,
+   0.0731
+  ]
+ },
+ {
+  "step": -60,
+  "held": 1,
+  "up_cos": -0.184,
+  "pose": {
+   "follower_left_joint_0": 0.0659,
+   "follower_left_joint_1": 1.816,
+   "follower_left_joint_2": 0.915,
+   "follower_left_joint_3": 1.1219,
+   "follower_left_joint_4": 0.0004,
+   "follower_left_joint_5": 1.5121,
+   "follower_left_left_carriage_joint": 0.0041,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0377,
+   -0.0751,
+   0.2519,
+   0.7694,
+   0.0085,
+   0.6197,
+   0.155
+  ]
+ },
+ {
+  "step": -64,
+  "held": 1,
+  "up_cos": -0.926,
+  "pose": {
+   "follower_left_joint_0": 0.0558,
+   "follower_left_joint_1": 1.8211,
+   "follower_left_joint_2": 0.8706,
+   "follower_left_joint_3": 0.7811,
+   "follower_left_joint_4": 0.0433,
+   "follower_left_joint_5": 0.5818,
+   "follower_left_left_carriage_joint": 0.0044,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0669,
+   -0.0581,
+   0.2075,
+   0.9794,
+   -0.0621,
+   0.1876,
+   0.0427
+  ]
+ },
+ {
+  "step": -60,
+  "held": 1,
+  "up_cos": 0.78,
+  "pose": {
+   "follower_left_joint_0": 0.1296,
+   "follower_left_joint_1": 1.432,
+   "follower_left_joint_2": 0.7004,
+   "follower_left_joint_3": 1.1072,
+   "follower_left_joint_4": -0.0539,
+   "follower_left_joint_5": -3.1416,
+   "follower_left_left_carriage_joint": 0.0,
+   "follower_left_right_carriage_joint": 0.0097
+  },
+  "object_pose": [
+   -0.0041,
+   0.0293,
+   0.2879,
+   -0.3307,
+   0.0256,
+   -0.4652,
+   -0.8207
+  ]
+ },
+ {
+  "step": -64,
+  "held": 1,
+  "up_cos": 0.721,
+  "pose": {
+   "follower_left_joint_0": 0.0573,
+   "follower_left_joint_1": 1.4965,
+   "follower_left_joint_2": 0.7071,
+   "follower_left_joint_3": 1.1022,
+   "follower_left_joint_4": 0.0261,
+   "follower_left_joint_5": -2.4687,
+   "follower_left_left_carriage_joint": 0.0054,
+   "follower_left_right_carriage_joint": 0.0053
+  },
+  "object_pose": [
+   0.0223,
+   0.0184,
+   0.2502,
+   -0.1776,
+   0.3289,
+   -0.6463,
+   -0.6653
+  ]
+ },
+ {
+  "step": -68,
+  "held": 1,
+  "up_cos": 0.615,
+  "pose": {
+   "follower_left_joint_0": 0.0154,
+   "follower_left_joint_1": 1.5406,
+   "follower_left_joint_2": 0.7401,
+   "follower_left_joint_3": 1.1208,
+   "follower_left_joint_4": 0.0245,
+   "follower_left_joint_5": -2.0969,
+   "follower_left_left_carriage_joint": 0.0061,
+   "follower_left_right_carriage_joint": 0.0047
+  },
+  "object_pose": [
+   0.0367,
+   0.0108,
+   0.2634,
+   -0.0692,
+   0.4334,
+   -0.6965,
+   -0.5677
+  ]
+ },
+ {
+  "step": -72,
+  "held": 1,
+  "up_cos": 0.749,
+  "pose": {
+   "follower_left_joint_0": 0.0407,
+   "follower_left_joint_1": 1.5614,
+   "follower_left_joint_2": 0.7213,
+   "follower_left_joint_3": 1.1569,
+   "follower_left_joint_4": 0.0255,
+   "follower_left_joint_5": -2.6318,
+   "follower_left_left_carriage_joint": 0.0056,
+   "follower_left_right_carriage_joint": 0.0052
+  },
+  "object_pose": [
+   0.002,
+   0.007,
+   0.2391,
+   -0.2098,
+   0.285,
+   -0.6181,
+   -0.7019
+  ]
+ },
+ {
+  "step": -55,
+  "held": 1,
+  "up_cos": 0.965,
+  "pose": {
+   "follower_left_joint_0": -0.0298,
+   "follower_left_joint_1": 1.7932,
+   "follower_left_joint_2": 0.8706,
+   "follower_left_joint_3": 0.6413,
+   "follower_left_joint_4": -0.0692,
+   "follower_left_joint_5": 3.0183,
+   "follower_left_left_carriage_joint": 0.0039,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   0.0328,
+   -0.0918,
+   0.1145,
+   0.004,
+   0.132,
+   0.9853,
+   0.1079
+  ]
+ },
+ {
+  "step": -59,
+  "held": 1,
+  "up_cos": 0.546,
+  "pose": {
+   "follower_left_joint_0": 0.0174,
+   "follower_left_joint_1": 1.7817,
+   "follower_left_joint_2": 0.9109,
+   "follower_left_joint_3": 1.117,
+   "follower_left_joint_4": -0.034,
+   "follower_left_joint_5": 2.386,
+   "follower_left_left_carriage_joint": 0.0042,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   0.0152,
+   -0.119,
+   0.2499,
+   0.2963,
+   0.3733,
+   0.8785,
+   -0.0325
+  ]
+ },
+ {
+  "step": -63,
+  "held": 1,
+  "up_cos": -0.113,
+  "pose": {
+   "follower_left_joint_0": 0.0391,
+   "follower_left_joint_1": 1.7881,
+   "follower_left_joint_2": 0.9073,
+   "follower_left_joint_3": 1.0913,
+   "follower_left_joint_4": 0.0242,
+   "follower_left_joint_5": 1.4533,
+   "follower_left_left_carriage_joint": 0.0042,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0515,
+   -0.1179,
+   0.2526,
+   0.687,
+   0.2904,
+   0.6591,
+   -0.0961
+  ]
+ },
+ {
+  "step": -67,
+  "held": 1,
+  "up_cos": -0.595,
+  "pose": {
+   "follower_left_joint_0": 0.045,
+   "follower_left_joint_1": 1.8161,
+   "follower_left_joint_2": 0.8693,
+   "follower_left_joint_3": 0.7791,
+   "follower_left_joint_4": 0.0479,
+   "follower_left_joint_5": 0.5219,
+   "follower_left_left_carriage_joint": 0.0045,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0809,
+   -0.1051,
+   0.191,
+   0.8881,
+   0.0929,
+   0.3102,
+   -0.3264
+  ]
+ },
+ {
+  "step": -56,
+  "held": 1,
+  "up_cos": 0.214,
+  "pose": {
+   "follower_left_joint_0": 0.0909,
+   "follower_left_joint_1": 1.634,
+   "follower_left_joint_2": 0.7075,
+   "follower_left_joint_3": 0.4948,
+   "follower_left_joint_4": 0.0894,
+   "follower_left_joint_5": -1.0259,
+   "follower_left_left_carriage_joint": 0.0021,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   0.012,
+   -0.0761,
+   0.1793,
+   0.5863,
+   -0.2218,
+   -0.5854,
+   -0.5142
+  ]
+ },
+ {
+  "step": -60,
+  "held": 1,
+  "up_cos": -0.363,
+  "pose": {
+   "follower_left_joint_0": 0.0653,
+   "follower_left_joint_1": 1.6891,
+   "follower_left_joint_2": 0.7477,
+   "follower_left_joint_3": 0.5325,
+   "follower_left_joint_4": 0.0917,
+   "follower_left_joint_5": -0.0943,
+   "follower_left_left_carriage_joint": 0.0046,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0661,
+   -0.0716,
+   0.1596,
+   0.8253,
+   -0.0126,
+   -0.0025,
+   -0.5645
+  ]
+ },
+ {
+  "step": -64,
+  "held": 1,
+  "up_cos": -0.428,
+  "pose": {
+   "follower_left_joint_0": 0.0936,
+   "follower_left_joint_1": 1.5702,
+   "follower_left_joint_2": 0.8056,
+   "follower_left_joint_3": 0.7772,
+   "follower_left_joint_4": -0.0114,
+   "follower_left_joint_5": 0.8314,
+   "follower_left_left_carriage_joint": 0.0011,
+   "follower_left_right_carriage_joint": 0.0035
+  },
+  "object_pose": [
+   -0.0358,
+   -0.0811,
+   0.257,
+   0.819,
+   0.2074,
+   0.3829,
+   -0.3737
+  ]
+ },
+ {
+  "step": -68,
+  "held": 1,
+  "up_cos": 0.102,
+  "pose": {
+   "follower_left_joint_0": 0.1158,
+   "follower_left_joint_1": 1.5314,
+   "follower_left_joint_2": 0.8103,
+   "follower_left_joint_3": 0.8116,
+   "follower_left_joint_4": -0.0642,
+   "follower_left_joint_5": 1.7358,
+   "follower_left_left_carriage_joint": 0.0036,
+   "follower_left_right_carriage_joint": 0.0009
+  },
+  "object_pose": [
+   0.0344,
+   -0.0741,
+   0.2486,
+   0.5495,
+   0.3832,
+   0.6841,
+   -0.2883
+  ]
+ },
+ {
+  "step": -52,
+  "held": 1,
+  "up_cos": 0.798,
+  "pose": {
+   "follower_left_joint_0": 0.1584,
+   "follower_left_joint_1": 1.5312,
+   "follower_left_joint_2": 0.7031,
+   "follower_left_joint_3": 0.5564,
+   "follower_left_joint_4": 0.0001,
+   "follower_left_joint_5": -2.3789,
+   "follower_left_left_carriage_joint": -0.0,
+   "follower_left_right_carriage_joint": 0.0027
+  },
+  "object_pose": [
+   0.132,
+   -0.0333,
+   0.1874,
+   0.2885,
+   -0.1335,
+   -0.9411,
+   -0.1154
+  ]
+ },
+ {
+  "step": -56,
+  "held": 1,
+  "up_cos": 0.132,
+  "pose": {
+   "follower_left_joint_0": 0.1205,
+   "follower_left_joint_1": 1.5802,
+   "follower_left_joint_2": 0.7069,
+   "follower_left_joint_3": 0.6043,
+   "follower_left_joint_4": 0.0415,
+   "follower_left_joint_5": -1.4461,
+   "follower_left_left_carriage_joint": 0.0015,
+   "follower_left_right_carriage_joint": 0.0028
+  },
+  "object_pose": [
+   0.0528,
+   -0.0769,
+   0.24,
+   0.6238,
+   -0.2118,
+   -0.6244,
+   -0.4196
+  ]
+ },
+ {
+  "step": -60,
+  "held": 1,
+  "up_cos": -0.311,
+  "pose": {
+   "follower_left_joint_0": 0.0781,
+   "follower_left_joint_1": 1.6501,
+   "follower_left_joint_2": 0.7268,
+   "follower_left_joint_3": 0.6187,
+   "follower_left_joint_4": 0.0709,
+   "follower_left_joint_5": -0.5139,
+   "follower_left_left_carriage_joint": 0.0043,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0274,
+   -0.0812,
+   0.2192,
+   0.8009,
+   -0.119,
+   -0.2737,
+   -0.5191
+  ]
+ },
+ {
+  "step": -64,
+  "held": 1,
+  "up_cos": -0.501,
+  "pose": {
+   "follower_left_joint_0": 0.0855,
+   "follower_left_joint_1": 1.6041,
+   "follower_left_joint_2": 0.7832,
+   "follower_left_joint_3": 0.6998,
+   "follower_left_joint_4": 0.0072,
+   "follower_left_joint_5": 0.4157,
+   "follower_left_left_carriage_joint": 0.0016,
+   "follower_left_right_carriage_joint": 0.0029
+  },
+  "object_pose": [
+   -0.0507,
+   -0.0809,
+   0.2395,
+   0.8632,
+   0.074,
+   0.1917,
+   -0.4612
+  ]
+ },
+ {
+  "step": -60,
+  "held": 1,
+  "up_cos": 0.271,
+  "pose": {
+   "follower_left_joint_0": 0.0111,
+   "follower_left_joint_1": 1.7331,
+   "follower_left_joint_2": 0.9228,
+   "follower_left_joint_3": 0.7315,
+   "follower_left_joint_4": -0.0443,
+   "follower_left_joint_5": 1.9307,
+   "follower_left_left_carriage_joint": 0.0026,
+   "follower_left_right_carriage_joint": 0.0013
+  },
+  "object_pose": [
+   -0.0775,
+   -0.1066,
+   0.2893,
+   -0.1883,
+   0.5737,
+   0.166,
+   0.7797
+  ]
+ },
+ {
+  "step": -64,
+  "held": 1,
+  "up_cos": -0.232,
+  "pose": {
+   "follower_left_joint_0": 0.017,
+   "follower_left_joint_1": 1.8366,
+   "follower_left_joint_2": 0.8696,
+   "follower_left_joint_3": 0.5004,
+   "follower_left_joint_4": 0.0657,
+   "follower_left_joint_5": 1.1061,
+   "follower_left_left_carriage_joint": 0.0017,
+   "follower_left_right_carriage_joint": 0.0027
+  },
+  "object_pose": [
+   -0.0444,
+   -0.1094,
+   0.1764,
+   0.0276,
+   0.7843,
+   0.3734,
+   0.4947
+  ]
+ },
+ {
+  "step": -68,
+  "held": 1,
+  "up_cos": -0.512,
+  "pose": {
+   "follower_left_joint_0": 0.0125,
+   "follower_left_joint_1": 1.7014,
+   "follower_left_joint_2": 0.8409,
+   "follower_left_joint_3": 0.311,
+   "follower_left_joint_4": 0.0768,
+   "follower_left_joint_5": 0.5796,
+   "follower_left_left_carriage_joint": 0.0002,
+   "follower_left_right_carriage_joint": 0.0042
+  },
+  "object_pose": [
+   -0.0093,
+   -0.0822,
+   0.1839,
+   0.0429,
+   0.8683,
+   0.4186,
+   0.2626
+  ]
+ },
+ {
+  "step": -72,
+  "held": 1,
+  "up_cos": -0.386,
+  "pose": {
+   "follower_left_joint_0": 0.0694,
+   "follower_left_joint_1": 1.5967,
+   "follower_left_joint_2": 0.8407,
+   "follower_left_joint_3": 0.4572,
+   "follower_left_joint_4": -0.0164,
+   "follower_left_joint_5": 1.0289,
+   "follower_left_left_carriage_joint": -0.0,
+   "follower_left_right_carriage_joint": 0.0046
+  },
+  "object_pose": [
+   -0.0011,
+   -0.0735,
+   0.2822,
+   -0.0679,
+   0.8298,
+   0.2796,
+   0.4781
+  ]
+ },
+ {
+  "step": -53,
+  "held": 1,
+  "up_cos": 0.937,
+  "pose": {
+   "follower_left_joint_0": -0.0294,
+   "follower_left_joint_1": 1.791,
+   "follower_left_joint_2": 0.8729,
+   "follower_left_joint_3": 0.6479,
+   "follower_left_joint_4": -0.0675,
+   "follower_left_joint_5": 3.0067,
+   "follower_left_left_carriage_joint": 0.0049,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   0.0359,
+   -0.0766,
+   0.1154,
+   0.0101,
+   0.1768,
+   0.9835,
+   -0.0378
+  ]
+ },
+ {
+  "step": -57,
+  "held": 1,
+  "up_cos": 0.457,
+  "pose": {
+   "follower_left_joint_0": 0.0158,
+   "follower_left_joint_1": 1.7734,
+   "follower_left_joint_2": 0.9095,
+   "follower_left_joint_3": 1.1197,
+   "follower_left_joint_4": -0.0303,
+   "follower_left_joint_5": 2.3722,
+   "follower_left_left_carriage_joint": 0.005,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   0.0097,
+   -0.1157,
+   0.2521,
+   0.329,
+   0.4039,
+   0.8486,
+   -0.0926
+  ]
+ },
+ {
+  "step": -61,
+  "held": 1,
+  "up_cos": -0.142,
+  "pose": {
+   "follower_left_joint_0": 0.0417,
+   "follower_left_joint_1": 1.8002,
+   "follower_left_joint_2": 0.9021,
+   "follower_left_joint_3": 1.0864,
+   "follower_left_joint_4": 0.0246,
+   "follower_left_joint_5": 1.4396,
+   "follower_left_left_carriage_joint": 0.0049,
+   "follower_left_right_carriage_joint": 0.0
+  },
+  "object_pose": [
+   -0.0547,
+   -0.1142,
+   0.2428,
+   0.7059,
+   0.2692,
+   0.6332,
+   -0.168
+  ]
+ },
+ {
+  "step": -65,
+  "held": 1,
+  "up_cos": -0.537,
+  "pose": {
+   "follower_left_joint_0": 0.0421,
+   "follower_left_joint_1": 1.8026,
+   "follower_left_joint_2": 0.8648,
+   "follower_left_joint_3": 0.7153,
+   "follower_left_joint_4": 0.0403,
+   "follower_left_joint_5": 0.5079,
+   "follower_left_left_carriage_joint": 0.005,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0829,
+   -0.0967,
+   0.1844,
+   0.8756,
+   0.0431,
+   0.2742,
+   -0.3954
+  ]
+ },
+ {
+  "step": -57,
+  "held": 1,
+  "up_cos": -0.645,
+  "pose": {
+   "follower_left_joint_0": 0.0696,
+   "follower_left_joint_1": 1.8349,
+   "follower_left_joint_2": 0.8863,
+   "follower_left_joint_3": 0.9409,
+   "follower_left_joint_4": 0.0351,
+   "follower_left_joint_5": 0.5104,
+   "follower_left_left_carriage_joint": 0.0024,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0687,
+   -0.0259,
+   0.2551,
+   0.9002,
+   -0.1093,
+   0.2235,
+   0.3573
+  ]
+ },
+ {
+  "step": -61,
+  "held": 1,
+  "up_cos": -0.913,
+  "pose": {
+   "follower_left_joint_0": 0.0604,
+   "follower_left_joint_1": 1.8655,
+   "follower_left_joint_2": 0.8272,
+   "follower_left_joint_3": 0.5399,
+   "follower_left_joint_4": 0.0787,
+   "follower_left_joint_5": -0.374,
+   "follower_left_left_carriage_joint": 0.0047,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0391,
+   -0.0278,
+   0.1825,
+   0.9695,
+   0.1281,
+   -0.1477,
+   0.1479
+  ]
+ },
+ {
+  "step": -65,
+  "held": 1,
+  "up_cos": -0.648,
+  "pose": {
+   "follower_left_joint_0": 0.0363,
+   "follower_left_joint_1": 1.7291,
+   "follower_left_joint_2": 0.7691,
+   "follower_left_joint_3": 0.3879,
+   "follower_left_joint_4": 0.094,
+   "follower_left_joint_5": -1.1185,
+   "follower_left_left_carriage_joint": 0.0048,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   0.0044,
+   -0.0076,
+   0.1925,
+   0.8454,
+   0.3304,
+   -0.4128,
+   0.0754
+  ]
+ },
+ {
+  "step": -69,
+  "held": 1,
+  "up_cos": -0.444,
+  "pose": {
+   "follower_left_joint_0": 0.0681,
+   "follower_left_joint_1": 1.668,
+   "follower_left_joint_2": 0.7098,
+   "follower_left_joint_3": 0.5555,
+   "follower_left_joint_4": 0.1025,
+   "follower_left_joint_5": -1.3428,
+   "follower_left_left_carriage_joint": 0.0042,
+   "follower_left_right_carriage_joint": 0.0007
+  },
+  "object_pose": [
+   0.0333,
+   0.0066,
+   0.2259,
+   0.7723,
+   0.3539,
+   -0.5093,
+   0.1371
+  ]
+ },
+ {
+  "step": -53,
+  "held": 1,
+  "up_cos": 0.984,
+  "pose": {
+   "follower_left_joint_0": -0.0177,
+   "follower_left_joint_1": 1.7938,
+   "follower_left_joint_2": 0.8838,
+   "follower_left_joint_3": 0.7655,
+   "follower_left_joint_4": -0.0806,
+   "follower_left_joint_5": 2.9949,
+   "follower_left_left_carriage_joint": 0.0049,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   0.0425,
+   -0.0748,
+   0.1408,
+   0.0184,
+   0.0881,
+   0.9951,
+   -0.0405
+  ]
+ },
+ {
+  "step": -57,
+  "held": 1,
+  "up_cos": 0.487,
+  "pose": {
+   "follower_left_joint_0": 0.0296,
+   "follower_left_joint_1": 1.785,
+   "follower_left_joint_2": 0.9159,
+   "follower_left_joint_3": 1.2213,
+   "follower_left_joint_4": -0.0282,
+   "follower_left_joint_5": 2.2268,
+   "follower_left_left_carriage_joint": 0.0048,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0034,
+   -0.1069,
+   0.266,
+   0.4006,
+   0.3101,
+   0.862,
+   -0.0187
+  ]
+ },
+ {
+  "step": -61,
+  "held": 1,
+  "up_cos": -0.228,
+  "pose": {
+   "follower_left_joint_0": 0.0537,
+   "follower_left_joint_1": 1.8149,
+   "follower_left_joint_2": 0.9073,
+   "follower_left_joint_3": 1.0699,
+   "follower_left_joint_4": 0.0287,
+   "follower_left_joint_5": 1.2943,
+   "follower_left_left_carriage_joint": 0.0048,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0678,
+   -0.101,
+   0.2408,
+   0.7675,
+   0.1582,
+   0.6177,
+   -0.0664
+  ]
+ },
+ {
+  "step": -65,
+  "held": 1,
+  "up_cos": -0.761,
+  "pose": {
+   "follower_left_joint_0": 0.0473,
+   "follower_left_joint_1": 1.8108,
+   "follower_left_joint_2": 0.863,
+   "follower_left_joint_3": 0.6893,
+   "follower_left_joint_4": 0.0442,
+   "follower_left_joint_5": 0.3637,
+   "follower_left_left_carriage_joint": 0.005,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0828,
+   -0.0863,
+   0.197,
+   0.9384,
+   -0.0001,
+   0.2084,
+   -0.2757
+  ]
+ },
+ {
+  "step": -65,
+  "held": 1,
+  "up_cos": 0.243,
+  "pose": {
+   "follower_left_joint_0": 0.0722,
+   "follower_left_joint_1": 1.5777,
+   "follower_left_joint_2": 0.8013,
+   "follower_left_joint_3": 0.6391,
+   "follower_left_joint_4": -0.0895,
+   "follower_left_joint_5": 2.1431,
+   "follower_left_left_carriage_joint": 0.0024,
+   "follower_left_right_carriage_joint": 0.0086
+  },
+  "object_pose": [
+   -0.0584,
+   -0.0065,
+   0.1903,
+   0.6107,
+   0.0743,
+   0.4717,
+   0.6316
+  ]
+ },
+ {
+  "step": -49,
+  "held": 1,
+  "up_cos": 0.958,
+  "pose": {
+   "follower_left_joint_0": -0.0312,
+   "follower_left_joint_1": 1.7904,
+   "follower_left_joint_2": 0.8693,
+   "follower_left_joint_3": 0.6737,
+   "follower_left_joint_4": -0.0715,
+   "follower_left_joint_5": 3.012,
+   "follower_left_left_carriage_joint": 0.0048,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   0.0354,
+   -0.0744,
+   0.1179,
+   0.0098,
+   0.1439,
+   0.989,
+   -0.0329
+  ]
+ },
+ {
+  "step": -53,
+  "held": 1,
+  "up_cos": 0.5,
+  "pose": {
+   "follower_left_joint_0": 0.0166,
+   "follower_left_joint_1": 1.7751,
+   "follower_left_joint_2": 0.9114,
+   "follower_left_joint_3": 1.1383,
+   "follower_left_joint_4": -0.0346,
+   "follower_left_joint_5": 2.3798,
+   "follower_left_left_carriage_joint": 0.0049,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   0.0087,
+   -0.1138,
+   0.2539,
+   0.3279,
+   0.3772,
+   0.8632,
+   -0.0718
+  ]
+ },
+ {
+  "step": -57,
+  "held": 1,
+  "up_cos": -0.147,
+  "pose": {
+   "follower_left_joint_0": 0.0437,
+   "follower_left_joint_1": 1.8011,
+   "follower_left_joint_2": 0.9036,
+   "follower_left_joint_3": 1.1305,
+   "follower_left_joint_4": 0.0243,
+   "follower_left_joint_5": 1.4473,
+   "follower_left_left_carriage_joint": 0.0048,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0571,
+   -0.1114,
+   0.2551,
+   0.7111,
+   0.2609,
+   0.6415,
+   -0.1219
+  ]
+ },
+ {
+  "step": -61,
+  "held": 1,
+  "up_cos": -0.573,
+  "pose": {
+   "follower_left_joint_0": 0.0441,
+   "follower_left_joint_1": 1.8059,
+   "follower_left_joint_2": 0.8669,
+   "follower_left_joint_3": 0.7075,
+   "follower_left_joint_4": 0.0425,
+   "follower_left_joint_5": 0.5155,
+   "follower_left_left_carriage_joint": 0.0049,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0841,
+   -0.0947,
+   0.1843,
+   0.8861,
+   0.0353,
+   0.2819,
+   -0.3663
+  ]
+ },
+ {
+  "step": -51,
+  "held": 1,
+  "up_cos": 0.916,
+  "pose": {
+   "follower_left_joint_0": -0.0159,
+   "follower_left_joint_1": 1.7994,
+   "follower_left_joint_2": 0.8855,
+   "follower_left_joint_3": 0.7738,
+   "follower_left_joint_4": -0.0685,
+   "follower_left_joint_5": 2.9806,
+   "follower_left_left_carriage_joint": 0.0049,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   0.0416,
+   -0.091,
+   0.146,
+   0.0204,
+   0.2039,
+   0.9781,
+   -0.0371
+  ]
+ },
+ {
+  "step": -55,
+  "held": 1,
+  "up_cos": 0.38,
+  "pose": {
+   "follower_left_joint_0": 0.0245,
+   "follower_left_joint_1": 1.7763,
+   "follower_left_joint_2": 0.9163,
+   "follower_left_joint_3": 1.1425,
+   "follower_left_joint_4": -0.0197,
+   "follower_left_joint_5": 2.1706,
+   "follower_left_left_carriage_joint": 0.0048,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0061,
+   -0.117,
+   0.2567,
+   0.4185,
+   0.3675,
+   0.8272,
+   -0.0747
+  ]
+ },
+ {
+  "step": -59,
+  "held": 1,
+  "up_cos": -0.28,
+  "pose": {
+   "follower_left_joint_0": 0.0452,
+   "follower_left_joint_1": 1.8038,
+   "follower_left_joint_2": 0.8975,
+   "follower_left_joint_3": 1.0709,
+   "follower_left_joint_4": 0.0308,
+   "follower_left_joint_5": 1.2381,
+   "follower_left_left_carriage_joint": 0.0048,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0685,
+   -0.1091,
+   0.2458,
+   0.7719,
+   0.2106,
+   0.5817,
+   -0.1467
+  ]
+ },
+ {
+  "step": -63,
+  "held": 1,
+  "up_cos": -0.612,
+  "pose": {
+   "follower_left_joint_0": 0.0436,
+   "follower_left_joint_1": 1.8074,
+   "follower_left_joint_2": 0.8526,
+   "follower_left_joint_3": 0.639,
+   "follower_left_joint_4": 0.0409,
+   "follower_left_joint_5": 0.3077,
+   "follower_left_left_carriage_joint": 0.0049,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0804,
+   -0.0927,
+   0.1741,
+   0.8978,
+   0.0161,
+   0.1847,
+   -0.3996
+  ]
+ },
+ {
+  "step": -60,
+  "held": 1,
+  "up_cos": 0.756,
+  "pose": {
+   "follower_left_joint_0": -0.0254,
+   "follower_left_joint_1": 1.7851,
+   "follower_left_joint_2": 0.8813,
+   "follower_left_joint_3": 0.7236,
+   "follower_left_joint_4": -0.0601,
+   "follower_left_joint_5": 2.9441,
+   "follower_left_left_carriage_joint": 0.0046,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   0.0354,
+   -0.1042,
+   0.1546,
+   0.0293,
+   0.3483,
+   0.9365,
+   -0.027
+  ]
+ },
+ {
+  "step": -64,
+  "held": 1,
+  "up_cos": 0.238,
+  "pose": {
+   "follower_left_joint_0": 0.0143,
+   "follower_left_joint_1": 1.7708,
+   "follower_left_joint_2": 0.9056,
+   "follower_left_joint_3": 1.0961,
+   "follower_left_joint_4": -0.0134,
+   "follower_left_joint_5": 2.1943,
+   "follower_left_left_carriage_joint": 0.0047,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   0.0057,
+   -0.1257,
+   0.2576,
+   0.3801,
+   0.4866,
+   0.776,
+   -0.1285
+  ]
+ },
+ {
+  "step": -68,
+  "held": 1,
+  "up_cos": -0.212,
+  "pose": {
+   "follower_left_joint_0": 0.0366,
+   "follower_left_joint_1": 1.7928,
+   "follower_left_joint_2": 0.8974,
+   "follower_left_joint_3": 0.9958,
+   "follower_left_joint_4": 0.0298,
+   "follower_left_joint_5": 1.2617,
+   "follower_left_left_carriage_joint": 0.0047,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0508,
+   -0.1232,
+   0.2255,
+   0.7162,
+   0.3052,
+   0.564,
+   -0.2753
+  ]
+ },
+ {
+  "step": -72,
+  "held": 1,
+  "up_cos": -0.388,
+  "pose": {
+   "follower_left_joint_0": 0.0356,
+   "follower_left_joint_1": 1.7924,
+   "follower_left_joint_2": 0.8633,
+   "follower_left_joint_3": 0.6599,
+   "follower_left_joint_4": 0.0357,
+   "follower_left_joint_5": 0.3311,
+   "follower_left_left_carriage_joint": 0.0048,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0759,
+   -0.1048,
+   0.167,
+   0.8293,
+   0.0784,
+   0.209,
+   -0.5124
+  ]
+ },
+ {
+  "step": -50,
+  "held": 1,
+  "up_cos": 0.788,
+  "pose": {
+   "follower_left_joint_0": 0.083,
+   "follower_left_joint_1": 1.623,
+   "follower_left_joint_2": 0.7408,
+   "follower_left_joint_3": 0.2813,
+   "follower_left_joint_4": 0.0092,
+   "follower_left_joint_5": -2.3046,
+   "follower_left_left_carriage_joint": 0.0032,
+   "follower_left_right_carriage_joint": 0.0012
+  },
+  "object_pose": [
+   0.0943,
+   -0.0178,
+   0.1003,
+   0.3184,
+   -0.0688,
+   -0.9329,
+   -0.1535
+  ]
+ },
+ {
+  "step": -54,
+  "held": 1,
+  "up_cos": 0.632,
+  "pose": {
+   "follower_left_joint_0": 0.1487,
+   "follower_left_joint_1": 1.5337,
+   "follower_left_joint_2": 0.7228,
+   "follower_left_joint_3": 0.5619,
+   "follower_left_joint_4": -0.0125,
+   "follower_left_joint_5": -2.3906,
+   "follower_left_left_carriage_joint": -0.0,
+   "follower_left_right_carriage_joint": 0.0047
+  },
+  "object_pose": [
+   0.1315,
+   -0.0431,
+   0.2168,
+   0.3854,
+   -0.1889,
+   -0.8905,
+   -0.1508
+  ]
+ },
+ {
+  "step": -58,
+  "held": 1,
+  "up_cos": 0.167,
+  "pose": {
+   "follower_left_joint_0": 0.0933,
+   "follower_left_joint_1": 1.6276,
+   "follower_left_joint_2": 0.7099,
+   "follower_left_joint_3": 0.5519,
+   "follower_left_joint_4": 0.0794,
+   "follower_left_joint_5": -1.5209,
+   "follower_left_left_carriage_joint": 0.0036,
+   "follower_left_right_carriage_joint": 0.0011
+  },
+  "object_pose": [
+   0.0419,
+   -0.0762,
+   0.2008,
+   0.6359,
+   -0.1097,
+   -0.6398,
+   -0.4174
+  ]
+ },
+ {
+  "step": -62,
+  "held": 1,
+  "up_cos": -0.39,
+  "pose": {
+   "follower_left_joint_0": 0.076,
+   "follower_left_joint_1": 1.6553,
+   "follower_left_joint_2": 0.7419,
+   "follower_left_joint_3": 0.572,
+   "follower_left_joint_4": 0.0645,
+   "follower_left_joint_5": -0.5889,
+   "follower_left_left_carriage_joint": 0.002,
+   "follower_left_right_carriage_joint": 0.0026
+  },
+  "object_pose": [
+   -0.0268,
+   -0.0837,
+   0.2143,
+   0.8326,
+   -0.0428,
+   -0.2529,
+   -0.491
+  ]
+ },
+ {
+  "step": -50,
+  "held": 1,
+  "up_cos": 0.829,
+  "pose": {
+   "follower_left_joint_0": -0.0245,
+   "follower_left_joint_1": 1.7883,
+   "follower_left_joint_2": 0.8804,
+   "follower_left_joint_3": 0.7436,
+   "follower_left_joint_4": -0.0691,
+   "follower_left_joint_5": 2.9796,
+   "follower_left_left_carriage_joint": 0.0048,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   0.0388,
+   -0.0993,
+   0.1543,
+   0.0097,
+   0.2924,
+   0.9561,
+   -0.0145
+  ]
+ },
+ {
+  "step": -54,
+  "held": 1,
+  "up_cos": 0.311,
+  "pose": {
+   "follower_left_joint_0": 0.0172,
+   "follower_left_joint_1": 1.7727,
+   "follower_left_joint_2": 0.909,
+   "follower_left_joint_3": 1.1178,
+   "follower_left_joint_4": -0.02,
+   "follower_left_joint_5": 2.2304,
+   "follower_left_left_carriage_joint": 0.0048,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   0.0061,
+   -0.1228,
+   0.2602,
+   0.3705,
+   0.4553,
+   0.804,
+   -0.0946
+  ]
+ },
+ {
+  "step": -58,
+  "held": 1,
+  "up_cos": -0.219,
+  "pose": {
+   "follower_left_joint_0": 0.0393,
+   "follower_left_joint_1": 1.7927,
+   "follower_left_joint_2": 0.9014,
+   "follower_left_joint_3": 1.0258,
+   "follower_left_joint_4": 0.0287,
+   "follower_left_joint_5": 1.2978,
+   "follower_left_left_carriage_joint": 0.0047,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0536,
+   -0.1202,
+   0.2358,
+   0.7239,
+   0.2919,
+   0.5865,
+   -0.2161
+  ]
+ },
+ {
+  "step": -62,
+  "held": 1,
+  "up_cos": -0.479,
+  "pose": {
+   "follower_left_joint_0": 0.0386,
+   "follower_left_joint_1": 1.8014,
+   "follower_left_joint_2": 0.8634,
+   "follower_left_joint_3": 0.6774,
+   "follower_left_joint_4": 0.0392,
+   "follower_left_joint_5": 0.3667,
+   "follower_left_left_carriage_joint": 0.0049,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0779,
+   -0.1027,
+   0.1717,
+   0.8567,
+   0.0746,
+   0.229,
+   -0.4562
+  ]
+ },
+ {
+  "step": -54,
+  "held": 1,
+  "up_cos": 0.973,
+  "pose": {
+   "follower_left_joint_0": 0.0394,
+   "follower_left_joint_1": 1.8175,
+   "follower_left_joint_2": 0.8936,
+   "follower_left_joint_3": 0.8694,
+   "follower_left_joint_4": -0.1944,
+   "follower_left_joint_5": 3.1416,
+   "follower_left_left_carriage_joint": 0.0002,
+   "follower_left_right_carriage_joint": 0.0036
+  },
+  "object_pose": [
+   -0.0162,
+   -0.107,
+   0.1686,
+   -0.1156,
+   -0.0038,
+   0.1705,
+   0.9785
+  ]
+ },
+ {
+  "step": -58,
+  "held": 1,
+  "up_cos": 0.85,
+  "pose": {
+   "follower_left_joint_0": 0.0432,
+   "follower_left_joint_1": 1.8178,
+   "follower_left_joint_2": 0.9286,
+   "follower_left_joint_3": 0.7868,
+   "follower_left_joint_4": -0.1118,
+   "follower_left_joint_5": 2.5902,
+   "follower_left_left_carriage_joint": -0.0,
+   "follower_left_right_carriage_joint": 0.0042
+  },
+  "object_pose": [
+   -0.0506,
+   -0.1144,
+   0.1997,
+   -0.0793,
+   0.2624,
+   0.195,
+   0.9417
+  ]
+ },
+ {
+  "step": -62,
+  "held": 1,
+  "up_cos": 0.131,
+  "pose": {
+   "follower_left_joint_0": 0.0142,
+   "follower_left_joint_1": 1.741,
+   "follower_left_joint_2": 0.9204,
+   "follower_left_joint_3": 0.7288,
+   "follower_left_joint_4": -0.0284,
+   "follower_left_joint_5": 1.6862,
+   "follower_left_left_carriage_joint": 0.0016,
+   "follower_left_right_carriage_joint": 0.0027
+  },
+  "object_pose": [
+   -0.0683,
+   -0.1043,
+   0.2924,
+   -0.0336,
+   0.6585,
+   0.1896,
+   0.7276
+  ]
+ },
+ {
+  "step": -66,
+  "held": 1,
+  "up_cos": -0.49,
+  "pose": {
+   "follower_left_joint_0": 0.0118,
+   "follower_left_joint_1": 1.8214,
+   "follower_left_joint_2": 0.8652,
+   "follower_left_joint_3": 0.5522,
+   "follower_left_joint_4": 0.0716,
+   "follower_left_joint_5": 0.8651,
+   "follower_left_left_carriage_joint": 0.0016,
+   "follower_left_right_carriage_joint": 0.0033
+  },
+  "object_pose": [
+   -0.0345,
+   -0.1072,
+   0.1981,
+   0.1419,
+   0.8513,
+   0.3152,
+   0.3947
+  ]
+ },
+ {
+  "step": -67,
+  "held": 1,
+  "up_cos": 0.945,
+  "pose": {
+   "follower_left_joint_0": -0.0153,
+   "follower_left_joint_1": 1.8131,
+   "follower_left_joint_2": 0.8803,
+   "follower_left_joint_3": 0.7496,
+   "follower_left_joint_4": -0.0638,
+   "follower_left_joint_5": 2.9599,
+   "follower_left_left_carriage_joint": 0.0043,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   0.0406,
+   -0.0899,
+   0.1306,
+   0.021,
+   0.1644,
+   0.9862,
+   -0.0036
+  ]
+ },
+ {
+  "step": -71,
+  "held": 1,
+  "up_cos": 0.401,
+  "pose": {
+   "follower_left_joint_0": 0.0221,
+   "follower_left_joint_1": 1.7668,
+   "follower_left_joint_2": 0.9165,
+   "follower_left_joint_3": 1.1388,
+   "follower_left_joint_4": -0.0234,
+   "follower_left_joint_5": 2.1713,
+   "follower_left_left_carriage_joint": 0.0046,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0034,
+   -0.1169,
+   0.2621,
+   0.4025,
+   0.3707,
+   0.8353,
+   -0.0535
+  ]
+ },
+ {
+  "step": -75,
+  "held": 1,
+  "up_cos": -0.264,
+  "pose": {
+   "follower_left_joint_0": 0.0479,
+   "follower_left_joint_1": 1.8117,
+   "follower_left_joint_2": 0.8974,
+   "follower_left_joint_3": 1.0865,
+   "follower_left_joint_4": 0.0334,
+   "follower_left_joint_5": 1.239,
+   "follower_left_left_carriage_joint": 0.0047,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0667,
+   -0.1083,
+   0.2441,
+   0.7681,
+   0.2046,
+   0.5943,
+   -0.1226
+  ]
+ },
+ {
+  "step": -79,
+  "held": 1,
+  "up_cos": -0.633,
+  "pose": {
+   "follower_left_joint_0": 0.0421,
+   "follower_left_joint_1": 1.8002,
+   "follower_left_joint_2": 0.8574,
+   "follower_left_joint_3": 0.5926,
+   "follower_left_joint_4": 0.0471,
+   "follower_left_joint_5": 0.3079,
+   "follower_left_left_carriage_joint": 0.0049,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0832,
+   -0.0871,
+   0.1687,
+   0.9037,
+   0.0059,
+   0.1914,
+   -0.3829
+  ]
+ },
+ {
+  "step": -50,
+  "held": 1,
+  "up_cos": 0.969,
+  "pose": {
+   "follower_left_joint_0": -0.0728,
+   "follower_left_joint_1": 1.7743,
+   "follower_left_joint_2": 0.7952,
+   "follower_left_joint_3": 0.7091,
+   "follower_left_joint_4": -0.0981,
+   "follower_left_joint_5": 2.9609,
+   "follower_left_left_carriage_joint": 0.0049,
+   "follower_left_right_carriage_joint": 0.0003
+  },
+  "object_pose": [
+   0.0189,
+   -0.0512,
+   0.1011,
+   0.0213,
+   0.1224,
+   0.9894,
+   -0.0756
+  ]
+ },
+ {
+  "step": -53,
+  "held": 1,
+  "up_cos": 0.922,
+  "pose": {
+   "follower_left_joint_0": -0.0237,
+   "follower_left_joint_1": 1.7952,
+   "follower_left_joint_2": 0.8557,
+   "follower_left_joint_3": 0.7046,
+   "follower_left_joint_4": -0.0574,
+   "follower_left_joint_5": 2.9558,
+   "follower_left_left_carriage_joint": 0.0043,
+   "follower_left_right_carriage_joint": 0.0007
+  },
+  "object_pose": [
+   0.0368,
+   -0.0894,
+   0.1222,
+   0.0056,
+   0.1969,
+   0.9801,
+   0.0245
+  ]
+ },
+ {
+  "step": -53,
+  "held": 1,
+  "up_cos": 0.925,
+  "pose": {
+   "follower_left_joint_0": 0.0092,
+   "follower_left_joint_1": 1.8381,
+   "follower_left_joint_2": 0.9559,
+   "follower_left_joint_3": 0.7488,
+   "follower_left_joint_4": -0.0789,
+   "follower_left_joint_5": 2.6348,
+   "follower_left_left_carriage_joint": 0.0043,
+   "follower_left_right_carriage_joint": 0.0009
+  },
+  "object_pose": [
+   0.0319,
+   -0.0802,
+   0.1308,
+   0.18,
+   0.0701,
+   0.9697,
+   -0.1494
+  ]
+ },
+ {
+  "step": -54,
+  "held": 1,
+  "up_cos": 0.994,
+  "pose": {
+   "follower_left_joint_0": 0.0238,
+   "follower_left_joint_1": 1.8853,
+   "follower_left_joint_2": 1.0656,
+   "follower_left_joint_3": 0.4443,
+   "follower_left_joint_4": -0.1029,
+   "follower_left_joint_5": 3.0881,
+   "follower_left_left_carriage_joint": 0.0051,
+   "follower_left_right_carriage_joint": 0.0
+  },
+  "object_pose": [
+   0.0733,
+   -0.0748,
+   0.1028,
+   -0.0256,
+   -0.0497,
+   0.9962,
+   -0.0665
+  ]
+ },
+ {
+  "step": -58,
+  "held": 1,
+  "up_cos": 0.647,
+  "pose": {
+   "follower_left_joint_0": 0.0174,
+   "follower_left_joint_1": 1.7587,
+   "follower_left_joint_2": 0.9443,
+   "follower_left_joint_3": 1.1101,
+   "follower_left_joint_4": -0.0987,
+   "follower_left_joint_5": 2.4198,
+   "follower_left_left_carriage_joint": 0.005,
+   "follower_left_right_carriage_joint": 0.0002
+  },
+  "object_pose": [
+   0.0171,
+   -0.1009,
+   0.26,
+   0.3276,
+   0.2627,
+   0.9061,
+   -0.0511
+  ]
+ },
+ {
+  "step": -51,
+  "held": 1,
+  "up_cos": 0.54,
+  "pose": {
+   "follower_left_joint_0": 0.0688,
+   "follower_left_joint_1": 1.8962,
+   "follower_left_joint_2": 1.0754,
+   "follower_left_joint_3": 0.561,
+   "follower_left_joint_4": -0.0045,
+   "follower_left_joint_5": 2.0081,
+   "follower_left_left_carriage_joint": 0.0045,
+   "follower_left_right_carriage_joint": 0.0006
+  },
+  "object_pose": [
+   -0.0019,
+   -0.1061,
+   0.1049,
+   0.4708,
+   0.0901,
+   0.8518,
+   -0.2115
+  ]
+ },
+ {
+  "step": -55,
+  "held": 1,
+  "up_cos": -0.267,
+  "pose": {
+   "follower_left_joint_0": 0.0425,
+   "follower_left_joint_1": 1.8435,
+   "follower_left_joint_2": 0.9899,
+   "follower_left_joint_3": 0.7444,
+   "follower_left_joint_4": 0.0371,
+   "follower_left_joint_5": 1.1463,
+   "follower_left_left_carriage_joint": 0.0047,
+   "follower_left_right_carriage_joint": 0.0004
+  },
+  "object_pose": [
+   -0.0789,
+   -0.1124,
+   0.1861,
+   0.7909,
+   0.0885,
+   0.5612,
+   -0.2275
+  ]
+ },
+ {
+  "step": -59,
+  "held": 1,
+  "up_cos": -0.749,
+  "pose": {
+   "follower_left_joint_0": 0.0454,
+   "follower_left_joint_1": 1.7963,
+   "follower_left_joint_2": 0.8671,
+   "follower_left_joint_3": 0.7476,
+   "follower_left_joint_4": 0.0383,
+   "follower_left_joint_5": 0.4834,
+   "follower_left_left_carriage_joint": 0.0052,
+   "follower_left_right_carriage_joint": 0.0003
+  },
+  "object_pose": [
+   -0.0835,
+   -0.0933,
+   0.2108,
+   0.933,
+   0.0649,
+   0.2695,
+   -0.2295
+  ]
+ },
+ {
+  "step": -52,
+  "held": 1,
+  "up_cos": 0.553,
+  "pose": {
+   "follower_left_joint_0": 0.0569,
+   "follower_left_joint_1": 1.898,
+   "follower_left_joint_2": 1.0593,
+   "follower_left_joint_3": 0.5826,
+   "follower_left_joint_4": 0.0075,
+   "follower_left_joint_5": 2.0326,
+   "follower_left_left_carriage_joint": 0.0046,
+   "follower_left_right_carriage_joint": 0.0005
+  },
+  "object_pose": [
+   0.0017,
+   -0.116,
+   0.1037,
+   0.4318,
+   0.1929,
+   0.8424,
+   -0.2584
+  ]
+ },
+ {
+  "step": -56,
+  "held": 1,
+  "up_cos": -0.21,
+  "pose": {
+   "follower_left_joint_0": 0.0328,
+   "follower_left_joint_1": 1.861,
+   "follower_left_joint_2": 0.9487,
+   "follower_left_joint_3": 0.9026,
+   "follower_left_joint_4": 0.0598,
+   "follower_left_joint_5": 1.187,
+   "follower_left_left_carriage_joint": 0.0045,
+   "follower_left_right_carriage_joint": 0.0006
+  },
+  "object_pose": [
+   -0.0758,
+   -0.1236,
+   0.1917,
+   0.7545,
+   0.1883,
+   0.5636,
+   -0.2786
+  ]
+ },
+ {
+  "step": -60,
+  "held": 1,
+  "up_cos": -0.521,
+  "pose": {
+   "follower_left_joint_0": 0.0392,
+   "follower_left_joint_1": 1.8555,
+   "follower_left_joint_2": 0.8469,
+   "follower_left_joint_3": 0.8952,
+   "follower_left_joint_4": 0.0462,
+   "follower_left_joint_5": 0.5845,
+   "follower_left_left_carriage_joint": 0.0047,
+   "follower_left_right_carriage_joint": 0.0006
+  },
+  "object_pose": [
+   -0.0824,
+   -0.108,
+   0.1848,
+   0.8643,
+   0.115,
+   0.3299,
+   -0.3617
+  ]
+ },
+ {
+  "step": -58,
+  "held": 1,
+  "up_cos": 0.469,
+  "pose": {
+   "follower_left_joint_0": 0.018,
+   "follower_left_joint_1": 1.8379,
+   "follower_left_joint_2": 1.0215,
+   "follower_left_joint_3": 1.0128,
+   "follower_left_joint_4": -0.0241,
+   "follower_left_joint_5": 2.0409,
+   "follower_left_left_carriage_joint": 0.0042,
+   "follower_left_right_carriage_joint": 0.0
+  },
+  "object_pose": [
+   -0.0231,
+   -0.115,
+   0.2296,
+   0.4887,
+   0.1631,
+   0.8486,
+   -0.1204
+  ]
+ },
+ {
+  "step": -62,
+  "held": 1,
+  "up_cos": -0.112,
+  "pose": {
+   "follower_left_joint_0": 0.0296,
+   "follower_left_joint_1": 1.8065,
+   "follower_left_joint_2": 0.9011,
+   "follower_left_joint_3": 1.142,
+   "follower_left_joint_4": -0.0116,
+   "follower_left_joint_5": 1.485,
+   "follower_left_left_carriage_joint": 0.004,
+   "follower_left_right_carriage_joint": 0.0007
+  },
+  "object_pose": [
+   -0.0518,
+   -0.1148,
+   0.2517,
+   0.6954,
+   0.2691,
+   0.6563,
+   -0.1152
+  ]
+ },
+ {
+  "step": -57,
+  "held": 1,
+  "up_cos": 0.971,
+  "pose": {
+   "follower_left_joint_0": 0.0006,
+   "follower_left_joint_1": 1.8561,
+   "follower_left_joint_2": 1.0391,
+   "follower_left_joint_3": 0.5392,
+   "follower_left_joint_4": -0.1284,
+   "follower_left_joint_5": 3.1415,
+   "follower_left_left_carriage_joint": 0.0024,
+   "follower_left_right_carriage_joint": 0.0028
+  },
+  "object_pose": [
+   0.0738,
+   -0.0944,
+   0.135,
+   -0.0655,
+   0.1019,
+   0.9913,
+   -0.051
+  ]
+ },
+ {
+  "step": -61,
+  "held": 1,
+  "up_cos": 0.609,
+  "pose": {
+   "follower_left_joint_0": 0.0228,
+   "follower_left_joint_1": 1.762,
+   "follower_left_joint_2": 0.9227,
+   "follower_left_joint_3": 1.1977,
+   "follower_left_joint_4": -0.1088,
+   "follower_left_joint_5": 2.5,
+   "follower_left_left_carriage_joint": 0.004,
+   "follower_left_right_carriage_joint": 0.0018
+  },
+  "object_pose": [
+   0.0311,
+   -0.0937,
+   0.271,
+   0.2987,
+   0.3257,
+   0.8865,
+   -0.137
+  ]
+ },
+ {
+  "step": -54,
+  "held": 1,
+  "up_cos": 0.367,
+  "pose": {
+   "follower_left_joint_0": 0.0627,
+   "follower_left_joint_1": 1.8863,
+   "follower_left_joint_2": 1.0633,
+   "follower_left_joint_3": 0.574,
+   "follower_left_joint_4": 0.0211,
+   "follower_left_joint_5": 1.7849,
+   "follower_left_left_carriage_joint": 0.0047,
+   "follower_left_right_carriage_joint": 0.0004
+  },
+  "object_pose": [
+   -0.0253,
+   -0.1109,
+   0.1143,
+   0.5515,
+   0.1114,
+   0.7899,
+   -0.2441
+  ]
+ },
+ {
+  "step": -58,
+  "held": 1,
+  "up_cos": -0.382,
+  "pose": {
+   "follower_left_joint_0": 0.0329,
+   "follower_left_joint_1": 1.8145,
+   "follower_left_joint_2": 0.9448,
+   "follower_left_joint_3": 0.7418,
+   "follower_left_joint_4": 0.0711,
+   "follower_left_joint_5": 0.9515,
+   "follower_left_left_carriage_joint": 0.0046,
+   "follower_left_right_carriage_joint": 0.0005
+  },
+  "object_pose": [
+   -0.0953,
+   -0.1037,
+   0.1927,
+   0.8281,
+   0.0714,
+   0.4856,
+   -0.2709
+  ]
+ },
+ {
+  "step": -62,
+  "held": 1,
+  "up_cos": -0.721,
+  "pose": {
+   "follower_left_joint_0": 0.0403,
+   "follower_left_joint_1": 1.8047,
+   "follower_left_joint_2": 0.8362,
+   "follower_left_joint_3": 0.7342,
+   "follower_left_joint_4": 0.0663,
+   "follower_left_joint_5": 0.3949,
+   "follower_left_left_carriage_joint": 0.0053,
+   "follower_left_right_carriage_joint": 0.0001
+  },
+  "object_pose": [
+   -0.0915,
+   -0.0851,
+   0.192,
+   0.9274,
+   0.0237,
+   0.2462,
+   -0.2806
+  ]
+ },
+ {
+  "step": -59,
+  "held": 1,
+  "up_cos": 0.815,
+  "pose": {
+   "follower_left_joint_0": 0.0887,
+   "follower_left_joint_1": 1.7978,
+   "follower_left_joint_2": 0.9536,
+   "follower_left_joint_3": 0.5043,
+   "follower_left_joint_4": -0.2073,
+   "follower_left_joint_5": 2.5184,
+   "follower_left_left_carriage_joint": 0.0032,
+   "follower_left_right_carriage_joint": 0.0013
+  },
+  "object_pose": [
+   0.1043,
+   -0.0657,
+   0.1004,
+   0.1681,
+   0.2537,
+   0.9029,
+   -0.3037
+  ]
+ },
+ {
+  "step": -63,
+  "held": 1,
+  "up_cos": 0.158,
+  "pose": {
+   "follower_left_joint_0": 0.0883,
+   "follower_left_joint_1": 1.6043,
+   "follower_left_joint_2": 0.8373,
+   "follower_left_joint_3": 0.878,
+   "follower_left_joint_4": -0.1163,
+   "follower_left_joint_5": 1.8556,
+   "follower_left_left_carriage_joint": 0.0036,
+   "follower_left_right_carriage_joint": 0.0011
+  },
+  "object_pose": [
+   0.0348,
+   -0.0848,
+   0.2413,
+   0.5277,
+   0.3774,
+   0.7044,
+   -0.2879
+  ]
+ },
+ {
+  "step": -55,
+  "held": 1,
+  "up_cos": 0.514,
+  "pose": {
+   "follower_left_joint_0": 0.0629,
+   "follower_left_joint_1": 1.8878,
+   "follower_left_joint_2": 1.054,
+   "follower_left_joint_3": 0.5594,
+   "follower_left_joint_4": 0.0143,
+   "follower_left_joint_5": 1.9524,
+   "follower_left_left_carriage_joint": 0.0042,
+   "follower_left_right_carriage_joint": 0.0006
+  },
+  "object_pose": [
+   -0.0036,
+   -0.1121,
+   0.1009,
+   0.4653,
+   0.1621,
+   0.8288,
+   -0.2651
+  ]
+ },
+ {
+  "step": -59,
+  "held": 1,
+  "up_cos": -0.202,
+  "pose": {
+   "follower_left_joint_0": 0.0415,
+   "follower_left_joint_1": 1.8314,
+   "follower_left_joint_2": 0.9666,
+   "follower_left_joint_3": 0.701,
+   "follower_left_joint_4": 0.0519,
+   "follower_left_joint_5": 1.0905,
+   "follower_left_left_carriage_joint": 0.0044,
+   "follower_left_right_carriage_joint": 0.0004
+  },
+  "object_pose": [
+   -0.0764,
+   -0.1129,
+   0.1674,
+   0.7673,
+   0.1104,
+   0.5362,
+   -0.334
+  ]
+ },
+ {
+  "step": -63,
+  "held": 1,
+  "up_cos": -0.651,
+  "pose": {
+   "follower_left_joint_0": 0.05,
+   "follower_left_joint_1": 1.7874,
+   "follower_left_joint_2": 0.8686,
+   "follower_left_joint_3": 0.65,
+   "follower_left_joint_4": 0.0371,
+   "follower_left_joint_5": 0.4276,
+   "follower_left_left_carriage_joint": 0.0052,
+   "follower_left_right_carriage_joint": 0.0002
+  },
+  "object_pose": [
+   -0.0744,
+   -0.1017,
+   0.183,
+   0.9015,
+   0.1137,
+   0.2588,
+   -0.3278
+  ]
+ },
+ {
+  "step": -56,
+  "held": 1,
+  "up_cos": 0.437,
+  "pose": {
+   "follower_left_joint_0": 0.0567,
+   "follower_left_joint_1": 1.9055,
+   "follower_left_joint_2": 1.0684,
+   "follower_left_joint_3": 0.6312,
+   "follower_left_joint_4": 0.0078,
+   "follower_left_joint_5": 1.9432,
+   "follower_left_left_carriage_joint": 0.0039,
+   "follower_left_right_carriage_joint": 0.0006
+  },
+  "object_pose": [
+   0.0049,
+   -0.1369,
+   0.1198,
+   0.4522,
+   0.2773,
+   0.7924,
+   -0.3012
+  ]
+ },
+ {
+  "step": -60,
+  "held": 1,
+  "up_cos": -0.211,
+  "pose": {
+   "follower_left_joint_0": 0.0411,
+   "follower_left_joint_1": 1.8505,
+   "follower_left_joint_2": 0.9746,
+   "follower_left_joint_3": 0.8432,
+   "follower_left_joint_4": 0.0404,
+   "follower_left_joint_5": 1.1099,
+   "follower_left_left_carriage_joint": 0.0038,
+   "follower_left_right_carriage_joint": 0.0008
+  },
+  "object_pose": [
+   -0.0617,
+   -0.1368,
+   0.1944,
+   0.7478,
+   0.2157,
+   0.5092,
+   -0.3675
+  ]
+ },
+ {
+  "step": -64,
+  "held": 1,
+  "up_cos": -0.542,
+  "pose": {
+   "follower_left_joint_0": 0.0499,
+   "follower_left_joint_1": 1.8177,
+   "follower_left_joint_2": 0.8671,
+   "follower_left_joint_3": 0.8157,
+   "follower_left_joint_4": 0.031,
+   "follower_left_joint_5": 0.5538,
+   "follower_left_left_carriage_joint": 0.004,
+   "follower_left_right_carriage_joint": 0.0011
+  },
+  "object_pose": [
+   -0.0754,
+   -0.106,
+   0.1912,
+   0.8724,
+   0.1,
+   0.3417,
+   -0.3347
+  ]
+ },
+ {
+  "step": -55,
+  "held": 1,
+  "up_cos": 0.496,
+  "pose": {
+   "follower_left_joint_0": 0.0558,
+   "follower_left_joint_1": 1.8751,
+   "follower_left_joint_2": 1.0632,
+   "follower_left_joint_3": 0.5333,
+   "follower_left_joint_4": 0.0061,
+   "follower_left_joint_5": 1.926,
+   "follower_left_left_carriage_joint": 0.0043,
+   "follower_left_right_carriage_joint": 0.0007
+  },
+  "object_pose": [
+   -0.0062,
+   -0.1123,
+   0.1064,
+   0.4679,
+   0.1816,
+   0.8165,
+   -0.2854
+  ]
+ },
+ {
+  "step": -59,
+  "held": 1,
+  "up_cos": -0.318,
+  "pose": {
+   "follower_left_joint_0": 0.0173,
+   "follower_left_joint_1": 1.7994,
+   "follower_left_joint_2": 0.9515,
+   "follower_left_joint_3": 0.8883,
+   "follower_left_joint_4": 0.0602,
+   "follower_left_joint_5": 1.0836,
+   "follower_left_left_carriage_joint": 0.0046,
+   "follower_left_right_carriage_joint": 0.0005
+  },
+  "object_pose": [
+   -0.0901,
+   -0.1175,
+   0.2305,
+   0.7939,
+   0.1701,
+   0.5174,
+   -0.2704
+  ]
+ },
+ {
+  "step": -63,
+  "held": 1,
+  "up_cos": -0.617,
+  "pose": {
+   "follower_left_joint_0": 0.0068,
+   "follower_left_joint_1": 1.752,
+   "follower_left_joint_2": 0.79,
+   "follower_left_joint_3": 0.9466,
+   "follower_left_joint_4": 0.0519,
+   "follower_left_joint_5": 0.4945,
+   "follower_left_left_carriage_joint": 0.0041,
+   "follower_left_right_carriage_joint": 0.0011
+  },
+  "object_pose": [
+   -0.104,
+   -0.0858,
+   0.2379,
+   0.8974,
+   0.0548,
+   0.266,
+   -0.3477
+  ]
+ },
+ {
+  "step": -57,
+  "held": 1,
+  "up_cos": 0.489,
+  "pose": {
+   "follower_left_joint_0": 0.057,
+   "follower_left_joint_1": 1.8952,
+   "follower_left_joint_2": 1.0578,
+   "follower_left_joint_3": 0.5698,
+   "follower_left_joint_4": 0.0217,
+   "follower_left_joint_5": 1.9291,
+   "follower_left_left_carriage_joint": 0.0046,
+   "follower_left_right_carriage_joint": 0.0005
+  },
+  "object_pose": [
+   -0.009,
+   -0.1147,
+   0.1026,
+   0.4722,
+   0.1798,
+   0.8199,
+   -0.2693
+  ]
+ },
+ {
+  "step": -61,
+  "held": 1,
+  "up_cos": -0.213,
+  "pose": {
+   "follower_left_joint_0": 0.0281,
+   "follower_left_joint_1": 1.8102,
+   "follower_left_joint_2": 0.9325,
+   "follower_left_joint_3": 0.7626,
+   "follower_left_joint_4": 0.0697,
+   "follower_left_joint_5": 1.0958,
+   "follower_left_left_carriage_joint": 0.0046,
+   "follower_left_right_carriage_joint": 0.0005
+  },
+  "object_pose": [
+   -0.0852,
+   -0.1087,
+   0.1784,
+   0.7665,
+   0.1381,
+   0.5382,
+   -0.3221
+  ]
+ },
+ {
+  "step": -65,
+  "held": 1,
+  "up_cos": -0.491,
+  "pose": {
+   "follower_left_joint_0": 0.0343,
+   "follower_left_joint_1": 1.7954,
+   "follower_left_joint_2": 0.8348,
+   "follower_left_joint_3": 0.7613,
+   "follower_left_joint_4": 0.0625,
+   "follower_left_joint_5": 0.5391,
+   "follower_left_left_carriage_joint": 0.0052,
+   "follower_left_right_carriage_joint": 0.0001
+  },
+  "object_pose": [
+   -0.0892,
+   -0.0955,
+   0.1776,
+   0.8594,
+   0.0829,
+   0.3153,
+   -0.3939
+  ]
+ },
+ {
+  "step": -59,
+  "held": 1,
+  "up_cos": 0.974,
+  "pose": {
+   "follower_left_joint_0": 0.075,
+   "follower_left_joint_1": 1.94,
+   "follower_left_joint_2": 1.1252,
+   "follower_left_joint_3": 0.4732,
+   "follower_left_joint_4": -0.0674,
+   "follower_left_joint_5": 3.1082,
+   "follower_left_left_carriage_joint": 0.0037,
+   "follower_left_right_carriage_joint": 0.0012
+  },
+  "object_pose": [
+   0.1005,
+   -0.1094,
+   0.1095,
+   -0.042,
+   0.1056,
+   0.9913,
+   -0.0658
+  ]
+ },
+ {
+  "step": -63,
+  "held": 1,
+  "up_cos": 0.504,
+  "pose": {
+   "follower_left_joint_0": 0.0353,
+   "follower_left_joint_1": 1.8856,
+   "follower_left_joint_2": 1.0578,
+   "follower_left_joint_3": 0.9547,
+   "follower_left_joint_4": -0.0282,
+   "follower_left_joint_5": 2.2267,
+   "follower_left_left_carriage_joint": 0.0043,
+   "follower_left_right_carriage_joint": 0.0008
+  },
+  "object_pose": [
+   0.0075,
+   -0.1453,
+   0.2091,
+   0.3899,
+   0.3094,
+   0.8579,
+   -0.1275
+  ]
+ },
+ {
+  "step": -67,
+  "held": 1,
+  "up_cos": -0.168,
+  "pose": {
+   "follower_left_joint_0": 0.0355,
+   "follower_left_joint_1": 1.8306,
+   "follower_left_joint_2": 0.8776,
+   "follower_left_joint_3": 1.3061,
+   "follower_left_joint_4": 0.0043,
+   "follower_left_joint_5": 1.488,
+   "follower_left_left_carriage_joint": 0.004,
+   "follower_left_right_carriage_joint": 0.0012
+  },
+  "object_pose": [
+   -0.0564,
+   -0.1078,
+   0.2732,
+   0.7043,
+   0.2965,
+   0.6385,
+   -0.0915
+  ]
+ },
+ {
+  "step": -64,
+  "held": 1,
+  "up_cos": -0.549,
+  "pose": {
+   "follower_left_joint_0": 0.0724,
+   "follower_left_joint_1": 1.8881,
+   "follower_left_joint_2": 0.9475,
+   "follower_left_joint_3": 0.8261,
+   "follower_left_joint_4": 0.0892,
+   "follower_left_joint_5": 0.1964,
+   "follower_left_left_carriage_joint": 0.0036,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0599,
+   -0.0326,
+   0.2485,
+   0.8797,
+   0.021,
+   0.0135,
+   0.4748
+  ]
+ },
+ {
+  "step": -68,
+  "held": 1,
+  "up_cos": -0.882,
+  "pose": {
+   "follower_left_joint_0": 0.0713,
+   "follower_left_joint_1": 1.9388,
+   "follower_left_joint_2": 0.8416,
+   "follower_left_joint_3": 0.7173,
+   "follower_left_joint_4": 0.0927,
+   "follower_left_joint_5": -0.3545,
+   "follower_left_left_carriage_joint": 0.0053,
+   "follower_left_right_carriage_joint": 0.0
+  },
+  "object_pose": [
+   -0.0437,
+   -0.0302,
+   0.1848,
+   0.9687,
+   0.0522,
+   -0.0994,
+   0.2215
+  ]
+ },
+ {
+  "step": -61,
+  "held": 1,
+  "up_cos": 0.321,
+  "pose": {
+   "follower_left_joint_0": 0.0544,
+   "follower_left_joint_1": 1.8848,
+   "follower_left_joint_2": 1.0342,
+   "follower_left_joint_3": 0.6314,
+   "follower_left_joint_4": 0.0212,
+   "follower_left_joint_5": 1.7292,
+   "follower_left_left_carriage_joint": 0.0041,
+   "follower_left_right_carriage_joint": 0.001
+  },
+  "object_pose": [
+   -0.0288,
+   -0.1166,
+   0.1174,
+   0.5606,
+   0.1591,
+   0.7638,
+   -0.2777
+  ]
+ },
+ {
+  "step": -65,
+  "held": 1,
+  "up_cos": -0.336,
+  "pose": {
+   "follower_left_joint_0": 0.0408,
+   "follower_left_joint_1": 1.835,
+   "follower_left_joint_2": 0.9403,
+   "follower_left_joint_3": 0.7191,
+   "follower_left_joint_4": 0.0521,
+   "follower_left_joint_5": 0.8957,
+   "follower_left_left_carriage_joint": 0.0041,
+   "follower_left_right_carriage_joint": 0.001
+  },
+  "object_pose": [
+   -0.0845,
+   -0.1098,
+   0.1728,
+   0.813,
+   0.0849,
+   0.4535,
+   -0.3553
+  ]
+ },
+ {
+  "step": -69,
+  "held": 1,
+  "up_cos": -0.582,
+  "pose": {
+   "follower_left_joint_0": 0.0487,
+   "follower_left_joint_1": 1.8085,
+   "follower_left_joint_2": 0.8499,
+   "follower_left_joint_3": 0.6756,
+   "follower_left_joint_4": 0.026,
+   "follower_left_joint_5": 0.3394,
+   "follower_left_left_carriage_joint": 0.0046,
+   "follower_left_right_carriage_joint": 0.0009
+  },
+  "object_pose": [
+   -0.0767,
+   -0.0947,
+   0.1736,
+   0.8887,
+   0.0347,
+   0.2248,
+   -0.3982
+  ]
+ },
+ {
+  "step": -61,
+  "held": 1,
+  "up_cos": 0.54,
+  "pose": {
+   "follower_left_joint_0": 0.0689,
+   "follower_left_joint_1": 1.8956,
+   "follower_left_joint_2": 1.0719,
+   "follower_left_joint_3": 0.5638,
+   "follower_left_joint_4": -0.0033,
+   "follower_left_joint_5": 2.0082,
+   "follower_left_left_carriage_joint": 0.0043,
+   "follower_left_right_carriage_joint": 0.0007
+  },
+  "object_pose": [
+   -0.0022,
+   -0.1057,
+   0.1042,
+   0.4705,
+   0.0927,
+   0.851,
+   -0.2141
+  ]
+ },
+ {
+  "step": -65,
+  "held": 1,
+  "up_cos": -0.275,
+  "pose": {
+   "follower_left_joint_0": 0.0439,
+   "follower_left_joint_1": 1.843,
+   "follower_left_joint_2": 0.9878,
+   "follower_left_joint_3": 0.7724,
+   "follower_left_joint_4": 0.0315,
+   "follower_left_joint_5": 1.1463,
+   "follower_left_left_carriage_joint": 0.0047,
+   "follower_left_right_carriage_joint": 0.0004
+  },
+  "object_pose": [
+   -0.077,
+   -0.1142,
+   0.193,
+   0.7925,
+   0.0988,
+   0.5588,
+   -0.2235
+  ]
+ },
+ {
+  "step": -69,
+  "held": 1,
+  "up_cos": -0.753,
+  "pose": {
+   "follower_left_joint_0": 0.054,
+   "follower_left_joint_1": 1.7983,
+   "follower_left_joint_2": 0.8743,
+   "follower_left_joint_3": 0.7467,
+   "follower_left_joint_4": 0.0276,
+   "follower_left_joint_5": 0.4834,
+   "follower_left_left_carriage_joint": 0.0053,
+   "follower_left_right_carriage_joint": 0.0003
+  },
+  "object_pose": [
+   -0.0764,
+   -0.0962,
+   0.2131,
+   0.9331,
+   0.0765,
+   0.2673,
+   -0.2279
+  ]
+ },
+ {
+  "step": -66,
+  "held": 1,
+  "up_cos": 0.994,
+  "pose": {
+   "follower_left_joint_0": -0.0024,
+   "follower_left_joint_1": 1.86,
+   "follower_left_joint_2": 1.0468,
+   "follower_left_joint_3": 0.5172,
+   "follower_left_joint_4": -0.1203,
+   "follower_left_joint_5": 3.1404,
+   "follower_left_left_carriage_joint": 0.0051,
+   "follower_left_right_carriage_joint": 0.0
+  },
+  "object_pose": [
+   0.0661,
+   -0.0843,
+   0.1283,
+   -0.0533,
+   0.006,
+   0.9973,
+   -0.0495
+  ]
+ },
+ {
+  "step": -70,
+  "held": 1,
+  "up_cos": 0.655,
+  "pose": {
+   "follower_left_joint_0": 0.0081,
+   "follower_left_joint_1": 1.7669,
+   "follower_left_joint_2": 0.9102,
+   "follower_left_joint_3": 1.2023,
+   "follower_left_joint_4": -0.0963,
+   "follower_left_joint_5": 2.5,
+   "follower_left_left_carriage_joint": 0.0047,
+   "follower_left_right_carriage_joint": 0.001
+  },
+  "object_pose": [
+   0.026,
+   -0.0939,
+   0.2658,
+   0.2638,
+   0.3208,
+   0.9028,
+   -0.1114
+  ]
+ },
+ {
+  "step": -68,
+  "held": 1,
+  "up_cos": 0.907,
+  "pose": {
+   "follower_left_joint_0": 0.0383,
+   "follower_left_joint_1": 1.8768,
+   "follower_left_joint_2": 1.1016,
+   "follower_left_joint_3": 0.6963,
+   "follower_left_joint_4": -0.0479,
+   "follower_left_joint_5": 2.6553,
+   "follower_left_left_carriage_joint": 0.0031,
+   "follower_left_right_carriage_joint": 0.0
+  },
+  "object_pose": [
+   0.0445,
+   -0.1149,
+   0.1677,
+   0.1905,
+   0.1007,
+   0.966,
+   -0.143
+  ]
+ },
+ {
+  "step": -72,
+  "held": 1,
+  "up_cos": 0.266,
+  "pose": {
+   "follower_left_joint_0": 0.0227,
+   "follower_left_joint_1": 1.8253,
+   "follower_left_joint_2": 0.9598,
+   "follower_left_joint_3": 1.164,
+   "follower_left_joint_4": -0.0277,
+   "follower_left_joint_5": 1.8615,
+   "follower_left_left_carriage_joint": 0.0039,
+   "follower_left_right_carriage_joint": 0.0006
+  },
+  "object_pose": [
+   -0.0353,
+   -0.1049,
+   0.2522,
+   0.5753,
+   0.1897,
+   0.7875,
+   -0.1137
+  ]
+ },
+ {
+  "step": -74,
+  "held": 1,
+  "up_cos": 0.971,
+  "pose": {
+   "follower_left_joint_0": 0.0061,
+   "follower_left_joint_1": 1.8974,
+   "follower_left_joint_2": 1.0348,
+   "follower_left_joint_3": 0.5889,
+   "follower_left_joint_4": -0.0812,
+   "follower_left_joint_5": 2.9528,
+   "follower_left_left_carriage_joint": 0.005,
+   "follower_left_right_carriage_joint": 0.0001
+  },
+  "object_pose": [
+   0.0533,
+   -0.1014,
+   0.1105,
+   0.036,
+   0.1153,
+   0.9898,
+   -0.075
+  ]
+ },
+ {
+  "step": -78,
+  "held": 1,
+  "up_cos": 0.478,
+  "pose": {
+   "follower_left_joint_0": 0.0043,
+   "follower_left_joint_1": 1.8168,
+   "follower_left_joint_2": 0.8944,
+   "follower_left_joint_3": 1.206,
+   "follower_left_joint_4": -0.0672,
+   "follower_left_joint_5": 2.2905,
+   "follower_left_left_carriage_joint": 0.0048,
+   "follower_left_right_carriage_joint": 0.0004
+  },
+  "object_pose": [
+   0.0006,
+   -0.1124,
+   0.238,
+   0.372,
+   0.3502,
+   0.8541,
+   -0.0971
+  ]
+ },
+ {
+  "step": -50,
+  "held": 1,
+  "up_cos": 0.92,
+  "pose": {
+   "follower_left_joint_0": 0.0107,
+   "follower_left_joint_1": 1.9009,
+   "follower_left_joint_2": 1.0446,
+   "follower_left_joint_3": 0.4766,
+   "follower_left_joint_4": -0.0744,
+   "follower_left_joint_5": 3.1293,
+   "follower_left_left_carriage_joint": 0.0047,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   0.0654,
+   -0.1073,
+   0.1067,
+   -0.0524,
+   0.1934,
+   0.9791,
+   -0.0347
+  ]
+ },
+ {
+  "step": -54,
+  "held": 1,
+  "up_cos": 0.534,
+  "pose": {
+   "follower_left_joint_0": 0.006,
+   "follower_left_joint_1": 1.7703,
+   "follower_left_joint_2": 0.9074,
+   "follower_left_joint_3": 0.9549,
+   "follower_left_joint_4": -0.0564,
+   "follower_left_joint_5": 2.4531,
+   "follower_left_left_carriage_joint": 0.0048,
+   "follower_left_right_carriage_joint": 0.0
+  },
+  "object_pose": [
+   0.0216,
+   -0.1143,
+   0.213,
+   0.2795,
+   0.3935,
+   0.8631,
+   -0.1484
+  ]
+ },
+ {
+  "step": -57,
+  "held": 1,
+  "up_cos": 0.955,
+  "pose": {
+   "follower_left_joint_0": 0.0152,
+   "follower_left_joint_1": 1.8929,
+   "follower_left_joint_2": 1.0036,
+   "follower_left_joint_3": 0.7186,
+   "follower_left_joint_4": -0.078,
+   "follower_left_joint_5": 2.8201,
+   "follower_left_left_carriage_joint": 0.0047,
+   "follower_left_right_carriage_joint": 0.0004
+  },
+  "object_pose": [
+   0.0484,
+   -0.0998,
+   0.1227,
+   0.1012,
+   0.111,
+   0.9828,
+   -0.1073
+  ]
+ },
+ {
+  "step": -61,
+  "held": 1,
+  "up_cos": 0.499,
+  "pose": {
+   "follower_left_joint_0": 0.0222,
+   "follower_left_joint_1": 1.7726,
+   "follower_left_joint_2": 0.8888,
+   "follower_left_joint_3": 1.2099,
+   "follower_left_joint_4": -0.0338,
+   "follower_left_joint_5": 2.2627,
+   "follower_left_left_carriage_joint": 0.0048,
+   "follower_left_right_carriage_joint": 0.0004
+  },
+  "object_pose": [
+   -0.0037,
+   -0.1049,
+   0.2581,
+   0.3873,
+   0.3167,
+   0.8657,
+   -0.0132
+  ]
+ },
+ {
+  "step": -52,
+  "held": 1,
+  "up_cos": 0.367,
+  "pose": {
+   "follower_left_joint_0": 0.0644,
+   "follower_left_joint_1": 1.8779,
+   "follower_left_joint_2": 1.0524,
+   "follower_left_joint_3": 0.5428,
+   "follower_left_joint_4": 0.0189,
+   "follower_left_joint_5": 1.7446,
+   "follower_left_left_carriage_joint": 0.0041,
+   "follower_left_right_carriage_joint": 0.0007
+  },
+  "object_pose": [
+   -0.0198,
+   -0.1098,
+   0.1061,
+   0.5486,
+   0.125,
+   0.7951,
+   -0.2262
+  ]
+ },
+ {
+  "step": -56,
+  "held": 1,
+  "up_cos": -0.394,
+  "pose": {
+   "follower_left_joint_0": 0.0391,
+   "follower_left_joint_1": 1.8337,
+   "follower_left_joint_2": 0.9591,
+   "follower_left_joint_3": 0.7719,
+   "follower_left_joint_4": 0.0629,
+   "follower_left_joint_5": 0.9086,
+   "follower_left_left_carriage_joint": 0.0047,
+   "follower_left_right_carriage_joint": 0.0002
+  },
+  "object_pose": [
+   -0.0851,
+   -0.1164,
+   0.1949,
+   0.8267,
+   0.1171,
+   0.484,
+   -0.2619
+  ]
+ },
+ {
+  "step": -60,
+  "held": 1,
+  "up_cos": -0.662,
+  "pose": {
+   "follower_left_joint_0": 0.059,
+   "follower_left_joint_1": 1.802,
+   "follower_left_joint_2": 0.8479,
+   "follower_left_joint_3": 0.7033,
+   "follower_left_joint_4": 0.0808,
+   "follower_left_joint_5": 0.344,
+   "follower_left_left_carriage_joint": 0.0048,
+   "follower_left_right_carriage_joint": 0.0003
+  },
+  "object_pose": [
+   -0.0788,
+   -0.098,
+   0.184,
+   0.9081,
+   0.0785,
+   0.2303,
+   -0.3407
+  ]
+ },
+ {
+  "step": -50,
+  "held": 1,
+  "up_cos": 0.971,
+  "pose": {
+   "follower_left_joint_0": 0.0014,
+   "follower_left_joint_1": 1.8628,
+   "follower_left_joint_2": 1.0056,
+   "follower_left_joint_3": 0.6273,
+   "follower_left_joint_4": -0.0701,
+   "follower_left_joint_5": 2.7708,
+   "follower_left_left_carriage_joint": 0.0044,
+   "follower_left_right_carriage_joint": 0.0004
+  },
+  "object_pose": [
+   0.0375,
+   -0.0842,
+   0.1174,
+   0.11,
+   0.0495,
+   0.9835,
+   -0.1351
+  ]
+ },
+ {
+  "step": -54,
+  "held": 1,
+  "up_cos": 0.418,
+  "pose": {
+   "follower_left_joint_0": 0.0115,
+   "follower_left_joint_1": 1.7521,
+   "follower_left_joint_2": 0.891,
+   "follower_left_joint_3": 1.1076,
+   "follower_left_joint_4": -0.0265,
+   "follower_left_joint_5": 2.2072,
+   "follower_left_left_carriage_joint": 0.0047,
+   "follower_left_right_carriage_joint": 0.0004
+  },
+  "object_pose": [
+   -0.0037,
+   -0.1173,
+   0.2531,
+   0.3747,
+   0.3881,
+   0.8413,
+   -0.034
+  ]
+ },
+ {
+  "step": -78,
+  "held": 1,
+  "up_cos": 0.244,
+  "pose": {
+   "follower_left_joint_0": -0.0032,
+   "follower_left_joint_1": 1.6057,
+   "follower_left_joint_2": 0.832,
+   "follower_left_joint_3": 0.3911,
+   "follower_left_joint_4": -0.0194,
+   "follower_left_joint_5": -0.5627,
+   "follower_left_left_carriage_joint": 0.0035,
+   "follower_left_right_carriage_joint": 0.0
+  },
+  "object_pose": [
+   0.0579,
+   -0.0136,
+   0.1114,
+   -0.0723,
+   0.6107,
+   0.1008,
+   -0.7821
+  ]
+ },
+ {
+  "step": -82,
+  "held": 1,
+  "up_cos": 0.745,
+  "pose": {
+   "follower_left_joint_0": -0.0083,
+   "follower_left_joint_1": 1.508,
+   "follower_left_joint_2": 0.8051,
+   "follower_left_joint_3": 0.4253,
+   "follower_left_joint_4": 0.0355,
+   "follower_left_joint_5": -1.4204,
+   "follower_left_left_carriage_joint": 0.0043,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0105,
+   -0.007,
+   0.1202,
+   -0.0569,
+   0.3528,
+   -0.0745,
+   -0.931
+  ]
+ },
+ {
+  "step": -86,
+  "held": 1,
+  "up_cos": 0.97,
+  "pose": {
+   "follower_left_joint_0": -0.0387,
+   "follower_left_joint_1": 1.3927,
+   "follower_left_joint_2": 0.7201,
+   "follower_left_joint_3": 0.5444,
+   "follower_left_joint_4": 0.0942,
+   "follower_left_joint_5": -2.2759,
+   "follower_left_left_carriage_joint": 0.0034,
+   "follower_left_right_carriage_joint": 0.0011
+  },
+  "object_pose": [
+   -0.118,
+   0.0107,
+   0.1803,
+   -0.1107,
+   -0.0547,
+   -0.1152,
+   -0.9856
+  ]
+ },
+ {
+  "step": -90,
+  "held": 1,
+  "up_cos": 0.712,
+  "pose": {
+   "follower_left_joint_0": -0.0806,
+   "follower_left_joint_1": 1.3297,
+   "follower_left_joint_2": 0.604,
+   "follower_left_joint_3": 0.7136,
+   "follower_left_joint_4": 0.1276,
+   "follower_left_joint_5": -2.9185,
+   "follower_left_left_carriage_joint": 0.003,
+   "follower_left_right_carriage_joint": 0.0015
+  },
+  "object_pose": [
+   -0.1775,
+   0.0366,
+   0.245,
+   -0.164,
+   -0.3423,
+   -0.0794,
+   -0.9218
+  ]
+ },
+ {
+  "step": -102,
+  "held": 1,
+  "up_cos": 0.991,
+  "pose": {
+   "follower_left_joint_0": 0.0267,
+   "follower_left_joint_1": 1.9221,
+   "follower_left_joint_2": 1.0631,
+   "follower_left_joint_3": 0.525,
+   "follower_left_joint_4": -0.1136,
+   "follower_left_joint_5": 3.1416,
+   "follower_left_left_carriage_joint": 0.0049,
+   "follower_left_right_carriage_joint": 0.0002
+  },
+  "object_pose": [
+   0.0815,
+   -0.084,
+   0.1046,
+   -0.0604,
+   -0.0292,
+   0.9957,
+   -0.0632
+  ]
+ },
+ {
+  "step": -106,
+  "held": 1,
+  "up_cos": 0.681,
+  "pose": {
+   "follower_left_joint_0": 0.0061,
+   "follower_left_joint_1": 1.8281,
+   "follower_left_joint_2": 0.9245,
+   "follower_left_joint_3": 1.1771,
+   "follower_left_joint_4": -0.0937,
+   "follower_left_joint_5": 2.4761,
+   "follower_left_left_carriage_joint": 0.0046,
+   "follower_left_right_carriage_joint": 0.0005
+  },
+  "object_pose": [
+   0.0158,
+   -0.1072,
+   0.2321,
+   0.2963,
+   0.2677,
+   0.915,
+   -0.0572
+  ]
+ },
+ {
+  "step": -108,
+  "held": 1,
+  "up_cos": -0.172,
+  "pose": {
+   "follower_left_joint_0": 0.0068,
+   "follower_left_joint_1": 1.6872,
+   "follower_left_joint_2": 0.7829,
+   "follower_left_joint_3": 0.4438,
+   "follower_left_joint_4": 0.069,
+   "follower_left_joint_5": 0.5663,
+   "follower_left_left_carriage_joint": -0.0,
+   "follower_left_right_carriage_joint": 0.0043
+  },
+  "object_pose": [
+   0.0113,
+   -0.0982,
+   0.1467,
+   0.0789,
+   0.7614,
+   0.6331,
+   0.1149
+  ]
+ },
+ {
+  "step": -51,
+  "held": 1,
+  "up_cos": 0.519,
+  "pose": {
+   "follower_left_joint_0": 0.0779,
+   "follower_left_joint_1": 1.7738,
+   "follower_left_joint_2": 0.9974,
+   "follower_left_joint_3": 0.489,
+   "follower_left_joint_4": -0.1293,
+   "follower_left_joint_5": 2.0481,
+   "follower_left_left_carriage_joint": 0.0004,
+   "follower_left_right_carriage_joint": 0.0035
+  },
+  "object_pose": [
+   0.0391,
+   -0.0867,
+   0.1179,
+   0.4394,
+   0.2182,
+   0.7793,
+   -0.3899
+  ]
+ },
+ {
+  "step": -55,
+  "held": 1,
+  "up_cos": -0.183,
+  "pose": {
+   "follower_left_joint_0": 0.0668,
+   "follower_left_joint_1": 1.6778,
+   "follower_left_joint_2": 0.8837,
+   "follower_left_joint_3": 0.7446,
+   "follower_left_joint_4": -0.0924,
+   "follower_left_joint_5": 1.2511,
+   "follower_left_left_carriage_joint": 0.0003,
+   "follower_left_right_carriage_joint": 0.0042
+  },
+  "object_pose": [
+   -0.0273,
+   -0.0919,
+   0.2101,
+   0.747,
+   0.1827,
+   0.5391,
+   -0.3435
+  ]
+ },
+ {
+  "step": -109,
+  "held": 1,
+  "up_cos": 0.368,
+  "pose": {
+   "follower_left_joint_0": 0.0439,
+   "follower_left_joint_1": 1.8916,
+   "follower_left_joint_2": 1.0358,
+   "follower_left_joint_3": 0.5746,
+   "follower_left_joint_4": 0.0341,
+   "follower_left_joint_5": 1.7524,
+   "follower_left_left_carriage_joint": 0.004,
+   "follower_left_right_carriage_joint": 0.0005
+  },
+  "object_pose": [
+   -0.0143,
+   -0.1235,
+   0.1008,
+   0.496,
+   0.2649,
+   0.749,
+   -0.3506
+  ]
+ },
+ {
+  "step": -113,
+  "held": 1,
+  "up_cos": -0.162,
+  "pose": {
+   "follower_left_joint_0": 0.0169,
+   "follower_left_joint_1": 1.8121,
+   "follower_left_joint_2": 0.9151,
+   "follower_left_joint_3": 0.7323,
+   "follower_left_joint_4": 0.0789,
+   "follower_left_joint_5": 0.9189,
+   "follower_left_left_carriage_joint": 0.0043,
+   "follower_left_right_carriage_joint": 0.0004
+  },
+  "object_pose": [
+   -0.0825,
+   -0.1156,
+   0.1601,
+   0.7406,
+   0.1795,
+   0.4536,
+   -0.4621
+  ]
+ },
+ {
+  "step": -117,
+  "held": 1,
+  "up_cos": -0.357,
+  "pose": {
+   "follower_left_joint_0": 0.0275,
+   "follower_left_joint_1": 1.7846,
+   "follower_left_joint_2": 0.8318,
+   "follower_left_joint_3": 0.7069,
+   "follower_left_joint_4": 0.0579,
+   "follower_left_joint_5": 0.3622,
+   "follower_left_left_carriage_joint": 0.005,
+   "follower_left_right_carriage_joint": 0.0001
+  },
+  "object_pose": [
+   -0.0812,
+   -0.1034,
+   0.161,
+   0.8154,
+   0.1166,
+   0.2377,
+   -0.5148
+  ]
+ },
+ {
+  "step": -113,
+  "held": 1,
+  "up_cos": 0.437,
+  "pose": {
+   "follower_left_joint_0": 0.0567,
+   "follower_left_joint_1": 1.9055,
+   "follower_left_joint_2": 1.0684,
+   "follower_left_joint_3": 0.6312,
+   "follower_left_joint_4": 0.0078,
+   "follower_left_joint_5": 1.9432,
+   "follower_left_left_carriage_joint": 0.0039,
+   "follower_left_right_carriage_joint": 0.0006
+  },
+  "object_pose": [
+   0.0049,
+   -0.1369,
+   0.1198,
+   0.4522,
+   0.2773,
+   0.7924,
+   -0.3012
+  ]
+ },
+ {
+  "step": -117,
+  "held": 1,
+  "up_cos": -0.211,
+  "pose": {
+   "follower_left_joint_0": 0.0411,
+   "follower_left_joint_1": 1.8505,
+   "follower_left_joint_2": 0.9746,
+   "follower_left_joint_3": 0.8432,
+   "follower_left_joint_4": 0.0404,
+   "follower_left_joint_5": 1.1099,
+   "follower_left_left_carriage_joint": 0.0038,
+   "follower_left_right_carriage_joint": 0.0008
+  },
+  "object_pose": [
+   -0.0617,
+   -0.1368,
+   0.1944,
+   0.7478,
+   0.2157,
+   0.5092,
+   -0.3675
+  ]
+ },
+ {
+  "step": -57,
+  "held": 1,
+  "up_cos": 0.938,
+  "pose": {
+   "follower_left_joint_0": 0.001,
+   "follower_left_joint_1": 1.8828,
+   "follower_left_joint_2": 1.0004,
+   "follower_left_joint_3": 0.6141,
+   "follower_left_joint_4": -0.0735,
+   "follower_left_joint_5": 2.9344,
+   "follower_left_left_carriage_joint": 0.005,
+   "follower_left_right_carriage_joint": 0.0001
+  },
+  "object_pose": [
+   0.0486,
+   -0.1005,
+   0.1117,
+   0.0455,
+   0.1703,
+   0.9809,
+   -0.0827
+  ]
+ },
+ {
+  "step": -61,
+  "held": 1,
+  "up_cos": 0.481,
+  "pose": {
+   "follower_left_joint_0": 0.017,
+   "follower_left_joint_1": 1.7624,
+   "follower_left_joint_2": 0.8849,
+   "follower_left_joint_3": 1.1122,
+   "follower_left_joint_4": -0.0282,
+   "follower_left_joint_5": 2.408,
+   "follower_left_left_carriage_joint": 0.005,
+   "follower_left_right_carriage_joint": 0.0002
+  },
+  "object_pose": [
+   0.0126,
+   -0.1118,
+   0.2452,
+   0.3115,
+   0.4033,
+   0.8561,
+   -0.0861
+  ]
+ },
+ {
+  "step": -53,
+  "held": 1,
+  "up_cos": 0.444,
+  "pose": {
+   "follower_left_joint_0": 0.0518,
+   "follower_left_joint_1": 1.8999,
+   "follower_left_joint_2": 1.0494,
+   "follower_left_joint_3": 0.6012,
+   "follower_left_joint_4": 0.0096,
+   "follower_left_joint_5": 1.9044,
+   "follower_left_left_carriage_joint": 0.0042,
+   "follower_left_right_carriage_joint": 0.0006
+  },
+  "object_pose": [
+   0.0023,
+   -0.1276,
+   0.1074,
+   0.4492,
+   0.2759,
+   0.7931,
+   -0.3051
+  ]
+ },
+ {
+  "step": -57,
+  "held": 1,
+  "up_cos": -0.186,
+  "pose": {
+   "follower_left_joint_0": 0.0301,
+   "follower_left_joint_1": 1.8475,
+   "follower_left_joint_2": 0.9615,
+   "follower_left_joint_3": 0.7907,
+   "follower_left_joint_4": 0.0559,
+   "follower_left_joint_5": 1.0571,
+   "follower_left_left_carriage_joint": 0.0048,
+   "follower_left_right_carriage_joint": 0.0001
+  },
+  "object_pose": [
+   -0.0707,
+   -0.1283,
+   0.1765,
+   0.7436,
+   0.1995,
+   0.5052,
+   -0.3899
+  ]
+ },
+ {
+  "step": -61,
+  "held": 1,
+  "up_cos": -0.407,
+  "pose": {
+   "follower_left_joint_0": 0.0434,
+   "follower_left_joint_1": 1.7845,
+   "follower_left_joint_2": 0.8269,
+   "follower_left_joint_3": 0.7629,
+   "follower_left_joint_4": 0.0683,
+   "follower_left_joint_5": 0.4497,
+   "follower_left_left_carriage_joint": 0.0049,
+   "follower_left_right_carriage_joint": 0.0002
+  },
+  "object_pose": [
+   -0.0781,
+   -0.1021,
+   0.1739,
+   0.8309,
+   0.1151,
+   0.2756,
+   -0.4696
+  ]
+ },
+ {
+  "step": -77,
+  "held": 1,
+  "up_cos": 0.963,
+  "pose": {
+   "follower_left_joint_0": 0.0121,
+   "follower_left_joint_1": 1.8946,
+   "follower_left_joint_2": 1.0424,
+   "follower_left_joint_3": 0.6306,
+   "follower_left_joint_4": -0.0841,
+   "follower_left_joint_5": 2.9664,
+   "follower_left_left_carriage_joint": 0.0048,
+   "follower_left_right_carriage_joint": 0.0002
+  },
+  "object_pose": [
+   0.0583,
+   -0.1073,
+   0.1268,
+   0.03,
+   0.1323,
+   0.9879,
+   -0.0747
+  ]
+ },
+ {
+  "step": -81,
+  "held": 1,
+  "up_cos": 0.529,
+  "pose": {
+   "follower_left_joint_0": 0.0211,
+   "follower_left_joint_1": 1.7555,
+   "follower_left_joint_2": 0.8834,
+   "follower_left_joint_3": 1.1433,
+   "follower_left_joint_4": -0.0465,
+   "follower_left_joint_5": 2.2981,
+   "follower_left_left_carriage_joint": 0.0047,
+   "follower_left_right_carriage_joint": 0.0005
+  },
+  "object_pose": [
+   0.0068,
+   -0.1004,
+   0.2456,
+   0.3612,
+   0.3242,
+   0.8678,
+   -0.107
+  ]
+ },
+ {
+  "step": -95,
+  "held": 1,
+  "up_cos": -0.77,
+  "pose": {
+   "follower_left_joint_0": -0.0065,
+   "follower_left_joint_1": 1.5458,
+   "follower_left_joint_2": 0.7579,
+   "follower_left_joint_3": 0.5951,
+   "follower_left_joint_4": 0.0571,
+   "follower_left_joint_5": -0.3534,
+   "follower_left_left_carriage_joint": 0.0044,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0593,
+   0.0095,
+   0.3148,
+   0.9304,
+   0.1398,
+   -0.2136,
+   0.2631
+  ]
+ },
+ {
+  "step": -99,
+  "held": 1,
+  "up_cos": -0.863,
+  "pose": {
+   "follower_left_joint_0": 0.0139,
+   "follower_left_joint_1": 1.5734,
+   "follower_left_joint_2": 0.8144,
+   "follower_left_joint_3": 0.5419,
+   "follower_left_joint_4": 0.0597,
+   "follower_left_joint_5": -0.0067,
+   "follower_left_left_carriage_joint": 0.0047,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0798,
+   0.0015,
+   0.2988,
+   0.9643,
+   0.0421,
+   -0.0305,
+   0.2597
+  ]
+ },
+ {
+  "step": -103,
+  "held": 1,
+  "up_cos": -0.882,
+  "pose": {
+   "follower_left_joint_0": 0.0321,
+   "follower_left_joint_1": 1.6277,
+   "follower_left_joint_2": 0.8617,
+   "follower_left_joint_3": 0.5529,
+   "follower_left_joint_4": 0.0823,
+   "follower_left_joint_5": -0.085,
+   "follower_left_left_carriage_joint": 0.0048,
+   "follower_left_right_carriage_joint": -0.0
+  },
+  "object_pose": [
+   -0.0701,
+   -0.0146,
+   0.302,
+   0.9689,
+   0.0465,
+   -0.0577,
+   0.236
+  ]
+ },
+ {
+  "step": -107,
+  "held": 1,
+  "up_cos": -0.746,
+  "pose": {
+   "follower_left_joint_0": 0.0395,
+   "follower_left_joint_1": 1.6965,
+   "follower_left_joint_2": 0.8462,
+   "follower_left_joint_3": 0.5937,
+   "follower_left_joint_4": 0.115,
+   "follower_left_joint_5": -0.6661,
+   "follower_left_left_carriage_joint": 0.0049,
+   "follower_left_right_carriage_joint": 0.0
+  },
+  "object_pose": [
+   -0.0247,
+   -0.0295,
+   0.29,
+   0.9205,
+   0.1607,
+   -0.3142,
+   0.1678
+  ]
+ }
+]

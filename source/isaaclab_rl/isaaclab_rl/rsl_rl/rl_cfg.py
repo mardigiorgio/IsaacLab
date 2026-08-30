@@ -34,6 +34,13 @@ class RslRlMLPModelCfg:
     obs_normalization: bool = False
     """Whether to normalize the observation for the model. Defaults to False."""
 
+    zero_init_output: bool = False
+    """Zero the actor's output layer (weights and bias) on a fresh run, so the initial policy
+    mean is exactly the action offset. Andrychowicz et al. 2020 ("What Matters in On-Policy
+    RL") recommend a 100x-smaller last-layer init; this is its limit, and it is what a
+    reference-state start needs (PyTorch's default Linear init gives biases ~0.1 = centimetres
+    at a fingertip, which released a banked handle pinch within 5 steps, measured 2026-08-28)."""
+
     distribution_cfg: DistributionCfg | None = None
     """The configuration for the output distribution. Defaults to None, in which case no distribution is used."""
 
@@ -63,6 +70,13 @@ class RslRlMLPModelCfg:
         The floor guarantees a minimum exploration amplitude for the whole run: per-dimension
         stds cannot collapse below it even when the optimizer would otherwise drive them to
         zero (e.g. action dimensions whose only sampled gradient is a penalty)."""
+
+        init_std_per_dim: list[float] | None = None
+        """Per-action-dimension initial std, applied to the actor after construction on a fresh
+        run (not on resume). Overrides ``init_std`` dimension-wise; ``None`` keeps the scalar.
+        rsl_rl's Gaussian head is per-dimension already (one ``log_std`` per action), so an
+        exploration amplitude that differs by joint (a fragile pinch on one axis, a free roll
+        on another) is a per-joint initial value, not a launch-time env var."""
 
     @configclass
     class HeteroscedasticGaussianDistributionCfg(GaussianDistributionCfg):

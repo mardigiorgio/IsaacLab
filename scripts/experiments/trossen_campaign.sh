@@ -26,7 +26,12 @@ Q=$SP/campaign.log
 
 K1="env.sim.dt=0.03333333333333333 env.decimation=1"
 K2="env.sim.dt=0.016666666666666666 env.decimation=2"
-# K3 = each task's authored default (1/90 x 3 = 30 Hz).
+# K3 = each task's authored default (1/90 x 3 = 30 Hz), EXCEPT the flip, whose
+# authored default is the fixed five-subdivision step (1/450 x 15, 2026-08-29).
+# The adaptive arm's boundary is sim.dt x num_substeps, so the flip's adaptive
+# run must be pinned back to the family's 1/90 x 3 boundary explicitly.
+declare -A ADAPT_OVERRIDES
+ADAPT_OVERRIDES[flip]="env.sim.dt=0.011111111111111112 env.decimation=3 env.sim.render_interval=3"
 
 epoch() { date -d "2026-$1 $2" +%s; }
 wall() { # wall <run-name> -> seconds from last START to DONE
@@ -90,7 +95,7 @@ task_ladder() { # task_ladder <gym-task> <short-name> <iters>
   run "$gym" icf          "icf-fixed-$t-K1-s42"    "cq_${t}_K1.log"       "$iters" $K1
   run "$gym" icf          "icf-fixed-$t-K2-s42"    "cq_${t}_K2.log"       "$iters" $K2
   run "$gym" icf          "icf-fixed-$t-K3-s42"    "cq_${t}_K3.log"       "$iters"
-  run "$gym" icf-adaptive "icf-adaptive-$t-s42"    "cq_${t}_adaptive.log" "$iters"
+  run "$gym" icf-adaptive "icf-adaptive-$t-s42"    "cq_${t}_adaptive.log" "$iters" ${ADAPT_OVERRIDES[$t]:-}
   # K3wall: same wall clock the adaptive run actually consumed. Budget =
   # (adaptive wall - K3 startup) / K3 per-iter, all measured from THIS
   # campaign's own logs; startup = K3 wall minus its summed iteration time.

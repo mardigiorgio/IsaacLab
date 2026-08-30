@@ -40,6 +40,10 @@ class TrossenMugFlipPPORunnerCfg(TrossenMugLiftPPORunnerCfg):
             # roll at 0.1, 2% at 0.1 everywhere. Action order: j0..j5, gripper x2.
             # rsl_rl's head takes a SCALAR init_std; the per-dimension split is applied
             # at launch with RSL_RESET_STD=0.05,0.05,0.05,0.05,0.05,0.15,0.05,0.05.
-            init_std=0.05, std_type="log", std_range=(0.05, 2.5)
+            init_std=0.05, std_type="log", std_range=(0.05, 2.5),
+            # fast-L (2026-08-29): per-joint std j0..j5, carriage x2 -- roll joints wide, wrist pitch narrow
+            init_std_per_dim=[0.12, 0.12, 0.12, 0.40, 0.05, 0.50, 0.30, 0.30],
         )
+        self.actor.zero_init_output = True  # the initial mean holds the banked start (was RSL_ZERO_INIT_POLICY_HEAD=1)
+        self.algorithm.entropy_coef = 0.0  # fast-L
 

@@ -54,6 +54,9 @@ parser.add_argument("--raise_rad", type=float, default=0.4)
 parser.add_argument("--held_dz", type=float, default=0.04, help="[m] raise height that counts as held.")
 parser.add_argument("--xy_jacobian", action="store_true")
 parser.add_argument("--xy_delta", type=float, default=0.01)
+parser.add_argument("--q_init", type=float, nargs=6, default=None, help="IK seed for the six arm joints [rad] (default: home)")
+parser.add_argument("--object_shift", type=float, nargs=3, default=None, help="shift the mug spawn by (dx, dy, dz) [m] for this probe")
+parser.add_argument("--fix_joints", type=int, nargs="*", default=[], help="arm joint indices held at their seed value during the solve")
 
 from isaaclab.app import add_launcher_args, launch_simulation  # noqa: E402
 
@@ -93,11 +96,19 @@ def main() -> int:
             env_cfg.events.randomize_arm_start = None
         if hasattr(env_cfg.events, "reset_arm_grasp_bank"):
             env_cfg.events.reset_arm_grasp_bank = None
+        if hasattr(env_cfg.events, "reset_reference"):  # the flip's reference-state RSI (2026-08-29): home only here
+            env_cfg.events.reset_reference.params["home_fraction"] = 1.0
+            env_cfg.events.reset_reference.params["approach_fraction"] = 0.0
+            env_cfg.events.reset_reference.params["noise"] = 0.0
         # The bedrock curriculum references the bank event just nulled above;
         # it must go with it or the anneal term throws at every reset.
         if hasattr(env_cfg, "curriculum") and hasattr(env_cfg.curriculum, "grow_approach"):
             env_cfg.curriculum.grow_approach = None
 
+        if args_cli.object_shift is not None:
+            pos = list(env_cfg.scene.object.init_state.pos)
+            env_cfg.scene.object.init_state.pos = [pos[0] + args_cli.object_shift[0], pos[1] + args_cli.object_shift[1], pos[2] + args_cli.object_shift[2]]
+            print(f"[bank-gen] mug spawn shifted to {env_cfg.scene.object.init_state.pos}", flush=True)
         env = gym.make(args_cli.task, cfg=env_cfg)
         u = env.unwrapped
         robot = u.scene["robot"]
@@ -147,6 +158,9 @@ def main() -> int:
         link6_id = robot.find_bodies("follower_left_link_6")[0][0]
 
         q = q_home[arm_ids].cpu().numpy().astype(np.float64)
+        if args_cli.q_init is not None:
+            q = np.array(args_cli.q_init, dtype=np.float64)
+            print(f"[bank-gen] IK seed {q.round(3).tolist()}", flush=True)
 
         def solve(target_pos: np.ndarray, q0: np.ndarray | None = None) -> tuple[np.ndarray, float, float]:
             qq = (q if q0 is None else q0).copy()
@@ -174,6 +188,8 @@ def main() -> int:
                     J[6:, j] = (tools[1 + 2 * j] - tools[2 + 2 * j]) / (2 * FD_EPS)
                 e = np.concatenate([e_pos, 0.12 * e_axis, 0.12 * e_tool])
                 lam = args_cli.damping
+                for fj in args_cli.fix_joints:
+                    J[:, fj] = 0.0
                 dq = J.T @ np.linalg.solve(J @ J.T + lam * lam * np.eye(9), e)
                 qq = qq + np.clip(dq, -0.2, 0.2)
                 lo = limits[arm_ids, 0].cpu().numpy()
@@ -333,7 +349,7 @@ def main() -> int:
             return float(torch.linalg.vector_norm(fm.torch.sum(dim=2), dim=-1).nan_to_num(0.0)[0].max())
         fl, fr, fb = _fmag("pad_left_handle"), _fmag("pad_right_handle"), _fmag("pad_body_contact")
         if fl is not None:
-            print(f"[bank-gen] end-of-raise forces: left pad on HANDLE {fl:.2f} N, right pad on HANDLE {fr:.2f} N, pads on BODY {fb:.2f} N -> "
+            print(f"[bank-gen] end-of-raise forces: left pad on HANDLE {fl:.2f} N, right pad on HANDLE {fr:.2f} N, pads on BODY {(fb if fb is not None else float("nan")):.2f} N -> "
                   f"{'HANDLE-ONLY PINCH' if (fl > 0.5 and fr > 0.5 and fb < 1.0) else 'NOT a clean handle pinch'}")
         held = dz > args_cli.held_dz
         print(f"[bank-gen] existence proof: max object dz {dz * 1000:.1f} mm -> {'HELD' if held else 'FAILED'}")

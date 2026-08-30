@@ -207,6 +207,8 @@ def reset_arm_reverse_curriculum(
     home_offset_pose: dict[str, float] | None = None,
     home_noise: float = 0.0,
     trajectory: list | None = None,
+    seed_stage: int | None = None,
+    seed_latch: bool = False,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
 ):
@@ -404,6 +406,18 @@ def reset_arm_reverse_curriculum(
     asset.write_joint_position_to_sim_index(position=start, joint_ids=joint_ids, env_ids=env_ids)
     asset.write_joint_velocity_to_sim_index(velocity=torch.zeros_like(start), joint_ids=joint_ids, env_ids=env_ids)
 
+    # seed_stage (flip, 2026-08-29): a bank that seeds a MID-TASK state must also seed
+    # the FSM stage it represents -- a pre-release toss state at stage 0 can never climb
+    # 0->1 (the pinch is already slipping) and so earns nothing for a perfect landing.
+    # seed_latch marks grasp history for states harvested from verified handle-flip
+    # successes (RSI provenance); consumed by flip_fsm on the next step.
+    if seed_stage is not None and sel.any():
+        if not hasattr(env, "_flip_seed_stage"):
+            env._flip_seed_stage = torch.full((env.num_envs,), -1, dtype=torch.long, device=env.device)
+            env._flip_seed_latch = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+        ids_sel = env_ids[sel]
+        env._flip_seed_stage[ids_sel] = int(seed_stage)
+        env._flip_seed_latch[ids_sel] = bool(seed_latch)
 
 def advance_action_offset_waypoint(
     env,

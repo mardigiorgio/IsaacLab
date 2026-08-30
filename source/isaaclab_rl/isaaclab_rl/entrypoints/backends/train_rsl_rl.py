@@ -49,6 +49,85 @@ with contextlib.suppress(ImportError):
     import isaaclab_tasks_experimental  # noqa: F401
 
 
+def _actor_of(runner):
+    return getattr(runner.alg, "_raw_actor", None) or runner.alg.actor
+
+
+def _set_actor_std(actor, vals: list[float]) -> list[str]:
+    """Write a scalar or per-dimension std into every Gaussian head of ``actor``."""
+    import torch
+
+    hit = []
+    for mod in actor.modules():
+        for attr, is_log in (("log_std_param", True), ("std_param", False)):
+            if hasattr(mod, attr):
+                p = getattr(mod, attr)
+                with torch.no_grad():
+                    v = torch.tensor(vals, device=p.device, dtype=p.dtype)
+                    v = v.expand_as(p) if v.numel() == 1 else v.reshape(p.shape)
+                    p.copy_(torch.log(v) if is_log else v)
+                hit.append(attr)
+    return hit
+
+
+def _zero_actor_output(actor) -> tuple[int, ...]:
+    import torch
+    import torch.nn as nn
+
+    last = [m for m in actor.modules() if isinstance(m, nn.Linear)][-1]
+    with torch.no_grad():
+        last.weight.zero_()
+        last.bias.zero_()
+    return tuple(last.weight.shape)
+
+
+def apply_actor_init(runner, agent_cfg) -> None:
+    """Exploration init of the actor: the cfg's ``init_std_per_dim`` / ``zero_init_output``
+    (fresh runs only), then the launch-time overrides ``RSL_RESET_STD=<v[,v...]>`` (also
+    after a resume: a checkpoint's learned std otherwise overrides the cfg) and
+    ``RSL_ZERO_INIT_POLICY_HEAD=1``."""
+    actor = _actor_of(runner)
+    model_cfg = getattr(agent_cfg, "actor", None)
+    dist = getattr(model_cfg, "distribution_cfg", None)
+    per_dim = getattr(dist, "init_std_per_dim", None)
+    if per_dim and not agent_cfg.resume:
+        print(f"[INFO] init_std_per_dim: set actor std to {list(per_dim)} ({_set_actor_std(actor, list(per_dim))})")
+    if getattr(model_cfg, "zero_init_output", False) and not agent_cfg.resume:
+        print(f"[INFO] zero_init_output: zeroed actor output layer {_zero_actor_output(actor)}")
+    if os.environ.get("RSL_RESET_STD"):
+        vals = [float(v) for v in os.environ["RSL_RESET_STD"].split(",")]
+        print(f"[INFO] RSL_RESET_STD: set actor std to {vals} ({_set_actor_std(actor, vals)})")
+    if os.environ.get("RSL_ZERO_INIT_POLICY_HEAD", "0") == "1" and not agent_cfg.resume:
+        print(f"[INFO] RSL_ZERO_INIT_POLICY_HEAD: zeroed actor output layer {_zero_actor_output(actor)}")
+
+
+def attach_video_upload(runner, log_dir: str) -> None:
+    """Upload every finished recorder clip under ``<log_dir>/videos`` to W&B, once, at the
+    iteration it was found. rsl_rl 5.4.1's ``WandbSummaryWriter.save_video`` exists but no
+    runner code path calls it, so ``--video --logger wandb`` recorded clips locally only.
+    The recorder closes clips synchronously inside ``env.step`` (moviepy/ffmpeg), so any
+    file present when the runner logs an iteration is complete."""
+    import pathlib
+
+    writer = getattr(getattr(runner, "logger", None), "writer", None)
+    if writer is None or not hasattr(writer, "save_video"):
+        return
+    video_dir = pathlib.Path(log_dir) / "videos"
+    original_log = runner.logger.log
+
+    def log_with_videos(it, *args, **kwargs):
+        result = original_log(it, *args, **kwargs)
+        if video_dir.is_dir():
+            for clip in sorted(video_dir.glob("**/*.mp4")):
+                try:
+                    writer.save_video(clip, int(it))
+                except Exception as exc:  # noqa: BLE001 -- never let an upload kill training
+                    print(f"[WARNING] video upload failed for {clip.name}: {exc}")
+        return result
+
+    runner.logger.log = log_with_videos
+
+
 def _apply_solver_choice(env_cfg, choice: str) -> None:
     """Apply --solver onto the *resolved* Newton solver cfg."""
     # imported lazily so that isaaclab_rl does not depend on isaaclab_tasks at import time
@@ -234,46 +313,11 @@ def _run(args_cli: argparse.Namespace) -> None:
             print(f"[INFO]: Loading model checkpoint from: {resume_path}")
             runner.load(resume_path)
 
-        # RSL_RESET_STD=<value> (2026-08-28): after a resume, set the actor's Gaussian std
-        # to this value (the checkpoint's learned std otherwise overrides init_std). Used to
-        # continue a mug-flip policy at the exploration floor its lifted pinch tolerates.
-        if os.environ.get("RSL_RESET_STD"):
-            import math as _math
-            import torch as _torch
-            vals = [float(v) for v in os.environ["RSL_RESET_STD"].split(",")]  # scalar or one per action dim
-            actor = getattr(runner.alg, "_raw_actor", None) or runner.alg.actor
-            hit = []
-            for mod in actor.modules():
-                if hasattr(mod, "log_std_param"):
-                    with _torch.no_grad():
-                        v = _torch.tensor(vals, device=mod.log_std_param.device, dtype=mod.log_std_param.dtype)
-                        mod.log_std_param.copy_(_torch.log(v.expand_as(mod.log_std_param) if v.numel() == 1 else v))
-                    hit.append("log_std_param")
-                elif hasattr(mod, "std_param"):
-                    with _torch.no_grad():
-                        v = _torch.tensor(vals, device=mod.std_param.device, dtype=mod.std_param.dtype)
-                        mod.std_param.copy_(v.expand_as(mod.std_param) if v.numel() == 1 else v)
-                    hit.append("std_param")
-            val = vals
-            print(f"[INFO] RSL_RESET_STD: set actor std to {val} ({hit})")
+        apply_actor_init(runner, agent_cfg)
+        attach_video_upload(runner, log_dir)
         dump_train_configs(log_dir, env_cfg, agent_cfg)
 
         try:
-            # RSL_ZERO_INIT_POLICY_HEAD=1 (2026-08-28): zero the actor's output layer so the
-            # initial policy mean is exactly the action offset (hold the reset pose). rsl_rl's
-            # Gaussian head keeps PyTorch's default Linear init (biases ~+-0.1 = centimeters at
-            # the fingertips), which released the mug-flip's banked handle pinch within 5 steps
-            # of every episode before any gradient could arrive (probe_flip_bank_jitter).
-            if os.environ.get("RSL_ZERO_INIT_POLICY_HEAD", "0") == "1" and not agent_cfg.resume:
-                import torch as _torch
-                import torch.nn as _nn
-                actor = getattr(runner.alg, "_raw_actor", None) or runner.alg.actor
-                last = [m for m in actor.modules() if isinstance(m, _nn.Linear)][-1]
-                with _torch.no_grad():
-                    last.weight.zero_()
-                    last.bias.zero_()
-                print(f"[INFO] RSL_ZERO_INIT_POLICY_HEAD: zeroed actor output layer {tuple(last.weight.shape)}")
-
             runner.learn(
                 num_learning_iterations=agent_cfg.max_iterations,
                 init_at_random_ep_len=agent_cfg.init_at_random_ep_len,
