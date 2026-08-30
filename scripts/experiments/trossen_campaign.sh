@@ -33,18 +33,13 @@ K2="env.sim.dt=0.016666666666666666 env.decimation=2 env.sim.render_interval=2"
 K3="env.sim.dt=0.011111111111111112 env.decimation=3 env.sim.render_interval=3"
 K4="env.sim.dt=0.008333333333333333 env.decimation=4 env.sim.render_interval=4"
 K5="env.sim.dt=0.006666666666666667 env.decimation=5 env.sim.render_interval=5"
-# Kd = the task's DESIGN step, run with no overrides (the authored default).
-# For the flip and the tree that is the hand-found 1/450 x 15 (2026-08-29,
-# five subdivisions of hand-tuning to make ANY fixed step work); for slide,
-# lift and plate the authored default equals K3, so no separate Kd rung.
-# The adaptive arm's boundary is sim.dt x num_substeps, so flip/tree adaptive
-# must be pinned back to the family's 1/90 x 3 boundary explicitly.
+# Every task runs the SAME rungs (Marco, 2026-08-30). Flip and tree are
+# authored at 1/450 x 15, so every rung overrides the step explicitly; the
+# adaptive arm's boundary is sim.dt x num_substeps, so flip/tree adaptive is
+# pinned to the family's 1/90 x 3 boundary like everyone else's.
 declare -A ADAPT_OVERRIDES
 ADAPT_OVERRIDES[flip]="env.sim.dt=0.011111111111111112 env.decimation=3 env.sim.render_interval=3"
 ADAPT_OVERRIDES[tree]="env.sim.dt=0.011111111111111112 env.decimation=3 env.sim.render_interval=3"
-declare -A HAS_DESIGN_RUNG
-HAS_DESIGN_RUNG[flip]=1
-HAS_DESIGN_RUNG[tree]=1
 
 epoch() { date -d "2026-$1 $2" +%s; }
 wall() { # wall <run-name> -> seconds from last START to DONE
@@ -58,7 +53,7 @@ wall() { # wall <run-name> -> seconds from last START to DONE
 run() { # run <gym-task> <solver> <name> <log> <iters> [K overrides]
   local task=$1 solver=$2 name=$3 log=$4 iters=$5; shift 5
   local tsk=$(echo "$name" | grep -oE 'slide|lift|plate|flip|tree')
-  local k=$(echo "$name" | grep -oE 'K[0-9]wall|K[0-9]|Kd' | head -1); k=${k:-adaptive}
+  local k=$(echo "$name" | grep -oE 'K[0-9]wall|K[0-9]' | head -1); k=${k:-adaptive}
   local sol=icf-fixed; case "$name" in *adaptive*) sol=icf-adaptive;; esac
   export WANDB_TAGS="$tsk,$sol,$k,campaign"
   case "$tsk" in plate) export ICF_MAX_RIGID_CONTACT=8192;; *) export ICF_MAX_RIGID_CONTACT=1024;; esac
@@ -110,8 +105,6 @@ task_ladder() { # task_ladder <gym-task> <short-name> <iters>
   run "$gym" icf          "icf-fixed-$t-K3-s42"    "cq_${t}_K3.log"       "$iters" $K3
   run "$gym" icf          "icf-fixed-$t-K4-s42"    "cq_${t}_K4.log"       "$iters" $K4
   run "$gym" icf          "icf-fixed-$t-K5-s42"    "cq_${t}_K5.log"       "$iters" $K5
-  [ -n "${HAS_DESIGN_RUNG[$t]:-}" ] && \
-    run "$gym" icf        "icf-fixed-$t-Kd-s42"    "cq_${t}_Kd.log"       "$iters"
   run "$gym" icf-adaptive "icf-adaptive-$t-s42"    "cq_${t}_adaptive.log" "$iters" ${ADAPT_OVERRIDES[$t]:-}
   # K5wall: the finest GUESSED step, given the same wall clock the adaptive
   # run actually consumed. Budget = (adaptive wall - K5 startup) / K5
